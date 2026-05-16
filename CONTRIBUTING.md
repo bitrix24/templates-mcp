@@ -88,7 +88,7 @@ Every code-bearing PR adds or updates tests. Three layers:
 | Layer | Command | When |
 |---|---|---|
 | Unit | `pnpm test:unit` | Always |
-| Integration | `pnpm test:integration` | When you change network behavior, requires `NUXT_BITRIX24_TEST_WEBHOOK_URL` |
+| Integration | `pnpm test:integration` | When you change network behavior, requires `NUXT_BITRIX24_TEST_WEBHOOK_URL` (point at an isolated test portal — see Secrets) |
 | Evals | `pnpm test:evals` | When you add or change a tool description, requires `DEEPSEEK_API_KEY` |
 
 See `docs/TESTING.md` for details *(lands with MVP)*.
@@ -114,6 +114,8 @@ Full guide lands in `docs/ADDING-TOOLS.md` *(lands with MVP)*.
 - Never commit secrets. `.env` is gitignored; `.env.example` is the contract.
 - CI secrets live in GitHub Actions. Production secrets live in the server `.env` only.
 - If you accidentally commit a secret: rotate it immediately, then open a PR removing it (history scrub is a separate operation).
+- `NUXT_BITRIX24_TEST_WEBHOOK_URL` (locally) and `BITRIX24_TEST_WEBHOOK_URL` (GitHub Actions secret) must point at an isolated/staging Bitrix24 portal — the integration suite issues live REST calls and should never run against production data.
+- The `Integration tests (Bitrix24)` CI job is informational: it is skipped on forks and emits a warning (not a failure) when the secret is absent, so do not promote it to a required status check.
 
 ## Dependency updates
 
