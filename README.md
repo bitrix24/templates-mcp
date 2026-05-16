@@ -10,7 +10,7 @@
 
 A Model Context Protocol (MCP) server that gives AI assistants (Claude and equivalents) access to Bitrix24 — tasks, deals, contacts, and more — through a single Bearer-protected `/mcp` endpoint.
 
-> **Status**: MVP scaffolding. The plan and contract live in [`PROJECT-BRIEF.md`](./PROJECT-BRIEF.md). This README will be rewritten for end-users once the first batch of Bitrix24 tools ships.
+> **Status**: pre-release, Phase 2 in progress. MVP shipped (PRs #1–#4); task lifecycle + rating shipped (PR #5). Roadmap and contract live in [`PROJECT-BRIEF.md`](./PROJECT-BRIEF.md). This README will be rewritten for end-users on the first `v0.1.0` tag.
 
 ## Why
 

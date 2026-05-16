@@ -46,6 +46,26 @@ Use this pass on any PR that adds, renames, or rewrites an MCP tool description,
 
 The personas are **not** test users — they're a debugging lens. The PR ships when their reading of every description matches what the code actually does.
 
+## Scope discipline — follow-ups → GitHub issues, not PR scope creep
+
+Code review (especially persona-walk review) will surface items that are real, valuable, and **out of scope for the PR in front of you**. Examples from the PR #5 walk: bulk operations, `find_task` tool, accept/decline/delegate, normalising stringified ids to numbers, persona audit for DE / UAE operators.
+
+**Default behaviour:** these go to **new GitHub issues**, not into the current PR. A PR titled `feat(tools): X` should ship X — not X plus a refactor of TaskShort plus a new search tool plus a measurement RFC. Scope creep makes PRs harder to review, harder to roll back, and harder to bisect.
+
+**Before opening any follow-up issue:**
+
+1. **Ask the maintainer first.** Surface the list of candidate follow-ups in a comment on the PR (or in the chat). Each candidate as one line: _"<title> — one-sentence reason, surfaced by <persona / review round>"_.
+2. **Wait for the green light.** The maintainer decides which become issues, which are noise, which belong in a different repo, and which are already covered elsewhere. The agent's signal-to-noise ratio for follow-ups is mediocre — confirmation prevents tracker pollution.
+3. **Only then file.** Each filed issue should:
+   - Be in English (the project's documentation language).
+   - Have a context paragraph: "what the operator was trying to do that doesn't work today" — not just "we should add X".
+   - Cite where it was surfaced (PR number, review round, persona).
+   - List concrete acceptance criteria.
+   - Be labelled (`enhancement` / `chore` / `rfc` / `docs` / `i18n` / scope).
+4. **Cross-link both directions.** Add a "follow-ups filed as #N / #M …" section to the PR body so the squashed commit message + PR description carry the deferred-work trail. Add "surfaced from PR #X review round #Y" to each issue body so reviewers can trace the lineage.
+
+**Anti-pattern to avoid:** the agent opening five issues unilaterally because the persona walk surfaced five gaps. Most maintainers will perceive this as noise, not thoroughness. Ask first, even for items the agent is confident about.
+
 ## Feedback mechanism
 
 This MCP server exposes `bx24mcp_submit_feedback`. As an AI agent using or developing this MCP, you may invoke it to report issues, suggestions, or positive observations. Each call creates a GitHub issue in `bitrix24/templates-mcp` with the label `agent-feedback`. See [`feedback.md`](./feedback.md) for the calling guide.

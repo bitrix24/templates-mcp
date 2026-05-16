@@ -336,21 +336,56 @@ const CASES: Case[] = [
     notes: 'Clear an existing rating — rating: none.',
   },
 
-  // ── Multilingual / non-Latin (i18n probe) ──────────────────────────────
+  // ── Multilingual / non-Latin (i18n probe — ≥ 3 cases per language) ─────
+  // Chinese (zh-CN)
   {
     input: '为用户 5 创建一个任务"批准合同"，截止时间周五。',
     expected: 'bitrix24_create_task',
-    notes: 'Chinese Simplified — explicit numeric user id.',
+    notes: 'zh — create with explicit numeric user id.',
   },
+  {
+    input: '开始处理任务 42。',
+    expected: 'bitrix24_start_task',
+    notes: 'zh — start task lifecycle.',
+  },
+  {
+    input: '给任务 55 一个好评。',
+    expected: 'bitrix24_rate_task',
+    notes: 'zh — positive rating; must NOT route to update_task.',
+  },
+
+  // Arabic (ar, RTL)
   {
     input: 'أضف تعليقاً للمهمة 123: «تمت الموافقة».',
     expected: 'bitrix24_add_task_comment',
-    notes: 'Arabic RTL — task id given, comment text in Arabic.',
+    notes: 'ar (RTL) — task id given, comment text in Arabic.',
   },
+  {
+    input: 'ابدأ العمل على المهمة 42.',
+    expected: 'bitrix24_start_task',
+    notes: 'ar — start the task.',
+  },
+  {
+    input: 'أرجِع المهمة 27 للمراجعة، المستند خاطئ.',
+    expected: 'bitrix24_disapprove_task',
+    notes: 'ar — send back for rework; tests that the Müller/Fatima-flagged rejection terminology lands in Arabic.',
+  },
+
+  // Japanese (ja)
   {
     input: 'ユーザーID 7 にタスク「契約を承認」を作成、締切は金曜18:00。',
     expected: 'bitrix24_create_task',
-    notes: 'Japanese — explicit numeric user id.',
+    notes: 'ja — create with explicit numeric user id.',
+  },
+  {
+    input: 'タスク 15 を完了としてマークしてください。',
+    expected: 'bitrix24_complete_task',
+    notes: 'ja — mark task as done; must NOT route to rate_task (positive).',
+  },
+  {
+    input: 'タスク 99 を後回しにしてください。',
+    expected: 'bitrix24_defer_task',
+    notes: 'ja — defer; tests defer-vs-pause disambiguation across scripts.',
   },
 ]
 
