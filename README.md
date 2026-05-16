@@ -42,7 +42,7 @@ curl http://localhost:3000/api/health
 
 Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive tool debugging.
 
-## Available tools (MVP)
+## Available tools
 
 | Tool | What it does |
 |---|---|
@@ -52,9 +52,16 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `bitrix24_list_tasks` | List tasks with filter (`{ RESPONSIBLE_ID, STATUS, "!STATUS", ">=DEADLINE", … }`), order, select, and pagination (page size fixed at 50). |
 | `bitrix24_update_task` | Update an existing task by id with a partial UPPERCASE-keyed `fields` object. |
 | `bitrix24_add_task_comment` | Append a comment to a task (BBCode-friendly). |
+| `bitrix24_start_task` | Move a task to In progress (3). |
+| `bitrix24_pause_task` | Move an In-progress task back to Pending (2). |
+| `bitrix24_complete_task` | Mark a task as completed (5), or Supposedly completed (4) when task control is on. |
+| `bitrix24_approve_task` | Creator approves a Supposedly-completed task → Completed (5). |
+| `bitrix24_disapprove_task` | Creator rejects a Supposedly-completed task → Pending (2) for rework. |
+| `bitrix24_defer_task` | Move a task to Deferred (6) — postponed but not closed. |
+| `bitrix24_renew_task` | Reopen a Completed or Deferred task → Pending (2). |
 | `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 
-MVP tool set (6 Bitrix24 + 1 meta) is now complete.
+13 Bitrix24 + 1 meta = **14 tools total**.
 
 ## Connecting Claude
 
