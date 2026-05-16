@@ -65,7 +65,7 @@ export interface LifecycleToolSpec {
  *      v3-style contract as every other task tool).
  */
 const LIFECYCLE_USAGE_NOTES =
-  ' Accepts a single task id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. The Bitrix24 SDK paces outbound calls (~2 req/sec by default) and retries transient errors automatically, so a 25-id batch takes ~12 s without QUERY_LIMIT_EXCEEDED. If the task is already in the target status, Bitrix24 returns "action not allowed" — treat as already-applied, do not retry. If the operator names a task in free text instead of an id, resolve via `bitrix24_list_tasks` with a `%title` filter first.'
+  ' Accepts a single task id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. The Bitrix24 SDK paces outbound calls and retries transient errors automatically — no need to throttle on the agent side. If the task is already in the target status, Bitrix24 returns "action not allowed" — treat as already-applied, do not retry. If the operator names a task in free text instead of an id, resolve via `bitrix24_list_tasks` with a `%title` filter first.'
 
 const DEFAULT_BATCH_CAP = 25
 
