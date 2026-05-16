@@ -72,6 +72,29 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:unit
 
+  integration:
+    name: Integration tests (Bitrix24)
+    runs-on: ubuntu-latest
+    # Forks can't read secrets, so the suite would always skip there — don't
+    # waste a runner. On push (after merge) and same-repo PRs we proceed; if
+    # the secret happens to be unset the step below emits a warning and the
+    # tests skip themselves rather than fail.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      NUXT_BITRIX24_TEST_WEBHOOK_URL: ${{ secrets.BITRIX24_TEST_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Warn when test webhook secret is missing
+        if: env.NUXT_BITRIX24_TEST_WEBHOOK_URL == ''
+        run: echo "::warning::BITRIX24_TEST_WEBHOOK_URL secret is not set — live Bitrix24 checks will be skipped."
+      - run: pnpm test:integration
+
   build:
     name: Build
     runs-on: ubuntu-latest
