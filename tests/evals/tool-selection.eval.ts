@@ -79,6 +79,8 @@ import deferTask from '~/server/mcp/tools/tasks/defer-task'
 // eslint-disable-next-line import/first
 import renewTask from '~/server/mcp/tools/tasks/renew-task'
 // eslint-disable-next-line import/first
+import rateTask from '~/server/mcp/tools/tasks/rate-task'
+// eslint-disable-next-line import/first
 import submitFeedback from '~/server/mcp/tools/meta/submit-feedback'
 
 interface McpToolDef {
@@ -101,6 +103,7 @@ const ALL_TOOLS: McpToolDef[] = [
   disapproveTask as unknown as McpToolDef,
   deferTask as unknown as McpToolDef,
   renewTask as unknown as McpToolDef,
+  rateTask as unknown as McpToolDef,
   submitFeedback as unknown as McpToolDef,
 ]
 
@@ -280,6 +283,23 @@ const CASES: Case[] = [
     input: 'Возобнови задачу 10, она снова в работе.',
     expected: 'bitrix24_renew_task',
     notes: 'Renew a previously closed/deferred task back to Pending.',
+  },
+
+  // ── Task rating (MARK field, P/N/null) ─────────────────────────────────
+  {
+    input: 'Поставь задаче 55 положительную оценку.',
+    expected: 'bitrix24_rate_task',
+    notes: 'Set positive rating — must NOT route to update_task with raw MARK.',
+  },
+  {
+    input: 'Отметь задачу 56 как плохо выполненную.',
+    expected: 'bitrix24_rate_task',
+    notes: 'Negative rating phrased without the word "rating".',
+  },
+  {
+    input: 'Сними оценку с задачи 57.',
+    expected: 'bitrix24_rate_task',
+    notes: 'Clear an existing rating — rating: none.',
   },
 
   // ── Multilingual / non-Latin (i18n probe) ──────────────────────────────

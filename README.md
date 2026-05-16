@@ -59,9 +59,10 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `bitrix24_disapprove_task` | Creator rejects a Supposedly-completed task → Pending (2) for rework. |
 | `bitrix24_defer_task` | Move a task to Deferred (6) — postponed but not closed. |
 | `bitrix24_renew_task` | Reopen a Completed or Deferred task → Pending (2). |
+| `bitrix24_rate_task` | Set or clear the task rating (positive / negative / none — Bitrix24 `MARK` field). |
 | `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 
-13 Bitrix24 + 1 meta = **14 tools total**.
+14 Bitrix24 + 1 meta = **15 tools total**.
 
 ## Connecting Claude
 
