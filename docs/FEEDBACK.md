@@ -106,7 +106,10 @@ Phase 3 will introduce per-tenant credentials; revocation will become surgical a
 | `UPSTREAM` (404) | Wrong repo | "GitHub returned 404 — the configured feedback repo … is missing or unreachable." |
 | `UPSTREAM` (other) | Misc. GitHub error | "GitHub returned <N> when creating the feedback issue." |
 | `UPSTREAM` (malformed) | Success status without `html_url`/`number` | "GitHub returned a malformed issue payload." |
+| `UPSTREAM` (non-JSON) | Success status with non-JSON body (proxy/GHE misconfig) | "GitHub returned a non-JSON response." |
 | `NETWORK` | `fetch` rejection (DNS, TCP, TLS) | "GitHub API is unreachable." |
+| — (pre-GitHub guard) | Quota exhausted | "Feedback rate limit reached. Try again in about <N> seconds. (5 attempts per hour, including failures.)" |
+| — (pre-GitHub guard) | Summary reduces to empty after hostile-char strip | "Feedback summary became empty after sanitisation. Send a summary that contains printable characters." |
 
 Operator logs carry the same string with no further detail — in particular, the bearer token never appears in error messages.
 
