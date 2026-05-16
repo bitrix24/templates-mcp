@@ -41,10 +41,29 @@ export interface LifecycleToolSpec {
   taskIdHint: string
 }
 
+/**
+ * Universal usage notes appended to every lifecycle tool's description, so we
+ * tell the LLM exactly once — across all seven tools — about three things
+ * unit tests can't enforce:
+ *   1. Bulk: the tool operates on one task at a time. If the operator says
+ *      "all my X tasks", the agent must enumerate via `bitrix24_list_tasks`
+ *      first, then loop. Bitrix24 caps at ~2 req/sec, so the agent should
+ *      not parallelise aggressively.
+ *   2. Idempotency: if the task is already in the target status, Bitrix24
+ *      returns "Действие над задачей не разрешено" / "action not allowed".
+ *      This is NOT a real failure — verify current status via
+ *      `bitrix24_list_tasks` before retrying or reporting to the operator.
+ *   3. Task lookup: if the operator names a task in free text instead of an
+ *      id ("ту задачу про склад"), the agent must call `bitrix24_list_tasks`
+ *      with a `%TITLE` filter first to resolve the id.
+ */
+const LIFECYCLE_USAGE_NOTES =
+  ' Operates on one task at a time — for "all my X tasks" call `bitrix24_list_tasks` first, then loop (Bitrix24 caps ~2 req/sec). If the task is already in the target status, Bitrix24 returns "action not allowed" — verify via `bitrix24_list_tasks` before retrying. If the operator names a task in free text instead of an id, resolve it via `bitrix24_list_tasks` with a `%TITLE` filter first.'
+
 export function defineTaskLifecycleTool(spec: LifecycleToolSpec) {
   return defineMcpTool({
     name: spec.name,
-    description: spec.description,
+    description: spec.description + LIFECYCLE_USAGE_NOTES,
     inputSchema: {
       taskId: z.number().int().positive().describe(spec.taskIdHint),
     },

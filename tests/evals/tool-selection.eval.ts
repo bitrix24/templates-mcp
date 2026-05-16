@@ -285,6 +285,40 @@ const CASES: Case[] = [
     notes: 'Renew a previously closed/deferred task back to Pending.',
   },
 
+  // ── Lifecycle, English (i18n probe — descriptions must read for EN ops) ─
+  {
+    input: 'Start working on task 42.',
+    expected: 'bitrix24_start_task',
+    notes: 'EN equivalent of "возьми в работу".',
+  },
+  {
+    input: 'Mark task 15 as done.',
+    expected: 'bitrix24_complete_task',
+    notes: 'EN "done" — must NOT go to rate_task (positive).',
+  },
+  {
+    input: 'Send task 27 back for rework, the document is wrong.',
+    expected: 'bitrix24_disapprove_task',
+    notes: 'EN rejection — must NOT go to update_task.',
+  },
+
+  // ── Disambiguation (verbs with multiple plausible tools) ───────────────
+  {
+    input: 'Прими задачу 12.',
+    expected: 'bitrix24_start_task',
+    notes: '"Прими" without further context = "take into work" (start). NOT approve_task — approve is for accepting completed work under task control.',
+  },
+  {
+    input: 'Закрой задачу 88.',
+    expected: 'bitrix24_complete_task',
+    notes: '"Закрой" = complete, NOT delete. There is no delete tool yet, but the verb must route to complete.',
+  },
+  {
+    input: 'Верни задачу 15 в работу.',
+    expected: 'bitrix24_renew_task',
+    notes: '"Верни в работу" of a closed task = renew. NOT disapprove (which is "верни на доработку" and only applies under task control).',
+  },
+
   // ── Task rating (MARK field, P/N/null) ─────────────────────────────────
   {
     input: 'Поставь задаче 55 положительную оценку.',

@@ -13,6 +13,6 @@ export default defineTaskLifecycleTool({
   verb: 'disapprove',
   pastTense: 'disapproved',
   description:
-    'Reject a Bitrix24 task that the responsible user reported as done — sends it back to Pending (2) for rework. Only the task creator (and only when task control is enabled) can call this. Counterpart: `bitrix24_approve_task`. To leave a reason, post a comment first via `bitrix24_add_task_comment`.',
+    'Reject a Bitrix24 task that the responsible user reported as done — returns it to the responsible user\'s Pending queue (status 2) for rework. NOT a "Rejected" state — Bitrix24 models "send back for rework" as a return to Pending. Only the task creator (and only when task control is enabled) can call this. Counterpart: `bitrix24_approve_task`. **Post the rejection comment FIRST via `bitrix24_add_task_comment`, then call this** — the comment must be visible at the moment of rejection.',
   taskIdHint: 'Task id awaiting approval. Status must be 4 (Supposedly completed).',
 })

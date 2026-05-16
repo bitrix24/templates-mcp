@@ -27,7 +27,7 @@ const RATING_TO_MARK = {
 export default defineMcpTool({
   name: 'bitrix24_rate_task',
   description:
-    'Set or clear the rating on a Bitrix24 task — `positive` (👍, MARK=P), `negative` (👎, MARK=N), or `none` to remove an existing rating. Typically set by the task creator after the task is completed (status 5). Idempotent: re-applying the same rating is a no-op as far as the operator is concerned.',
+    'Set or clear the rating on a Bitrix24 task — `positive` (👍, MARK=P), `negative` (👎, MARK=N), or `none` to remove an existing rating. Typically set by the task creator after the task is completed (status 5). Operates on one task at a time — for bulk ratings call `bitrix24_list_tasks` first, then loop (Bitrix24 caps ~2 req/sec). If the operator names a task in free text instead of an id, resolve it via `bitrix24_list_tasks` with a `%TITLE` filter first.',
   inputSchema: {
     taskId: z.number().int().positive().describe('Task id to rate.'),
     rating: z

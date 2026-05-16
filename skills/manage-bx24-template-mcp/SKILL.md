@@ -27,6 +27,25 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
    4. **N > 1 matches** → ask the operator to disambiguate by **last name** (and `position` / `department` if last names also collide). Only ask for a numeric `id` as the **last resort** if natural-language disambiguation fails.
 7. **Prefer REST API v3** — methods under the `tasks.*` / `crm.*` namespaces with apidocs URLs containing `rest-v3/`. Don't use deprecated v2 methods (`task.*`, `task.item.*`) for new tools. When v3 has no equivalent, document the v2 fallback in the tool's docstring with a link to the apidocs page.
 
+## Code review — persona walk
+
+Static review (lint, typecheck, tests, security checklist) catches **engineering** mistakes. It does NOT catch **product** mistakes — tool descriptions that read fine to a developer but confuse a real operator, missing scenarios, hidden assumptions about who is calling the tool.
+
+After the engineering review pass, **walk through every changed tool description and eval case from the perspective of the personas below**. If the persona can't get their job done, or they can't tell what the tool will do, the description is wrong — even if the code is correct.
+
+Use this pass on any PR that adds, renames, or rewrites an MCP tool description, an inputSchema field's `.describe()`, or an eval case.
+
+| Persona | Lens | Catches |
+|---|---|---|
+| 👷 **Factory director** (RU manufacturing, 200 tasks/day) | Bulk, rate limits, audit trail, idempotency | "operates on one task" missing; double-call returns "not allowed" without explanation; no `closedBy` / `statusChangedBy` in payloads |
+| 👩‍⚕️ **Polyclinic HR head** (RU, non-technical, 55+) | Plain-language descriptions, no jargon | "taskControl" / "MARK" / single-letter codes leaking; rejection flow without comment-ordering note; "Pending" vs "Rejected" terminology |
+| 💼 **Owner-operator** (small business, conversational) | Speaks in names not ids, fuzzy memory | No `find_task` hint when operator names a task in free text; no rate-limit warning when batching; `MARK=P` jargon |
+| 🚀 **DOGE-style auditor** ("Elon walk") | Token cost, file count, abstraction value | 7 tools vs 1 enum; pastTense JSON keys with no signal; bloated README; util/factory naming mismatch |
+| 🏭 **Müller** (DE Mittelstand director, GDPR-disciplined) | Auditability, no ambiguity, no surprise mutations | Tool that mutates without echoing what changed; missing "this clears existing data" warnings (e.g. `MARK=null`, `ACCOMPLICES` replace-not-merge); locale-specific date formats |
+| 🌙 **Fatima** (UAE retail COO, Arabic + English) | RTL display, multilingual descriptions, Hijri-aware deadlines | BBCode that doesn't render RTL cleanly; date examples only in Gregorian; descriptions assuming Cyrillic operator names |
+
+The personas are **not** test users — they're a debugging lens. The PR ships when their reading of every description matches what the code actually does.
+
 ## Feedback mechanism
 
 This MCP server exposes `bx24mcp_submit_feedback`. As an AI agent using or developing this MCP, you may invoke it to report issues, suggestions, or positive observations. Each call creates a GitHub issue in `bitrix24/templates-mcp` with the label `agent-feedback`. See [`feedback.md`](./feedback.md) for the calling guide.
