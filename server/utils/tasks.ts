@@ -87,3 +87,53 @@ export const TASK_STATUS = {
   DEFERRED: 6,
   DECLINED: 7,
 } as const
+
+/**
+ * Normalise a Bitrix24 task filter / select / order key from camelCase
+ * (v3-friendly, what every other task tool in this MCP accepts) into the
+ * legacy `UPPER_SNAKE_CASE` form that `tasks.task.list` actually expects on
+ * the wire. Already-UPPERCASE keys are returned unchanged so back-compat is
+ * preserved for callers that learned the legacy contract from previous
+ * releases.
+ *
+ * Operator prefixes (`!`, `%`, `>=`, `<=`, `>`, `<`) are detected and
+ * forwarded verbatim, so `>=deadline` becomes `>=DEADLINE`, `!status`
+ * becomes `!STATUS`, `%title` becomes `%TITLE`.
+ *
+ * Why this lives here: `tasks.task.list` lives in the `tasks.task.*` v3
+ * namespace but accepts only the legacy UPPER_SNAKE filter contract. The
+ * mutation methods (`tasks.task.start` / `.update` / etc.) take camelCase.
+ * Without this normaliser, LLM-driven workflows would have to switch
+ * contracts mid-flow — friction we can absorb in one place and forget.
+ */
+export function normalizeBitrix24Key(key: string): string {
+  const match = /^([!%<>=]*)(.+)$/.exec(key)
+  if (!match) return key
+  const prefix = match[1] ?? ''
+  const field = match[2] ?? ''
+  if (!field) return key
+  // Already UPPER_SNAKE → keep as-is (no surprise mutation of legacy keys).
+  if (/^[A-Z][A-Z0-9_]*$/.test(field)) return prefix + field
+  // camelCase → UPPER_SNAKE.
+  const snake = field.replace(/([A-Z])/g, '_$1').toUpperCase()
+  return prefix + snake
+}
+
+/** Translate every key of a filter object via {@link normalizeBitrix24Key}. */
+export function normalizeBitrix24Filter(filter: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(filter)) out[normalizeBitrix24Key(k)] = v
+  return out
+}
+
+/** Translate every key of an order map via {@link normalizeBitrix24Key}. */
+export function normalizeBitrix24Order<T>(order: Record<string, T>): Record<string, T> {
+  const out: Record<string, T> = {}
+  for (const [k, v] of Object.entries(order)) out[normalizeBitrix24Key(k)] = v
+  return out
+}
+
+/** Translate every field name in a select array via {@link normalizeBitrix24Key}. */
+export function normalizeBitrix24Select(select: string[]): string[] {
+  return select.map(normalizeBitrix24Key)
+}

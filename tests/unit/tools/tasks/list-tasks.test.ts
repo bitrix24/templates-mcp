@@ -30,7 +30,7 @@ describe('bitrix24_list_tasks', () => {
     callMethod.mockReset()
   })
 
-  it('passes through filter/order/select/start as-is and shapes the response', async () => {
+  it('passes UPPERCASE filter/order/select/start through unchanged (back-compat) and shapes the response', async () => {
     callMethod.mockResolvedValue({
       getData: () => ({
         result: {
@@ -61,6 +61,40 @@ describe('bitrix24_list_tasks', () => {
     expect(payload.total).toBe(17)
     expect(payload.returned).toBe(2)
     expect(payload.tasks.map((t: { id: string }) => t.id)).toEqual(['1', '2'])
+  })
+
+  it('translates camelCase filter/order/select keys to UPPER_SNAKE on the wire (v3-friendly input)', async () => {
+    callMethod.mockResolvedValue({ getData: () => ({ result: { tasks: [], total: 0 } }) })
+
+    await tool.handler({
+      filter: { responsibleId: 5, '!status': 5, '>=deadline': '2026-06-01T00:00:00+03:00', '%title': 'договор' },
+      order: { deadline: 'asc' },
+      select: ['id', 'title', 'responsibleId'],
+      start: 50,
+    })
+
+    expect(callMethod).toHaveBeenCalledWith('tasks.task.list', {
+      filter: {
+        RESPONSIBLE_ID: 5,
+        '!STATUS': 5,
+        '>=DEADLINE': '2026-06-01T00:00:00+03:00',
+        '%TITLE': 'договор',
+      },
+      order: { DEADLINE: 'asc' },
+      select: ['ID', 'TITLE', 'RESPONSIBLE_ID'],
+      start: 50,
+    })
+  })
+
+  it('accepts a mix of camelCase and UPPERCASE keys in the same filter', async () => {
+    callMethod.mockResolvedValue({ getData: () => ({ result: { tasks: [], total: 0 } }) })
+
+    await tool.handler({
+      filter: { responsibleId: 5, STATUS: 3, '%title': 'foo' },
+    })
+
+    const args = callMethod.mock.calls[0]![1] as { filter: Record<string, unknown> }
+    expect(args.filter).toEqual({ RESPONSIBLE_ID: 5, STATUS: 3, '%TITLE': 'foo' })
   })
 
   it('applies sensible defaults when filter/order/select/start are omitted', async () => {

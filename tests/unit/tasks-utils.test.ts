@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { extractTasks, toTaskShort } from '../../server/utils/tasks'
+import {
+  extractTasks,
+  normalizeBitrix24Filter,
+  normalizeBitrix24Key,
+  normalizeBitrix24Order,
+  normalizeBitrix24Select,
+  toTaskShort,
+} from '../../server/utils/tasks'
 
 describe('toTaskShort', () => {
   it('reads camelCase fields (v3 response shape)', () => {
@@ -85,5 +92,74 @@ describe('extractTasks', () => {
     expect(extractTasks(undefined)).toEqual([])
     expect(extractTasks({ otherKey: 'whatever' })).toEqual([])
     expect(extractTasks('plain string')).toEqual([])
+  })
+})
+
+describe('normalizeBitrix24Key', () => {
+  it('passes UPPER_SNAKE keys through unchanged', () => {
+    expect(normalizeBitrix24Key('RESPONSIBLE_ID')).toBe('RESPONSIBLE_ID')
+    expect(normalizeBitrix24Key('TITLE')).toBe('TITLE')
+    expect(normalizeBitrix24Key('STATUS_CHANGED_DATE')).toBe('STATUS_CHANGED_DATE')
+  })
+
+  it('converts plain camelCase to UPPER_SNAKE', () => {
+    expect(normalizeBitrix24Key('responsibleId')).toBe('RESPONSIBLE_ID')
+    expect(normalizeBitrix24Key('title')).toBe('TITLE')
+    expect(normalizeBitrix24Key('createdDate')).toBe('CREATED_DATE')
+    expect(normalizeBitrix24Key('statusChangedDate')).toBe('STATUS_CHANGED_DATE')
+    expect(normalizeBitrix24Key('id')).toBe('ID')
+  })
+
+  it('preserves operator prefixes on camelCase keys', () => {
+    expect(normalizeBitrix24Key('!status')).toBe('!STATUS')
+    expect(normalizeBitrix24Key('>=deadline')).toBe('>=DEADLINE')
+    expect(normalizeBitrix24Key('<=createdDate')).toBe('<=CREATED_DATE')
+    expect(normalizeBitrix24Key('%title')).toBe('%TITLE')
+    expect(normalizeBitrix24Key('>responsibleId')).toBe('>RESPONSIBLE_ID')
+  })
+
+  it('preserves operator prefixes on already-UPPERCASE keys', () => {
+    expect(normalizeBitrix24Key('!STATUS')).toBe('!STATUS')
+    expect(normalizeBitrix24Key('>=DEADLINE')).toBe('>=DEADLINE')
+    expect(normalizeBitrix24Key('%TITLE')).toBe('%TITLE')
+  })
+})
+
+describe('normalizeBitrix24Filter / Order / Select', () => {
+  it('translates every key of a filter object; values untouched', () => {
+    expect(
+      normalizeBitrix24Filter({
+        responsibleId: 5,
+        '%title': 'договор',
+        '>=deadline': '2026-06-01T00:00:00+03:00',
+      }),
+    ).toEqual({
+      RESPONSIBLE_ID: 5,
+      '%TITLE': 'договор',
+      '>=DEADLINE': '2026-06-01T00:00:00+03:00',
+    })
+  })
+
+  it('mixes camelCase and UPPERCASE without collisions or surprise mutation', () => {
+    expect(normalizeBitrix24Filter({ responsibleId: 5, STATUS: 3 })).toEqual({
+      RESPONSIBLE_ID: 5,
+      STATUS: 3,
+    })
+  })
+
+  it('translates order keys but keeps asc/desc values', () => {
+    expect(normalizeBitrix24Order({ deadline: 'asc', createdDate: 'desc' })).toEqual({
+      DEADLINE: 'asc',
+      CREATED_DATE: 'desc',
+    })
+  })
+
+  it('translates select field arrays', () => {
+    expect(normalizeBitrix24Select(['id', 'title', 'responsibleId', 'STATUS'])).toEqual([
+      'ID',
+      'TITLE',
+      'RESPONSIBLE_ID',
+      'STATUS',
+    ])
   })
 })

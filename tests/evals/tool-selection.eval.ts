@@ -320,20 +320,28 @@ const CASES: Case[] = [
   },
 
   // ── Batch / bulk phrasing (issue #7) ───────────────────────────────────
-  // Operators with explicit ids should go straight to the batch-capable tool
-  // — no intermediate list_tasks call. (We deliberately do NOT eval the
-  // "enumerate, then batch" flow because list_tasks uses the v2 legacy
-  // filter contract while lifecycle uses v3 — bridging them inside one
-  // workflow is an API-convention smell, tracked separately.)
+  // Two flavours: explicit-id batches (straight to the mutation tool), and
+  // enumerate-then-batch flows (list_tasks first, with its now-v3-shape
+  // camelCase filter contract).
   {
     input: 'Закрой задачи 5, 7 и 12.',
     expected: 'bitrix24_complete_task',
-    notes: 'Explicit ids → straight to batch complete (taskId as [5,7,12]). Disambiguate against update_task / list_tasks.',
+    notes: 'Explicit ids → straight to batch complete (taskId as [5,7,12]).',
   },
   {
     input: 'Pause tasks 100, 101, 102 — I need to step away.',
     expected: 'bitrix24_pause_task',
     notes: 'EN multi-id bulk pause; goes directly to pause_task in batch mode.',
+  },
+  {
+    input: 'Закрой все мои задачи по корпусу №3.',
+    expected: 'bitrix24_list_tasks',
+    notes: 'No explicit ids → must enumerate first via list_tasks (camelCase filter), then loop complete_task in batch mode.',
+  },
+  {
+    input: 'Approve everything from sprint 14, all looks good.',
+    expected: 'bitrix24_list_tasks',
+    notes: 'EN bulk approval without explicit ids: enumerate via list_tasks first; approve_task batch follows.',
   },
 
   // ── Task rating (MARK field, P/N/null) ─────────────────────────────────

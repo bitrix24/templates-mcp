@@ -2,9 +2,16 @@ import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import { toToolError } from '~/server/utils/errors'
-import { toTaskShort, type TaskShort } from '~/server/utils/tasks'
+import {
+  normalizeBitrix24Filter,
+  normalizeBitrix24Order,
+  normalizeBitrix24Select,
+  toTaskShort,
+  type TaskShort,
+} from '~/server/utils/tasks'
 
-const DEFAULT_SELECT = ['ID', 'TITLE', 'STATUS', 'DEADLINE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'PRIORITY']
+const DEFAULT_SELECT_CAMEL = ['id', 'title', 'status', 'deadline', 'responsibleId', 'createdDate', 'priority']
+const DEFAULT_SELECT_WIRE = normalizeBitrix24Select(DEFAULT_SELECT_CAMEL)
 
 /**
  * Lists Bitrix24 tasks with filter / order / pagination.
@@ -12,31 +19,38 @@ const DEFAULT_SELECT = ['ID', 'TITLE', 'STATUS', 'DEADLINE', 'RESPONSIBLE_ID', '
  * Bitrix24 REST: tasks.task.list
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-list.html
  *
+ * The wire contract for `filter` / `order` / `select` is legacy
+ * `UPPER_SNAKE_CASE` even though the method is namespaced under v3
+ * `tasks.task.*`. We accept v3-friendly camelCase from the LLM (matching
+ * every other task tool in this MCP) and translate to UPPER_SNAKE at the
+ * boundary via `normalizeBitrix24Key`. Legacy UPPERCASE input is passed
+ * through unchanged, so callers that learned the old contract still work.
+ *
  * Page size is fixed at 50 by Bitrix24. Use `start` to paginate
  * (start = (pageNumber - 1) * 50).
  */
 export default defineMcpTool({
   name: 'bitrix24_list_tasks',
   description:
-    'List Bitrix24 tasks. Filter keys are UPPERCASE (e.g. RESPONSIBLE_ID, STATUS, "!STATUS", ">=DEADLINE", GROUP_ID). Page size is fixed at 50 by Bitrix24. Use `start` for pagination ((page-1)*50). Returns a trimmed list — id/title/status/deadline/responsibleId/createdDate.',
+    'List Bitrix24 tasks. Filter / order / select keys are camelCase task fields (`responsibleId`, `status`, `deadline`, `groupId`, …) — same convention as every other task tool. Legacy UPPERCASE keys (`RESPONSIBLE_ID`, `STATUS`, …) are also accepted. Page size is fixed at 50 by Bitrix24; use `start` for pagination ((page-1)*50). Returns a trimmed list — id/title/status/deadline/responsibleId/createdDate.',
   inputSchema: {
     filter: z
       .record(z.string(), z.unknown())
       .optional()
       .describe(
-        'Filter object. Keys are UPPERCASE Bitrix24 task fields with optional operator prefixes: `!` (not equal), `>=` / `<=` (range), `%` (LIKE). Examples: { RESPONSIBLE_ID: 5 } | { "!STATUS": 5 } (not completed) | { ">=DEADLINE": "2026-05-16T00:00:00+03:00" } (deadline today or later) | { "%TITLE": "договор" } (LIKE match on title). Omit for no filter (returns the most recent 50).',
+        'Filter object. Keys are camelCase task fields with optional operator prefixes: `!` (not equal), `>=` / `<=` (range), `%` (LIKE). Examples: { responsibleId: 5 } | { "!status": 5 } (not completed) | { ">=deadline": "2026-05-16T00:00:00+03:00" } (deadline today or later) | { "%title": "договор" } (LIKE match on title). UPPERCASE forms (RESPONSIBLE_ID, "!STATUS", …) also accepted. Omit for no filter (returns the most recent 50).',
       ),
     order: z
       .record(z.string(), z.enum(['asc', 'desc']))
       .optional()
       .describe(
-        'Sort. Keys are UPPERCASE field names (DEADLINE, PRIORITY, CREATED_DATE, …). Default is { ID: "desc" } (newest first).',
+        'Sort. Keys are camelCase field names (`deadline`, `priority`, `createdDate`, …; UPPERCASE accepted). Default is { id: "desc" } (newest first).',
       ),
     select: z
       .array(z.string())
       .optional()
       .describe(
-        `Fields to return. Defaults to ${DEFAULT_SELECT.join(', ')}. Always set this explicitly when you need predictable shape.`,
+        `Fields to return as camelCase names. Defaults to ${DEFAULT_SELECT_CAMEL.join(', ')}. UPPERCASE forms accepted. Always set this explicitly when you need a predictable shape.`,
       ),
     start: z
       .number()
@@ -49,9 +63,9 @@ export default defineMcpTool({
     try {
       const b24 = useBitrix24()
       const response = await b24.callMethod('tasks.task.list', {
-        filter: filter ?? {},
-        order: order ?? { ID: 'desc' },
-        select: select ?? DEFAULT_SELECT,
+        filter: filter ? normalizeBitrix24Filter(filter) : {},
+        order: order ? normalizeBitrix24Order(order) : { ID: 'desc' },
+        select: select ? normalizeBitrix24Select(select) : DEFAULT_SELECT_WIRE,
         start: start ?? 0,
       })
       const data = response.getData()?.result as { tasks?: unknown[]; total?: number } | undefined

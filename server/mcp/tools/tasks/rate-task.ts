@@ -38,7 +38,7 @@ interface BatchEntryResult {
 export default defineMcpTool({
   name: 'bitrix24_rate_task',
   description:
-    'Set or clear the rating on a Bitrix24 task — `positive` (👍, MARK=P), `negative` (👎, MARK=N), or `none` to remove an existing rating. Typically set by the task creator after the task is completed (status 5). Accepts a single task id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. Calls are paced by the client-side rate limiter (~2 req/sec).',
+    'Set or clear the rating on a Bitrix24 task — `positive` (👍, MARK=P), `negative` (👎, MARK=N), or `none` to remove an existing rating. Typically set by the task creator after the task is completed (status 5). Accepts a single task id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. Calls are paced by the client-side rate limiter (~2 req/sec). If the operator names a task in free text instead of an id, resolve via `bitrix24_list_tasks` with a `%title` filter first.',
   inputSchema: {
     taskId: z
       .union([z.number().int().positive(), z.array(z.number().int().positive()).min(1)])
