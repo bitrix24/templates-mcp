@@ -92,7 +92,7 @@ export default defineMcpTool({
         content: [
           {
             type: 'text' as const,
-            text: 'Provide at least one of: query, firstName, lastName, position. Without a filter the API returns all users on the portal — not useful for resolving a name.',
+            text: 'Provide at least one of: query, firstName, secondName, lastName, position. Without a filter the API returns all users on the portal — not useful for resolving a name.',
           },
         ],
       }
@@ -119,10 +119,13 @@ export default defineMcpTool({
       const all = data ?? []
       const users = all.slice(0, cap).map((u) => ({
         id: parseUserId(u.ID),
-        firstName: u.NAME ?? null,
-        lastName: u.LAST_NAME ?? null,
+        // `||` (not `??`) on all string fields: Bitrix24 sometimes returns an
+        // empty string for an unset name part / position / email; an empty
+        // string is semantically "absent", so we map it to null uniformly.
+        firstName: u.NAME || null,
+        lastName: u.LAST_NAME || null,
         secondName: u.SECOND_NAME || null,
-        email: u.EMAIL ?? null,
+        email: u.EMAIL || null,
         position: u.WORK_POSITION || null,
         departmentIds: u.UF_DEPARTMENT ?? [],
         active: u.ACTIVE !== false,
