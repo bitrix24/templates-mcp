@@ -147,7 +147,7 @@ describe('createGithubIssue', () => {
 })
 
 describe('consumeFeedbackQuota', () => {
-  it('allows up to 5 submissions in the sliding window', async () => {
+  it('allows up to 5 attempts in the sliding window', async () => {
     const { consumeFeedbackQuota } = await loadFresh()
     const base = 1_700_000_000_000
 

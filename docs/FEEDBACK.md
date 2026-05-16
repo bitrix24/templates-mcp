@@ -32,6 +32,10 @@ A successful submission creates an issue with:
 
 The repository ships an [issue template](../.github/ISSUE_TEMPLATE/agent_feedback.md) that documents the same shape for humans.
 
+### Label auto-creation
+
+GitHub creates the labels on demand when the token has `issues:write` — the first submission of a new `feedback:<kind>`, `tool:<name>`, or `severity:<level>` combination materialises the corresponding label in the repository, with a default colour assigned by GitHub. Pre-create them via Settings → Labels if you want custom colours; otherwise expect a slow trickle of greys to appear as triage volume grows.
+
 ### Triage
 
 - New `agent-feedback` issues land in the open backlog. Maintainers should review at least weekly.
@@ -67,7 +71,7 @@ Beyond the strip:
 
 ## Operator setup
 
-Two configuration knobs (both env, both server-side):
+One required env variable, one optional override — both server-side:
 
 | Variable | Default | Purpose |
 |---|---|---|

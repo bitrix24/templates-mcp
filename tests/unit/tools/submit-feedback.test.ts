@@ -135,6 +135,22 @@ describe('bx24mcp_submit_feedback', () => {
     expect(/\p{Bidi_Control}|\u200b|\u200c|\u200d|\ufeff/u.test(call.title)).toBe(false)
   })
 
+  it('rejects an all-hostile-chars summary that survives Zod min(5) but reduces to empty', async () => {
+    createGithubIssue.mockResolvedValue({ url: 'https://example/3', number: 3 })
+
+    // Ten characters of hostile-only content — passes Zod min(5).max(200),
+    // post-strip the safeSummary is empty.
+    const RLO = '\u202e'
+    const ZWSP = '\u200b'
+    const allHostile = `${RLO}${ZWSP}${RLO}${ZWSP}${RLO}${ZWSP}${RLO}${ZWSP}${RLO}${ZWSP}`
+
+    const result = await tool.handler({ ...validInput, summary: allHostile })
+
+    expect(createGithubIssue).not.toHaveBeenCalled()
+    expect(result.content[0]!.text).toMatch(/empty after sanitisation/i)
+    expect(result.content[0]!.text).toMatch(/printable characters/i)
+  })
+
   it('returns a rate-limit message instead of calling GitHub when quota is exhausted', async () => {
     consumeFeedbackQuota.mockReturnValue({ ok: false, remaining: 0, resetInSeconds: 1200 })
 

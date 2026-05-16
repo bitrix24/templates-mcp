@@ -45,7 +45,9 @@ export default defineMcpTool({
     severity: z
       .enum(['low', 'medium', 'high'])
       .optional()
-      .describe('How urgent this is. Optional; defaults to unset.'),
+      .describe(
+        'How urgent this is. Optional. Use "low" for nits / cosmetic / confusing description; "medium" when the workflow was disrupted but you recovered; "high" when a tool failed in a way that blocks the user-visible task. Skip entirely if unsure — that signals "no opinion".',
+      ),
   },
   handler: async ({ kind, summary, details, relatedTool, severity }) => {
     const quota = consumeFeedbackQuota()
@@ -63,6 +65,20 @@ export default defineMcpTool({
     // Strip hostile chars BEFORE collapsing whitespace so a bidi RLO can't
     // survive into the GitHub issue title (visible in the repo's issue list).
     const safeSummary = stripHostileChars(summary).replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
+    if (!safeSummary) {
+      // Zod's min(5) check ran before sanitisation, so an input made entirely
+      // of hostile chars (bidi/zero-width/controls) can pass it and reduce to
+      // empty here. The slot is already consumed — same trade-off as a tight
+      // retry loop.
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: 'Feedback summary became empty after sanitisation. Send a summary that contains printable characters.',
+          },
+        ],
+      }
+    }
     const safeDetails = sanitizeDetails(details)
     const safeTool = relatedTool ? sanitizeToolName(relatedTool) : ''
 
