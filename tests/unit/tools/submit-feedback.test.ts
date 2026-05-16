@@ -1,0 +1,142 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as GhFeedback from '../../../server/utils/github-feedback'
+
+vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
+  defineMcpTool: <T,>(spec: T) => spec,
+}))
+
+const createGithubIssue = vi.fn()
+const consumeFeedbackQuota = vi.fn()
+
+vi.mock('~/server/utils/github-feedback', async () => {
+  const actual = await vi.importActual<typeof GhFeedback>(
+    '../../../server/utils/github-feedback',
+  )
+  return {
+    ...actual,
+    createGithubIssue,
+    consumeFeedbackQuota,
+  }
+})
+
+interface ToolContent {
+  content: { type: 'text'; text: string }[]
+}
+
+interface ToolInput {
+  kind: 'positive' | 'issue' | 'suggestion'
+  summary: string
+  details: string
+  relatedTool?: string
+  severity?: 'low' | 'medium' | 'high'
+}
+
+const tool = (await import('../../../server/mcp/tools/meta/submit-feedback')).default as unknown as {
+  // The toolkit's handler signature is (args, extra) — our tests don't supply
+  // `extra`, so the cast is intentionally narrower than the production type.
+  handler: (input: ToolInput) => Promise<ToolContent>
+}
+
+const validInput: ToolInput = {
+  kind: 'issue',
+  summary: 'tool description was ambiguous',
+  details: 'Calling bitrix24_current_user, the description hinted at task creation but no such tool exists.',
+  relatedTool: 'bitrix24_current_user',
+  severity: 'medium',
+}
+
+describe('bx24mcp_submit_feedback', () => {
+  beforeEach(() => {
+    createGithubIssue.mockReset()
+    consumeFeedbackQuota.mockReset()
+    consumeFeedbackQuota.mockReturnValue({ ok: true, remaining: 4, resetInSeconds: 3600 })
+  })
+
+  it('creates a GitHub issue with the expected labels and returns the URL', async () => {
+    createGithubIssue.mockResolvedValue({
+      url: 'https://github.com/bitrix24/templates-mcp/issues/7',
+      number: 7,
+    })
+
+    const result = await tool.handler(validInput)
+
+    expect(createGithubIssue).toHaveBeenCalledOnce()
+    const call = createGithubIssue.mock.calls[0]![0] as {
+      title: string
+      body: string
+      labels: string[]
+    }
+    expect(call.title).toBe('[agent-feedback/issue] tool description was ambiguous')
+    expect(call.labels).toEqual([
+      'agent-feedback',
+      'feedback:issue',
+      'tool:bitrix24_current_user',
+      'severity:medium',
+    ])
+    expect(result.content[0]!.text).toContain('https://github.com/bitrix24/templates-mcp/issues/7')
+    expect(result.content[0]!.text).toContain('#7')
+  })
+
+  it('omits the tool label when relatedTool sanitises to empty', async () => {
+    createGithubIssue.mockResolvedValue({
+      url: 'https://github.com/bitrix24/templates-mcp/issues/8',
+      number: 8,
+    })
+
+    await tool.handler({ ...validInput, relatedTool: '!!!' })
+
+    const call = createGithubIssue.mock.calls[0]![0] as { labels: string[] }
+    expect(call.labels).not.toContain(expect.stringMatching(/^tool:/))
+  })
+
+  it('omits the severity label when severity is absent', async () => {
+    createGithubIssue.mockResolvedValue({
+      url: 'https://github.com/bitrix24/templates-mcp/issues/9',
+      number: 9,
+    })
+
+    const { severity: _omit, ...withoutSeverity } = validInput
+    await tool.handler(withoutSeverity)
+
+    const call = createGithubIssue.mock.calls[0]![0] as { labels: string[] }
+    expect(call.labels).not.toContain(expect.stringMatching(/^severity:/))
+  })
+
+  it('flattens newlines in the summary so the GitHub title stays single-line', async () => {
+    createGithubIssue.mockResolvedValue({
+      url: 'https://example/1',
+      number: 1,
+    })
+
+    await tool.handler({ ...validInput, summary: 'line one\nline two\r\nline three' })
+
+    const call = createGithubIssue.mock.calls[0]![0] as { title: string }
+    expect(call.title).toBe('[agent-feedback/issue] line one line two line three')
+  })
+
+  it('returns a rate-limit message instead of calling GitHub when quota is exhausted', async () => {
+    consumeFeedbackQuota.mockReturnValue({ ok: false, remaining: 0, resetInSeconds: 1200 })
+
+    const result = await tool.handler(validInput)
+
+    expect(createGithubIssue).not.toHaveBeenCalled()
+    expect(result.content[0]!.text).toMatch(/rate limit/i)
+    expect(result.content[0]!.text).toContain('1200')
+  })
+
+  it('returns a friendly message and does not throw on GithubFeedbackError', async () => {
+    const { GithubFeedbackError } = await import('../../../server/utils/github-feedback')
+    createGithubIssue.mockRejectedValue(
+      new GithubFeedbackError('GitHub rejected the feedback token (401/403).', 'UPSTREAM'),
+    )
+
+    const result = await tool.handler(validInput)
+    expect(result.content[0]!.text).toMatch(/Failed to submit feedback/)
+    expect(result.content[0]!.text).toMatch(/Do not retry/)
+  })
+
+  it('re-throws unknown errors so the toolkit can surface them to the agent', async () => {
+    createGithubIssue.mockRejectedValue(new Error('something else broke'))
+    await expect(tool.handler(validInput)).rejects.toThrow('something else broke')
+  })
+})

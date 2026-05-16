@@ -23,7 +23,7 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
 
 ## Feedback mechanism
 
-This MCP server exposes (or will expose) `bx24mcp_submit_feedback`. As an AI agent using or developing this MCP, you may invoke it to report issues, suggestions, or positive observations. Each call creates a GitHub issue in `bitrix24/templates-mcp` with the label `agent-feedback`. Detailed prompt guidance lands in `feedback.md` (work in progress).
+This MCP server exposes `bx24mcp_submit_feedback`. As an AI agent using or developing this MCP, you may invoke it to report issues, suggestions, or positive observations. Each call creates a GitHub issue in `bitrix24/templates-mcp` with the label `agent-feedback`. See [`feedback.md`](./feedback.md) for the calling guide.
 
 ## Commit and PR conventions
 
@@ -89,4 +89,4 @@ If the SDK doesn't expose it, use `b24.callMethod('rest.method.name', params)`. 
 - `testing.md` — running each test layer (lands soon)
 - `deployment.md` — `nginx-proxy`, `proxy-net`, health-check (lands soon)
 - `troubleshooting.md` — known issues (lands soon)
-- `feedback.md` — agent feedback prompts and policy (lands soon)
+- [`feedback.md`](./feedback.md) — agent feedback prompts and policy

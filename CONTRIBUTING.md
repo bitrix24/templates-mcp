@@ -131,7 +131,7 @@ Don't bypass Renovate by hand-editing `package.json` for routine bumps. Coordina
 
 - Bugs: open a [bug_report](./.github/ISSUE_TEMPLATE/bug_report.md) issue.
 - Features: open a [feature_request](./.github/ISSUE_TEMPLATE/feature_request.md) issue.
-- AI-agent feedback (issues found by automated callers): automatic via `bx24mcp_submit_feedback` — see `docs/FEEDBACK.md` *(lands with MVP)*.
+- AI-agent feedback (issues found by automated callers): automatic via `bx24mcp_submit_feedback` — see [`docs/FEEDBACK.md`](./docs/FEEDBACK.md).
 
 ## Code of conduct
 

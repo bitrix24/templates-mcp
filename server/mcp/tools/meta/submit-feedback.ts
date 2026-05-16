@@ -1,0 +1,104 @@
+import { z } from 'zod'
+import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
+import {
+  consumeFeedbackQuota,
+  createGithubIssue,
+  formatIssueBody,
+  GithubFeedbackError,
+  sanitizeDetails,
+  sanitizeToolName,
+} from '~/server/utils/github-feedback'
+
+/**
+ * Meta-tool that lets the AI agent surface its experience with this MCP
+ * server. Each call creates a labelled GitHub issue in
+ * `NUXT_GITHUB_FEEDBACK_REPO` (default: bitrix24/templates-mcp).
+ *
+ * See docs/FEEDBACK.md for when an agent should call this.
+ */
+export default defineMcpTool({
+  name: 'bx24mcp_submit_feedback',
+  description:
+    'Submit feedback about the bx24-template-mcp server itself. Use this to report a problem, suggest an improvement, or share a positive observation about your experience using this MCP. Each call creates a GitHub issue in the project repository. Rate-limited to 5 submissions per hour.',
+  inputSchema: {
+    kind: z
+      .enum(['positive', 'issue', 'suggestion'])
+      .describe('Type of feedback: positive observation, problem report, or improvement suggestion.'),
+    summary: z
+      .string()
+      .min(5)
+      .max(200)
+      .describe('One-line summary that becomes the GitHub issue title.'),
+    details: z
+      .string()
+      .min(10)
+      .describe(
+        'Full details: what happened, what was expected, why it matters. Up to ~10000 characters; longer input is truncated.',
+      ),
+    relatedTool: z
+      .string()
+      .optional()
+      .describe(
+        'Name of the related MCP tool, if applicable (e.g. "bitrix24_current_user"). Becomes a "tool:<name>" label.',
+      ),
+    severity: z
+      .enum(['low', 'medium', 'high'])
+      .optional()
+      .describe('How urgent this is. Optional; defaults to unset.'),
+  },
+  handler: async ({ kind, summary, details, relatedTool, severity }) => {
+    const quota = consumeFeedbackQuota()
+    if (!quota.ok) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Feedback rate limit reached. Try again in about ${quota.resetInSeconds} seconds. (5 submissions per hour.)`,
+          },
+        ],
+      }
+    }
+
+    const safeSummary = summary.replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
+    const safeDetails = sanitizeDetails(details)
+    const safeTool = relatedTool ? sanitizeToolName(relatedTool) : ''
+
+    const labels = ['agent-feedback', `feedback:${kind}`]
+    if (safeTool) labels.push(`tool:${safeTool}`)
+    if (severity) labels.push(`severity:${severity}`)
+
+    try {
+      const issue = await createGithubIssue({
+        title: `[agent-feedback/${kind}] ${safeSummary}`,
+        body: formatIssueBody({
+          kind,
+          details: safeDetails,
+          relatedTool: safeTool || undefined,
+          severity,
+        }),
+        labels,
+      })
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Feedback submitted as ${issue.url} (#${issue.number}). Thank you — this will be triaged by a maintainer.`,
+          },
+        ],
+      }
+    } catch (err) {
+      if (err instanceof GithubFeedbackError) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Failed to submit feedback: ${err.message} The maintainer will need to fix the GitHub integration. Do not retry — your input has not been recorded.`,
+            },
+          ],
+        }
+      }
+      throw err
+    }
+  },
+})

@@ -47,8 +47,9 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | Tool | What it does |
 |---|---|
 | `bitrix24_current_user` | Returns the Bitrix24 user that owns the configured webhook. Useful as a connectivity check. |
+| `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 
-The remaining MVP tools (`bitrix24_create_task`, `bitrix24_list_tasks`, `bitrix24_update_task`, `bitrix24_add_task_comment`, `bx24mcp_submit_feedback`) are queued for upcoming PRs.
+The remaining MVP tools (`bitrix24_create_task`, `bitrix24_list_tasks`, `bitrix24_update_task`, `bitrix24_add_task_comment`) are queued for upcoming PRs.
 
 ## Connecting Claude
 
