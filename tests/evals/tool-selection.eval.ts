@@ -320,19 +320,20 @@ const CASES: Case[] = [
   },
 
   // ── Batch / bulk phrasing (issue #7) ───────────────────────────────────
-  // The model should still pick the same single-tool name; whether to use
-  // taskId: number | number[] is a parameter-shape decision, not a tool
-  // choice. These cases probe that bulk phrasing doesn't trick the model
-  // into picking list_tasks alone (which only reads).
+  // Operators with explicit ids should go straight to the batch-capable tool
+  // — no intermediate list_tasks call. (We deliberately do NOT eval the
+  // "enumerate, then batch" flow because list_tasks uses the v2 legacy
+  // filter contract while lifecycle uses v3 — bridging them inside one
+  // workflow is an API-convention smell, tracked separately.)
   {
-    input: 'Закрой все мои задачи по корпусу №3.',
-    expected: 'bitrix24_list_tasks',
-    notes: 'First call: list to enumerate ids. Follow-up complete_task is out of scope for first-tool-exact-match.',
+    input: 'Закрой задачи 5, 7 и 12.',
+    expected: 'bitrix24_complete_task',
+    notes: 'Explicit ids → straight to batch complete (taskId as [5,7,12]). Disambiguate against update_task / list_tasks.',
   },
   {
-    input: 'Approve everything from sprint 14, all looks good.',
-    expected: 'bitrix24_list_tasks',
-    notes: 'EN bulk approval: must enumerate via list_tasks first; approve_task comes second on the resolved ids.',
+    input: 'Pause tasks 100, 101, 102 — I need to step away.',
+    expected: 'bitrix24_pause_task',
+    notes: 'EN multi-id bulk pause; goes directly to pause_task in batch mode.',
   },
 
   // ── Task rating (MARK field, P/N/null) ─────────────────────────────────

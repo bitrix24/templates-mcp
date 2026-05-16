@@ -43,23 +43,31 @@ export interface LifecycleToolSpec {
 
 /**
  * Universal usage notes appended to every lifecycle tool's description, so we
- * tell the LLM exactly once — across all seven tools — about three things
- * unit tests can't enforce:
+ * tell the LLM exactly once — across all seven tools — about two things unit
+ * tests can't enforce:
+ *
  *   1. Bulk: pass an array of ids to act on many tasks in one call. The
  *      client-side rate limiter (see `rate-limiter.ts`) paces them so we
  *      never hit `QUERY_LIMIT_EXCEEDED`. Default cap 25; set `force: true`
  *      to override (use sparingly — MCP clients may time out around 30 s).
+ *
  *   2. Idempotency: if a task is already in the target status, Bitrix24
  *      returns "Действие над задачей не разрешено" / "action not allowed".
  *      In single-task mode this propagates as a Bitrix24ToolError; in batch
  *      mode that one entry lands in `results` with `ok: false`. NOT a real
- *      failure — verify via `bitrix24_list_tasks` before reporting.
- *   3. Task lookup: if the operator names a task in free text instead of an
- *      id ("ту задачу про склад"), call `bitrix24_list_tasks` with a
- *      `%TITLE` filter first to resolve the id.
+ *      failure — surface it as already-applied rather than retrying.
+ *
+ * We deliberately do NOT recommend `bitrix24_list_tasks` as the source of
+ * ids here. `list_tasks` is v3 by namespace but uses the legacy UPPERCASE
+ * filter shape (`RESPONSIBLE_ID`, `>=DEADLINE`, `%TITLE`); lifecycle
+ * methods use the v3 camelCase contract. Telling the LLM to bridge that
+ * inside a single workflow mixes API conventions. The right operator path
+ * is: ids in the prompt → batch directly; free-text task references → a
+ * dedicated v3-shape lookup tool (issue #6 `bitrix24_find_task`, not yet
+ * shipped).
  */
 const LIFECYCLE_USAGE_NOTES =
-  ' Accepts a single task id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. Calls are paced by the client-side rate limiter (~2 req/sec) so a 25-id batch takes ~12 s. If the task is already in the target status, Bitrix24 returns "action not allowed" — verify via `bitrix24_list_tasks` before retrying. If the operator names a task in free text instead of an id, resolve via `bitrix24_list_tasks` with a `%TITLE` filter first.'
+  ' Accepts a single task id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. Calls are paced by the client-side rate limiter (~2 req/sec) so a 25-id batch takes ~12 s. If the task is already in the target status, Bitrix24 returns "action not allowed" — treat as already-applied, do not retry.'
 
 const DEFAULT_BATCH_CAP = 25
 
