@@ -106,6 +106,16 @@ describe('bitrix24_list_tasks', () => {
     expect(payload).toEqual({ total: 0, returned: 0, tasks: [] })
   })
 
+  it('reports total = null when Bitrix24 omits the field (no silent lie about pagination)', async () => {
+    callMethod.mockResolvedValue({
+      getData: () => ({ result: { tasks: [{ id: 1, title: 'a' }] } }), // no `total`
+    })
+    const result = await tool.handler({})
+    const payload = JSON.parse(result.content[0]!.text)
+    expect(payload.total).toBeNull()
+    expect(payload.returned).toBe(1)
+  })
+
   it('wraps SDK errors into Bitrix24ToolError', async () => {
     callMethod.mockRejectedValue(new Error('connection lost'))
     await expect(tool.handler({})).rejects.toMatchObject({ name: 'Bitrix24ToolError' })

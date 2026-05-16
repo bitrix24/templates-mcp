@@ -98,7 +98,9 @@ const aiSdkTools = Object.fromEntries(
 
 const deepseek = createOpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com',
-  apiKey: process.env.DEEPSEEK_API_KEY ?? 'placeholder-skip-path',
+  // The eval skips when DEEPSEEK_API_KEY is unset (see runner switch below),
+  // so an empty key here is fine — generateText is never reached.
+  apiKey: process.env.DEEPSEEK_API_KEY ?? '',
 })
 
 interface Case {

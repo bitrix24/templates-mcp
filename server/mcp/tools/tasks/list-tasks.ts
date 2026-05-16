@@ -24,7 +24,7 @@ export default defineMcpTool({
       .record(z.string(), z.unknown())
       .optional()
       .describe(
-        'Filter object. Keys are UPPERCASE Bitrix24 task fields. Examples: { RESPONSIBLE_ID: 5 } | { "!STATUS": 5 } (not completed) | { ">=DEADLINE": "2026-05-16T00:00:00+03:00" }. Omit for no filter (returns the most recent 50).',
+        'Filter object. Keys are UPPERCASE Bitrix24 task fields with optional operator prefixes: `!` (not equal), `>=` / `<=` (range), `%` (LIKE). Examples: { RESPONSIBLE_ID: 5 } | { "!STATUS": 5 } (not completed) | { ">=DEADLINE": "2026-05-16T00:00:00+03:00" } (deadline today or later) | { "%TITLE": "договор" } (LIKE match on title). Omit for no filter (returns the most recent 50).',
       ),
     order: z
       .record(z.string(), z.enum(['asc', 'desc']))
@@ -65,7 +65,10 @@ export default defineMcpTool({
             type: 'text' as const,
             text: JSON.stringify(
               {
-                total: data?.total ?? tasks.length,
+                // Bitrix24 normally returns `total` (count across all pages).
+                // Fall back to `null` if the API didn't supply it — reporting
+                // the page-slice length would silently lie about pagination.
+                total: typeof data?.total === 'number' ? data.total : null,
                 returned: tasks.length,
                 tasks,
               },

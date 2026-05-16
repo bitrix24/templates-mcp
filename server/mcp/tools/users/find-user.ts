@@ -14,10 +14,22 @@ import { toToolError } from '~/server/utils/errors'
  * It is intentionally read-only and broad — the agent narrows down by
  * surname or position when the first response has duplicates.
  */
+
+/**
+ * Bitrix24 returns user IDs as numeric strings. Coerce to a real number;
+ * return null for absent or non-numeric values rather than emitting NaN
+ * (which JSON.stringify silently turns into `null` and confuses the agent
+ * about whether the field was missing or malformed).
+ */
+function parseUserId(raw: string | number | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null
+  const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : raw
+  return Number.isFinite(n) ? n : null
+}
 export default defineMcpTool({
   name: 'bitrix24_find_user',
   description:
-    'Find Bitrix24 users by name / patronymic (отчество) / surname / position / department, or a free-text query across all of them. Use this BEFORE any tool that needs a userId — operators speak in names, not numeric ids. Russian users are commonly identified by "Имя Отчество Фамилия" (e.g. "Игорь Сергеевич Шевченко"); the response includes `secondName` (отчество) for disambiguation. If the response has duplicates, narrow down with `lastName` or `secondName` (patronymic) first, then `position`, and ask the operator to confirm. Returns id, name, patronymic, last name, position, and department membership for each match.',
+    'Find Bitrix24 users by name / patronymic / surname / position / department, or a free-text query across all of them. Use this BEFORE any tool that needs a userId — operators speak in names, not numeric ids. The response includes `secondName` (Bitrix24 SECOND_NAME field) — used as a disambiguator especially for Russian-style "Имя Отчество Фамилия"; most non-Russian portals leave this empty. If the response has duplicates, narrow down in this order: `secondName` (patronymic) → `lastName` → `position`, and ask the operator to confirm. Returns id, name, patronymic, last name, position, and department membership for each match.',
   inputSchema: {
     query: z
       .string()
@@ -50,6 +62,21 @@ export default defineMcpTool({
       .describe('Cap on the returned matches. Default 10. Bitrix24 paginates at 50; if you need more, run the search again with a tighter filter.'),
   },
   handler: async ({ query, firstName, secondName, lastName, position, limit }) => {
+    const hasStructured = Boolean(firstName || secondName || lastName || position)
+    if (query && hasStructured) {
+      // Bitrix24's user.search rejects FIND combined with named-field filters,
+      // and silently picking one over the other would surprise the caller.
+      // Surface this as an inline error so the agent can retry cleanly.
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: 'Use either `query` (free-text FIND) OR the structured filters (firstName / secondName / lastName / position), not both.',
+          },
+        ],
+      }
+    }
+
     const filter: Record<string, unknown> = {}
     if (query) {
       filter.FIND = query
@@ -89,8 +116,9 @@ export default defineMcpTool({
         | undefined
 
       const cap = limit ?? 10
-      const users = (data ?? []).slice(0, cap).map((u) => ({
-        id: typeof u.ID === 'string' ? Number.parseInt(u.ID, 10) : (u.ID ?? null),
+      const all = data ?? []
+      const users = all.slice(0, cap).map((u) => ({
+        id: parseUserId(u.ID),
         firstName: u.NAME ?? null,
         lastName: u.LAST_NAME ?? null,
         secondName: u.SECOND_NAME || null,
@@ -101,6 +129,8 @@ export default defineMcpTool({
         isOnline: u.IS_ONLINE === 'Y',
       }))
 
+      const truncated = all.length > users.length
+
       return {
         content: [
           {
@@ -108,8 +138,8 @@ export default defineMcpTool({
             text: JSON.stringify(
               {
                 matches: users.length,
-                truncatedAt: cap,
-                totalReturned: (data ?? []).length,
+                returnedByApi: all.length,
+                ...(truncated ? { truncatedAt: cap } : {}),
                 users,
               },
               null,

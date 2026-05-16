@@ -24,7 +24,7 @@ export default defineMcpTool({
       .record(z.string(), z.unknown())
       .refine((f) => Object.keys(f).length > 0, { message: 'fields must be a non-empty object' })
       .describe(
-        'Fields to change. Keys UPPERCASE: TITLE | DESCRIPTION | DEADLINE (ISO 8601) | RESPONSIBLE_ID (int) | STATUS (int) | PRIORITY ("0"|"1"|"2") | GROUP_ID (int). Example: { "TITLE": "renamed", "DEADLINE": "2026-06-01T18:00:00+03:00" }.',
+        'Fields to change. Keys UPPERCASE: TITLE | DESCRIPTION | DEADLINE (ISO 8601) | RESPONSIBLE_ID (int) | STATUS (int) | PRIORITY ("0"|"1"|"2") | GROUP_ID (int) | ACCOMPLICES / AUDITORS (array of user ids — note these REPLACE the current set, fetch first if you want to add). Example: { "TITLE": "renamed", "DEADLINE": "2026-06-01T18:00:00+03:00", "ACCOMPLICES": [12, 47] }.',
       ),
   },
   handler: async ({ taskId, fields }) => {

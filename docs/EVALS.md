@@ -96,10 +96,19 @@ The CI workflow (`.github/workflows/ci.yml`) does **not** run evals by default â
 
 ## Trace storage
 
-Evalite stores trace data in a local SQLite DB (`evalite/storage/sqlite.js`). This is `.gitignored`. To browse traces interactively:
+Evalite stores trace data in a local SQLite DB. The path is `.gitignored`. To browse traces interactively:
 
 ```bash
-pnpm exec evalite --ui
+pnpm exec evalite serve   # runs the eval suite once and serves the UI on :3006
+pnpm exec evalite watch   # same UI, re-runs on file changes (best for iterating on cases)
 ```
 
-Opens a local UI at `http://localhost:3006` with per-case traces (prompt, tool call, score).
+Available subcommands (run `pnpm exec evalite --help` to see all flags):
+
+| Command | What it does |
+|---|---|
+| `evalite` | Default â€” runs evals once and exits (what `pnpm test:evals` calls). |
+| `evalite run` | Same as the default. |
+| `evalite serve` | Runs once + serves the UI at `http://localhost:3006`. |
+| `evalite watch` | Watch mode: UI + re-runs on file changes. |
+| `evalite export --output dir/` | Static HTML bundle for CI artifacts. |

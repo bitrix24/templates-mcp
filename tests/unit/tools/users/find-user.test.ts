@@ -150,8 +150,32 @@ describe('bitrix24_find_user', () => {
     const result = await tool.handler({ query: 'Иван', limit: 3 })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.matches).toBe(3)
-    expect(payload.truncatedAt).toBe(3)
-    expect(payload.totalReturned).toBe(15)
+    expect(payload.truncatedAt).toBe(3) // present only because we truncated
+    expect(payload.returnedByApi).toBe(15)
+  })
+
+  it('omits `truncatedAt` when no truncation happened', async () => {
+    callMethod.mockResolvedValue({ getData: () => ({ result: [sampleUsers[0]] }) })
+    const result = await tool.handler({ query: 'Игорь', limit: 10 })
+    const payload = JSON.parse(result.content[0]!.text)
+    expect(payload.matches).toBe(1)
+    expect(payload.returnedByApi).toBe(1)
+    expect('truncatedAt' in payload).toBe(false)
+  })
+
+  it('rejects mixing free-text query with structured filters', async () => {
+    const result = await tool.handler({ query: 'Игорь', lastName: 'Шевченко' })
+    expect(callMethod).not.toHaveBeenCalled()
+    expect(result.content[0]!.text).toMatch(/Use either `query`/i)
+  })
+
+  it('returns `id: null` instead of NaN when Bitrix24 emits a non-numeric ID', async () => {
+    callMethod.mockResolvedValue({
+      getData: () => ({ result: [{ ID: 'not-a-number', NAME: 'Strange', LAST_NAME: 'User', ACTIVE: true, UF_DEPARTMENT: [] }] }),
+    })
+    const result = await tool.handler({ query: 'Strange' })
+    const payload = JSON.parse(result.content[0]!.text)
+    expect(payload.users[0].id).toBeNull()
   })
 
   it('wraps SDK errors into Bitrix24ToolError', async () => {
