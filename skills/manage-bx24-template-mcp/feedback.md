@@ -58,7 +58,7 @@ Default to omitting `severity` if you are uncertain — it signals "no opinion".
 
 ## Rate limit
 
-Five submissions per hour, server-wide. If you hit the limit, the tool returns a "rate limit reached" string with the seconds until reset. **Do not retry within the same conversation.** Continue the user's task and, if the problem persists across sessions, the next session can submit.
+Five **attempts** per hour, server-wide — failed calls (auth, network, GitHub 5xx) consume a slot too. If you hit the limit, the tool returns a "rate limit reached" string with the seconds until reset. **Do not retry within the same conversation.** Continue the user's task and, if the problem persists across sessions, the next session can submit.
 
 ## Expected return shape
 
@@ -71,7 +71,7 @@ Feedback submitted as https://github.com/bitrix24/templates-mcp/issues/<N> (#<N>
 Rate-limited:
 
 ```
-Feedback rate limit reached. Try again in about <N> seconds. (5 submissions per hour.)
+Feedback rate limit reached. Try again in about <N> seconds. (5 attempts per hour, including failures.)
 ```
 
 Configuration / GitHub failure:

@@ -172,6 +172,16 @@ const MAX_DETAILS_LENGTH = 10000
 const HOSTILE_CHARS = /[\x00-\x08\x0b\x0c\x0e-\x1f\u202a-\u202e\u2066-\u2069\u200b-\u200d\ufeff]/g
 
 /**
+ * Removes C0 controls, bidi overrides, zero-widths, and BOM from arbitrary
+ * agent-supplied text. Used standalone for the issue title (where Trojan
+ * Source visually flipping the GitHub issue list is the worry) and as a
+ * first step inside `sanitizeDetails` for the body.
+ */
+export function stripHostileChars(input: string): string {
+  return input.replace(HOSTILE_CHARS, '')
+}
+
+/**
  * Trims an agent-supplied free-text field to a maximum length and replaces a
  * narrow set of control characters that would corrupt the issue payload.
  * Markdown is not aggressively escaped — see `formatIssueBody` for how the
@@ -179,18 +189,20 @@ const HOSTILE_CHARS = /[\x00-\x08\x0b\x0c\x0e-\x1f\u202a-\u202e\u2066-\u2069\u20
  * everything as inert text.
  */
 export function sanitizeDetails(input: string): string {
-  const stripped = input.replace(HOSTILE_CHARS, '')
+  const stripped = stripHostileChars(input)
   if (stripped.length <= MAX_DETAILS_LENGTH) return stripped
   return `${stripped.slice(0, MAX_DETAILS_LENGTH)}…\n\n[truncated to ${MAX_DETAILS_LENGTH} characters]`
 }
 
 /**
- * Tool names land in a GitHub label (`tool:<name>`). Labels accept a narrow
- * character set in practice (a-z, 0-9, _, :, -, .); anything outside that
- * is stripped silently to avoid a 422 from the GitHub API.
+ * Tool names land in a GitHub label (`tool:<name>`). GitHub caps label names
+ * at 50 characters; with the 5-char prefix that leaves 45 for the name. We
+ * also reduce to the conservative `a-z0-9_` subset of what labels accept,
+ * so the label never triggers a 422 even if GitHub's allowed character set
+ * narrows in the future.
  */
 export function sanitizeToolName(input: string): string {
-  return input.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 64)
+  return input.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 45)
 }
 
 function escapeHtml(input: string): string {

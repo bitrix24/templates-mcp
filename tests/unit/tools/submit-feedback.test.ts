@@ -116,6 +116,25 @@ describe('bx24mcp_submit_feedback', () => {
     expect(call.title).toBe('[agent-feedback/issue] line one line two line three')
   })
 
+  it('strips hostile chars (bidi/zero-width) from the summary before it lands in the GitHub title', async () => {
+    createGithubIssue.mockResolvedValue({ url: 'https://example/2', number: 2 })
+
+    // \u escapes — embedding the literal chars here would be a Trojan Source
+    // vector against future reviewers.
+    const RLO = '\u202e'
+    const ZWSP = '\u200b'
+    await tool.handler({
+      ...validInput,
+      summary: `feature${RLO} request${ZWSP}: do thing`,
+    })
+
+    const call = createGithubIssue.mock.calls[0]![0] as { title: string }
+    expect(call.title).toBe('[agent-feedback/issue] feature request: do thing')
+    // Use a Unicode property class so the assertion stays readable without
+    // literal hostile chars in the source.
+    expect(/\p{Bidi_Control}|\u200b|\u200c|\u200d|\ufeff/u.test(call.title)).toBe(false)
+  })
+
   it('returns a rate-limit message instead of calling GitHub when quota is exhausted', async () => {
     consumeFeedbackQuota.mockReturnValue({ ok: false, remaining: 0, resetInSeconds: 1200 })
 

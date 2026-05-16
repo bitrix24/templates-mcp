@@ -7,6 +7,7 @@ import {
   GithubFeedbackError,
   sanitizeDetails,
   sanitizeToolName,
+  stripHostileChars,
 } from '~/server/utils/github-feedback'
 
 /**
@@ -19,7 +20,7 @@ import {
 export default defineMcpTool({
   name: 'bx24mcp_submit_feedback',
   description:
-    'Submit feedback about the bx24-template-mcp server itself. Use this to report a problem, suggest an improvement, or share a positive observation about your experience using this MCP. Each call creates a GitHub issue in the project repository. Rate-limited to 5 submissions per hour.',
+    'Submit feedback about the bx24-template-mcp server itself. Use this to report a problem, suggest an improvement, or share a positive observation about your experience using this MCP. Each call creates a GitHub issue in the project repository. Rate-limited to 5 attempts per hour (failed attempts count too).',
   inputSchema: {
     kind: z
       .enum(['positive', 'issue', 'suggestion'])
@@ -53,13 +54,15 @@ export default defineMcpTool({
         content: [
           {
             type: 'text' as const,
-            text: `Feedback rate limit reached. Try again in about ${quota.resetInSeconds} seconds. (5 submissions per hour.)`,
+            text: `Feedback rate limit reached. Try again in about ${quota.resetInSeconds} seconds. (5 attempts per hour, including failures.)`,
           },
         ],
       }
     }
 
-    const safeSummary = summary.replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
+    // Strip hostile chars BEFORE collapsing whitespace so a bidi RLO can't
+    // survive into the GitHub issue title (visible in the repo's issue list).
+    const safeSummary = stripHostileChars(summary).replace(/[\r\n]+/g, ' ').trim().slice(0, 200)
     const safeDetails = sanitizeDetails(details)
     const safeTool = relatedTool ? sanitizeToolName(relatedTool) : ''
 

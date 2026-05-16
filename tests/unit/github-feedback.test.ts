@@ -94,19 +94,27 @@ describe('createGithubIssue', () => {
     })
   })
 
+  it('surfaces 422 (e.g. label-too-long) as UPSTREAM with the status', async () => {
+    mockFetch.mockResolvedValue(errResponse(422))
+    const { createGithubIssue } = await loadFresh()
+
+    await expect(createGithubIssue({ title: 't', body: 'b', labels: [] })).rejects.toMatchObject({
+      code: 'UPSTREAM',
+      message: expect.stringContaining('422') as unknown as string,
+    })
+  })
+
   it('wraps a network failure as NETWORK without exposing the cause', async () => {
     mockFetch.mockRejectedValue(new Error('TCP RST — ghp_test leaked'))
     const { createGithubIssue } = await loadFresh()
 
-    const promise = createGithubIssue({ title: 't', body: 'b', labels: [] })
-    await expect(promise).rejects.toMatchObject({
-      code: 'NETWORK',
-      message: 'GitHub API is unreachable.',
-    })
+    const err = (await createGithubIssue({ title: 't', body: 'b', labels: [] }).catch(
+      (e: unknown) => e,
+    )) as Error & { code: string }
+    expect(err.code).toBe('NETWORK')
+    expect(err.message).toBe('GitHub API is unreachable.')
     // The raw error message contained the token; the wrapper must not.
-    await promise.catch((err: Error) => {
-      expect(err.message).not.toContain('ghp_test')
-    })
+    expect(err.message).not.toContain('ghp_test')
   })
 
   it('throws UPSTREAM on malformed success payload', async () => {
@@ -213,9 +221,27 @@ describe('sanitizeToolName', () => {
     expect(sanitizeToolName('Bitrix24_Create-Task!')).toBe('bitrix24_createtask')
   })
 
-  it('caps length at 64', async () => {
+  it('caps length at 45 so `tool:<name>` fits GitHub\'s 50-char label limit', async () => {
     const { sanitizeToolName } = await loadFresh()
-    expect(sanitizeToolName('a'.repeat(200)).length).toBe(64)
+    const out = sanitizeToolName('a'.repeat(200))
+    expect(out.length).toBe(45)
+    // Verify the assembled label would pass GitHub's validation.
+    expect(`tool:${out}`.length).toBeLessThanOrEqual(50)
+  })
+})
+
+describe('stripHostileChars', () => {
+  it('removes bidi, zero-width and BOM from arbitrary text (used for issue title)', async () => {
+    const { stripHostileChars } = await loadFresh()
+    const RLO = '\u202e'
+    const ZWSP = '\u200b'
+    const BOM = '\ufeff'
+    expect(stripHostileChars(`hello${RLO}${ZWSP}${BOM}world`)).toBe('helloworld')
+  })
+
+  it('passes ordinary text through untouched', async () => {
+    const { stripHostileChars } = await loadFresh()
+    expect(stripHostileChars('plain summary 123')).toBe('plain summary 123')
   })
 })
 

@@ -15,7 +15,7 @@ bx24mcp_submit_feedback({
   kind: 'positive' | 'issue' | 'suggestion',
   summary: string,            // 5..200 chars, becomes the issue title
   details: string,            // 10..10000 chars (longer is truncated)
-  relatedTool?: string,       // sanitised to /^[a-z0-9_]{0,64}$/
+  relatedTool?: string,       // sanitised to /^[a-z0-9_]{0,45}$/ — fits inside `tool:<name>` ≤ 50-char label
   severity?: 'low' | 'medium' | 'high',
 })
 ```
@@ -40,23 +40,30 @@ The repository ships an [issue template](../.github/ISSUE_TEMPLATE/agent_feedbac
 
 ## Rate limit
 
-A sliding-window counter caps submissions at **5 per hour** across the running process. The check is in-memory: a Nitro restart resets it; this is acceptable because the limit is a soft floodgate, not a security boundary.
+A sliding-window counter caps **attempts** at **5 per hour** across the running process. Failed attempts (auth errors, network drops, GitHub 5xx) consume a slot too — this is intentional, it discourages tight retry loops at the cost of being unfair on flaky networks. The check is in-memory: a Nitro restart resets it; this is acceptable because the limit is a soft floodgate, not a security boundary.
 
 When the quota is exhausted, the tool returns:
 
 ```
-Feedback rate limit reached. Try again in about <N> seconds. (5 submissions per hour.)
+Feedback rate limit reached. Try again in about <N> seconds. (5 attempts per hour, including failures.)
 ```
 
 No GitHub call is made. The agent is expected to back off and try later. Phase 3 (multi-tenant) will move this to a per-token shared store.
 
 ## Sanitisation
 
-- `details` over 10 000 characters is truncated with a marker line.
-- C0 control characters (`\x00–\x08`, `\x0b`, `\x0c`, `\x0e–\x1f`) are stripped; tab, LF, CR are preserved.
-- `details` is HTML-escaped and rendered inside `<pre><code>`, so Markdown formatting (`*`, `_`, `` ` ``, `#`, `[`, etc.) and HTML tags from the agent render as literal text. This is the *only* defence — agents are trusted to write reasonable prose, but the framing keeps a careless or hostile call from breaking the issue layout.
+Both `summary` and `details` pass through the same hostile-character strip before any further processing:
+
+- C0 control characters (`\x00–\x08`, `\x0b`, `\x0c`, `\x0e–\x1f`) — preserves tab, LF, CR.
+- Bidi overrides (`U+202A–U+202E`, `U+2066–U+2069`) — Trojan Source defence. Without this, an RLO in a summary would visually flip the GitHub issue title in the repo's issue list.
+- Zero-width characters (`U+200B–U+200D`) and BOM (`U+FEFF`) — invisible smuggling.
+
+Beyond the strip:
+
+- `details` over 10 000 characters is truncated with a `[truncated to 10000 characters]` marker line; the marker stays inside the `<pre><code>` block in the rendered body.
+- `details` is HTML-escaped and rendered inside `<pre><code>`, so Markdown formatting (`*`, `_`, `` ` ``, `#`, `[`, etc.) and HTML tags from the agent render as literal text. This is the *only* defence against Markdown injection — agents are trusted to write reasonable prose, but the framing keeps a careless or hostile call from breaking the issue layout.
 - `summary` is collapsed to a single line (any `\r\n` runs become a single space) and trimmed to 200 characters.
-- `relatedTool` is lowercased and reduced to `[a-z0-9_]{0,64}` before being embedded in a label, to avoid 422s from GitHub's label validation.
+- `relatedTool` is lowercased and reduced to `[a-z0-9_]{0,45}` before being embedded in a `tool:<name>` label — 45 chars is the longest name that fits inside GitHub's 50-character label limit alongside the prefix.
 
 ## Operator setup
 
@@ -64,7 +71,7 @@ Two configuration knobs (both env, both server-side):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NUXT_GITHUB_FEEDBACK_TOKEN` | — (required) | Personal access token or fine-grained token with `public_repo` or `repo` and `issues:write` on `NUXT_GITHUB_FEEDBACK_REPO`. |
+| `NUXT_GITHUB_FEEDBACK_TOKEN` | — (required) | Fine-grained Personal Access Token scoped to `NUXT_GITHUB_FEEDBACK_REPO` only, with **Repository permissions → Issues: Read and write**. Classic PATs work too — use the `public_repo` scope for public repos, `repo` for private — but fine-grained is preferred for least privilege. |
 | `NUXT_GITHUB_FEEDBACK_REPO` | `bitrix24/templates-mcp` | `owner/name` of the issue target. |
 
 If the token is absent, `bx24mcp_submit_feedback` returns a `Failed to submit feedback` message and the operator gets a `GithubFeedbackError` (`NOT_CONFIGURED`) in logs.
