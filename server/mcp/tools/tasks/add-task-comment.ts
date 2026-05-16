@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
 
 /**
  * Adds a comment to a Bitrix24 task.
@@ -38,10 +38,17 @@ export default defineMcpTool({
       if (authorId !== undefined) fields.AUTHOR_ID = authorId
 
       const b24 = useBitrix24()
-      const response = await b24.callMethod('task.commentitem.add', {
-        TASKID: taskId,
-        FIELDS: fields,
+      // task.commentitem.add is a v2 method (the v3 replacement
+      // tasks.task.chat.message.send is queued for a separate migration PR).
+      const response = await b24.actions.v2.call.make<number | string>({
+        method: 'task.commentitem.add',
+        params: { TASKID: taskId, FIELDS: fields },
       })
+      if (!response.isSuccess) {
+        throw new Bitrix24ToolError(
+          response.getErrorMessages().join('; ') || `Failed to comment on Bitrix24 task ${taskId}`,
+        )
+      }
 
       // task.commentitem.add returns { result: <commentId int>, time: {...} }
       const commentId = response.getData()?.result

@@ -1,7 +1,20 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
+
+/** Subset of the `user.search` row shape we surface back to the agent. */
+interface UserSearchRow {
+  ID?: string | number
+  NAME?: string
+  LAST_NAME?: string
+  SECOND_NAME?: string
+  EMAIL?: string
+  WORK_POSITION?: string
+  UF_DEPARTMENT?: number[]
+  ACTIVE?: boolean
+  IS_ONLINE?: string
+}
 
 /**
  * Find Bitrix24 users by name, surname, position, or free-text query.
@@ -100,23 +113,22 @@ export default defineMcpTool({
 
     try {
       const b24 = useBitrix24()
-      const response = await b24.callMethod('user.search', { FILTER: filter, sort: 'ID', order: 'ASC' })
-      const data = response.getData()?.result as
-        | Array<{
-            ID?: string | number
-            NAME?: string
-            LAST_NAME?: string
-            SECOND_NAME?: string
-            EMAIL?: string
-            WORK_POSITION?: string
-            UF_DEPARTMENT?: number[]
-            ACTIVE?: boolean
-            IS_ONLINE?: string
-          }>
-        | undefined
+      // user.search is v2 and uses a non-standard params shape: `sort` and
+      // `order` are scalar strings (not the `Record<string, …>` that v3-shaped
+      // `TypeCallParams.order` documents). Cast keeps the wire payload
+      // honest while the type stays correct for the other 99 % of calls.
+      const response = await b24.actions.v2.call.make<UserSearchRow[]>({
+        method: 'user.search',
+        params: { FILTER: filter, sort: 'ID', order: 'ASC' } as unknown as Record<string, unknown>,
+      })
+      if (!response.isSuccess) {
+        throw new Bitrix24ToolError(
+          response.getErrorMessages().join('; ') || 'Failed to search Bitrix24 users',
+        )
+      }
 
       const cap = limit ?? 10
-      const all = data ?? []
+      const all = response.getData()?.result ?? []
       const users = all.slice(0, cap).map((u) => ({
         id: parseUserId(u.ID),
         // `||` (not `??`) on all string fields: Bitrix24 sometimes returns an

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
 import {
   normalizeBitrix24Filter,
   normalizeBitrix24Order,
@@ -62,13 +62,21 @@ export default defineMcpTool({
   handler: async ({ filter, order, select, start }) => {
     try {
       const b24 = useBitrix24()
-      const response = await b24.callMethod('tasks.task.list', {
-        filter: filter ? normalizeBitrix24Filter(filter) : {},
-        order: order ? normalizeBitrix24Order(order) : { ID: 'desc' },
-        select: select ? normalizeBitrix24Select(select) : DEFAULT_SELECT_WIRE,
-        start: start ?? 0,
+      const response = await b24.actions.v3.call.make<{ tasks?: unknown[]; total?: number }>({
+        method: 'tasks.task.list',
+        params: {
+          filter: filter ? normalizeBitrix24Filter(filter) : {},
+          order: order ? normalizeBitrix24Order(order) : { ID: 'desc' },
+          select: select ? normalizeBitrix24Select(select) : DEFAULT_SELECT_WIRE,
+          start: start ?? 0,
+        },
       })
-      const data = response.getData()?.result as { tasks?: unknown[]; total?: number } | undefined
+      if (!response.isSuccess) {
+        throw new Bitrix24ToolError(
+          response.getErrorMessages().join('; ') || 'Failed to list Bitrix24 tasks',
+        )
+      }
+      const data = response.getData()?.result
       const tasks: TaskShort[] = (data?.tasks ?? [])
         .map(toTaskShort)
         .filter((t): t is TaskShort => t !== null)

@@ -1,13 +1,23 @@
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
 
 /**
  * Returns the Bitrix24 user identity behind the configured incoming webhook.
  * Useful as a smoke test for AI agents to confirm the MCP is wired correctly.
  *
  * Bitrix24 REST: https://apidocs.bitrix24.com/api-reference/user/user-current.html
+ * (v2 namespace — `user.*` predates v3 and has no v3 equivalent.)
  */
+interface CurrentUserResponse {
+  ID?: string | number
+  NAME?: string
+  LAST_NAME?: string
+  EMAIL?: string
+  ADMIN?: boolean
+  SERVER_NAME?: string
+}
+
 export default defineMcpTool({
   name: 'bitrix24_current_user',
   description:
@@ -16,20 +26,16 @@ export default defineMcpTool({
   handler: async () => {
     try {
       const b24 = useBitrix24()
-      const response = await b24.callMethod('user.current', {})
-      // The SDK's callMethod returns AjaxResult<unknown>; user.current's REST
-      // contract is stable and documented (see apidocs link above), so we cast
-      // to the known field shape here rather than redeclaring it everywhere.
-      const user = response.getData()?.result as
-        | {
-            ID?: string | number
-            NAME?: string
-            LAST_NAME?: string
-            EMAIL?: string
-            ADMIN?: boolean
-            SERVER_NAME?: string
-          }
-        | undefined
+      const response = await b24.actions.v2.call.make<CurrentUserResponse>({
+        method: 'user.current',
+        params: {},
+      })
+      if (!response.isSuccess) {
+        throw new Bitrix24ToolError(
+          response.getErrorMessages().join('; ') || 'Failed to fetch current Bitrix24 user',
+        )
+      }
+      const user = response.getData()?.result
 
       if (!user) {
         return {

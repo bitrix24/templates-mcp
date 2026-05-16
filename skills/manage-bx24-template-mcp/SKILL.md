@@ -98,7 +98,7 @@ Patch updates auto-merge when CI is green. Minor (for 1.x+) and major updates re
 8. Run `pnpm lint && pnpm typecheck && pnpm test`.
 9. Commit: `feat(tools): add bitrix24_<name>`.
 
-Full template lands in `adding-tools.md`.
+Full template — including v3 `actions.call.make` usage, `AjaxError` handling, the `useLogger()` recipe, batch-tool conventions, and a copy-paste unit-test skeleton — lives in [`adding-tools.md`](./adding-tools.md).
 
 ## When asked to upgrade dependencies
 
@@ -132,7 +132,7 @@ If the SDK doesn't expose it, use `b24.callMethod('rest.method.name', params)`. 
 ## Where to read more
 
 - `contributing.md` — full commit and PR rules (lands soon)
-- `adding-tools.md` — tool template and examples (lands soon)
+- [`adding-tools.md`](./adding-tools.md) — modern tool template (`actions.v3.call.make`, batch, AjaxError, logger, tests)
 - `testing.md` — running each test layer (lands soon)
 - `deployment.md` — `nginx-proxy`, `proxy-net`, health-check (lands soon)
 - `troubleshooting.md` — known issues (lands soon)

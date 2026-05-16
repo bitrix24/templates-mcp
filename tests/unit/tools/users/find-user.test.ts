@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
   defineMcpTool: <T,>(spec: T) => spec,
 }))
 
-const callMethod = vi.fn()
+const fake = makeFakeBitrix24()
 
 vi.mock('~/server/utils/bitrix24', () => ({
-  useBitrix24: () => ({ callMethod }),
+  useBitrix24: () => fake.b24,
 }))
 
 interface ToolContent {
@@ -53,18 +54,17 @@ const sampleUsers = [
 
 describe('bitrix24_find_user', () => {
   beforeEach(() => {
-    callMethod.mockReset()
+    fake.v2Call.mockReset()
   })
 
   it('uses FIND for a free-text query and returns trimmed user objects', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: sampleUsers }) })
+    fake.v2Call.mockResolvedValue(fakeOk(sampleUsers))
 
     const result = await tool.handler({ query: 'Игорь' })
 
-    expect(callMethod).toHaveBeenCalledWith('user.search', {
-      FILTER: { FIND: 'Игорь' },
-      sort: 'ID',
-      order: 'ASC',
+    expect(fake.v2Call).toHaveBeenCalledWith({
+      method: 'user.search',
+      params: { FILTER: { FIND: 'Игорь' }, sort: 'ID', order: 'ASC' },
     })
 
     const payload = JSON.parse(result.content[0]!.text)
@@ -96,44 +96,41 @@ describe('bitrix24_find_user', () => {
   })
 
   it('maps structured firstName / lastName to NAME / LAST_NAME (no FIND)', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: [sampleUsers[0]] }) })
+    fake.v2Call.mockResolvedValue(fakeOk([sampleUsers[0]]))
 
     await tool.handler({ firstName: 'Игорь', lastName: 'Шевченко' })
 
-    expect(callMethod).toHaveBeenCalledWith('user.search', {
-      FILTER: { NAME: 'Игорь', LAST_NAME: 'Шевченко' },
-      sort: 'ID',
-      order: 'ASC',
+    expect(fake.v2Call).toHaveBeenCalledWith({
+      method: 'user.search',
+      params: { FILTER: { NAME: 'Игорь', LAST_NAME: 'Шевченко' }, sort: 'ID', order: 'ASC' },
     })
   })
 
   it('disambiguates by patronymic via SECOND_NAME', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: [] }) })
+    fake.v2Call.mockResolvedValue(fakeOk([]))
 
     await tool.handler({ firstName: 'Игорь', secondName: 'Сергеевич' })
 
-    expect(callMethod).toHaveBeenCalledWith('user.search', {
-      FILTER: { NAME: 'Игорь', SECOND_NAME: 'Сергеевич' },
-      sort: 'ID',
-      order: 'ASC',
+    expect(fake.v2Call).toHaveBeenCalledWith({
+      method: 'user.search',
+      params: { FILTER: { NAME: 'Игорь', SECOND_NAME: 'Сергеевич' }, sort: 'ID', order: 'ASC' },
     })
   })
 
   it('passes WORK_POSITION when `position` is supplied alone', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: [] }) })
+    fake.v2Call.mockResolvedValue(fakeOk([]))
 
     await tool.handler({ position: 'backend' })
 
-    expect(callMethod).toHaveBeenCalledWith('user.search', {
-      FILTER: { WORK_POSITION: 'backend' },
-      sort: 'ID',
-      order: 'ASC',
+    expect(fake.v2Call).toHaveBeenCalledWith({
+      method: 'user.search',
+      params: { FILTER: { WORK_POSITION: 'backend' }, sort: 'ID', order: 'ASC' },
     })
   })
 
   it('returns a guidance message and does not call Bitrix24 when no filter is supplied', async () => {
     const result = await tool.handler({})
-    expect(callMethod).not.toHaveBeenCalled()
+    expect(fake.v2Call).not.toHaveBeenCalled()
     expect(result.content[0]!.text).toMatch(/Provide at least one of/i)
   })
 
@@ -145,7 +142,7 @@ describe('bitrix24_find_user', () => {
       ACTIVE: true,
       UF_DEPARTMENT: [],
     }))
-    callMethod.mockResolvedValue({ getData: () => ({ result: many }) })
+    fake.v2Call.mockResolvedValue(fakeOk(many))
 
     const result = await tool.handler({ query: 'Иван', limit: 3 })
     const payload = JSON.parse(result.content[0]!.text)
@@ -155,7 +152,7 @@ describe('bitrix24_find_user', () => {
   })
 
   it('omits `truncatedAt` when no truncation happened', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: [sampleUsers[0]] }) })
+    fake.v2Call.mockResolvedValue(fakeOk([sampleUsers[0]]))
     const result = await tool.handler({ query: 'Игорь', limit: 10 })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.matches).toBe(1)
@@ -165,21 +162,21 @@ describe('bitrix24_find_user', () => {
 
   it('rejects mixing free-text query with structured filters', async () => {
     const result = await tool.handler({ query: 'Игорь', lastName: 'Шевченко' })
-    expect(callMethod).not.toHaveBeenCalled()
+    expect(fake.v2Call).not.toHaveBeenCalled()
     expect(result.content[0]!.text).toMatch(/Use either `query`/i)
   })
 
   it('returns `id: null` instead of NaN when Bitrix24 emits a non-numeric ID', async () => {
-    callMethod.mockResolvedValue({
-      getData: () => ({ result: [{ ID: 'not-a-number', NAME: 'Strange', LAST_NAME: 'User', ACTIVE: true, UF_DEPARTMENT: [] }] }),
-    })
+    fake.v2Call.mockResolvedValue(
+      fakeOk([{ ID: 'not-a-number', NAME: 'Strange', LAST_NAME: 'User', ACTIVE: true, UF_DEPARTMENT: [] }]),
+    )
     const result = await tool.handler({ query: 'Strange' })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.users[0].id).toBeNull()
   })
 
   it('wraps SDK errors into Bitrix24ToolError', async () => {
-    callMethod.mockRejectedValue(Object.assign(new Error('OPERATION_TIME_LIMIT'), { code: 'OPERATION_TIME_LIMIT' }))
+    fake.v2Call.mockRejectedValue(Object.assign(new Error('OPERATION_TIME_LIMIT'), { code: 'OPERATION_TIME_LIMIT' }))
     await expect(tool.handler({ query: 'X' })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: 'OPERATION_TIME_LIMIT',

@@ -23,12 +23,20 @@ describeIfConfigured('Bitrix24 webhook — live integration', () => {
     // describe-callback body when the suite is skipped, so doing this at
     // top-level would crash on contributor machines without the webhook set.
     const b24 = B24Hook.fromWebhookUrl(webhookUrl!)
-    const response = await b24.callMethod('user.current', {})
-    const user = response.getData()?.result as
-      | { ID?: string | number, NAME?: string, EMAIL?: string }
-      | undefined
+    const response = await b24.actions.v2.call.make<{
+      ID?: string | number
+      NAME?: string
+      EMAIL?: string
+    }>({
+      method: 'user.current',
+      params: {},
+    })
 
-    expect(user, 'user.current returned an empty payload — the webhook may be revoked').toBeDefined()
+    expect(
+      response.isSuccess,
+      `user.current failed — the webhook may be revoked: ${response.getErrorMessages().join('; ')}`,
+    ).toBe(true)
+    const user = response.getData()?.result
     expect(user?.ID, 'user.current returned a payload without an ID').toBeDefined()
   }, 15_000)
 })

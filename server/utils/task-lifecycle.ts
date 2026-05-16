@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
+import type { AjaxResult } from '@bitrix24/b24jssdk'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
 import { extractTasks } from '~/server/utils/tasks'
@@ -110,7 +111,15 @@ export function defineTaskLifecycleTool(spec: LifecycleToolSpec) {
 async function runOne(spec: LifecycleToolSpec, taskId: number) {
   try {
     const b24 = useBitrix24()
-    const response = await b24.callMethod(spec.method, { taskId })
+    const response = await b24.actions.v3.call.make<{ task: unknown }>({
+      method: spec.method,
+      params: { taskId },
+    })
+    if (!response.isSuccess) {
+      throw new Bitrix24ToolError(
+        response.getErrorMessages().join('; ') || `Failed to ${spec.verb} Bitrix24 task ${taskId}`,
+      )
+    }
     // Lifecycle methods always return a single `{ task: {...} }`. We use
     // `extractTasks` (which also handles list-shaped responses) and take
     // the first element so there's one shared parser across all task
@@ -160,25 +169,48 @@ async function runBatch(spec: LifecycleToolSpec, taskIds: number[], force: boole
   }
 
   const b24 = useBitrix24()
-  const results: BatchEntryResult[] = []
+  let results: BatchEntryResult[]
+  try {
+    // Single HTTP round-trip carrying all N sub-calls. `isHaltOnError: false`
+    // gives us per-id partial-failure semantics; `returnAjaxResult: true` makes
+    // each entry an `AjaxResult<T>` (vs the bare payload), so we can check
+    // `isSuccess` / `getErrorMessages()` per row.
+    const response = await b24.actions.v3.batch.make<{ task: unknown }>({
+      calls: taskIds.map((id) => [spec.method, { taskId: id }]),
+      options: { isHaltOnError: false, returnAjaxResult: true },
+    })
 
-  // Sequential, not parallel: the client-side rate limiter would serialise
-  // them anyway, and sequential ordering preserves a clean results[]
-  // alignment with the input order and predictable error semantics.
-  for (const taskId of taskIds) {
-    try {
-      const response = await b24.callMethod(spec.method, { taskId })
-      const [task] = extractTasks(response.getData()?.result)
-      results.push({
+    if (!response.isSuccess) {
+      throw new Bitrix24ToolError(
+        response.getErrorMessages().join('; ') || `Failed to ${spec.verb} a batch of ${taskIds.length} tasks`,
+      )
+    }
+
+    // The SDK example documents this cast when returnAjaxResult is true:
+    // batch.make typically yields Result<ICallBatchResult<T>>; the flag
+    // upgrades each row to a full AjaxResult<T> instead of the bare payload.
+    const rows = response.getData() as unknown as Array<AjaxResult<{ task: unknown }>>
+
+    results = rows.map((row, index) => {
+      const taskId = taskIds[index]!
+      if (!row.isSuccess) {
+        return {
+          taskId,
+          ok: false,
+          error: row.getErrorMessages().join('; ') || `Failed to ${spec.verb} Bitrix24 task ${taskId}`,
+        }
+      }
+      const [task] = extractTasks(row.getData()?.result)
+      return {
         taskId,
         ok: true,
         status: task?.status ?? null,
         responsibleId: task?.responsibleId ?? null,
-      })
-    } catch (err) {
-      const wrapped = toToolError(err, `Failed to ${spec.verb} Bitrix24 task ${taskId}`)
-      results.push({ taskId, ok: false, error: wrapped.message })
-    }
+      }
+    })
+  } catch (err) {
+    if (err instanceof Bitrix24ToolError) throw err
+    throw toToolError(err, `Failed to ${spec.verb} a batch of ${taskIds.length} task(s)`)
   }
 
   const ok = results.filter((r) => r.ok).length

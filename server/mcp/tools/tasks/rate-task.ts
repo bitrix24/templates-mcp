@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
+import type { AjaxResult } from '@bitrix24/b24jssdk'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
 import { extractTasks } from '~/server/utils/tasks'
@@ -70,7 +71,15 @@ export default defineMcpTool({
 async function runOne(taskId: number, rating: 'positive' | 'negative' | 'none', mark: 'P' | 'N' | null) {
   try {
     const b24 = useBitrix24()
-    const response = await b24.callMethod('tasks.task.update', { taskId, fields: { MARK: mark } })
+    const response = await b24.actions.v3.call.make<{ task: unknown }>({
+      method: 'tasks.task.update',
+      params: { taskId, fields: { MARK: mark } },
+    })
+    if (!response.isSuccess) {
+      throw new Bitrix24ToolError(
+        response.getErrorMessages().join('; ') || `Failed to rate Bitrix24 task ${taskId}`,
+      )
+    }
     const [task] = extractTasks(response.getData()?.result)
 
     if (!task) {
@@ -121,16 +130,34 @@ async function runBatch(
   }
 
   const b24 = useBitrix24()
-  const results: BatchEntryResult[] = []
+  let results: BatchEntryResult[]
+  try {
+    const response = await b24.actions.v3.batch.make<{ task: unknown }>({
+      calls: taskIds.map((id) => ['tasks.task.update', { taskId: id, fields: { MARK: mark } }]),
+      options: { isHaltOnError: false, returnAjaxResult: true },
+    })
 
-  for (const taskId of taskIds) {
-    try {
-      await b24.callMethod('tasks.task.update', { taskId, fields: { MARK: mark } })
-      results.push({ taskId, ok: true })
-    } catch (err) {
-      const wrapped = toToolError(err, `Failed to rate Bitrix24 task ${taskId}`)
-      results.push({ taskId, ok: false, error: wrapped.message })
+    if (!response.isSuccess) {
+      throw new Bitrix24ToolError(
+        response.getErrorMessages().join('; ') || `Failed to rate ${taskIds.length} Bitrix24 task(s)`,
+      )
     }
+
+    const rows = response.getData() as unknown as Array<AjaxResult<{ task: unknown }>>
+    results = rows.map((row, index) => {
+      const taskId = taskIds[index]!
+      if (!row.isSuccess) {
+        return {
+          taskId,
+          ok: false,
+          error: row.getErrorMessages().join('; ') || `Failed to rate Bitrix24 task ${taskId}`,
+        }
+      }
+      return { taskId, ok: true }
+    })
+  } catch (err) {
+    if (err instanceof Bitrix24ToolError) throw err
+    throw toToolError(err, `Failed to rate ${taskIds.length} Bitrix24 task(s)`)
   }
 
   const ok = results.filter((r) => r.ok).length

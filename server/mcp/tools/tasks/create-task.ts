@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
 import { extractTasks } from '~/server/utils/tasks'
 
 /**
@@ -60,7 +60,15 @@ export default defineMcpTool({
       if (auditors?.length) fields.AUDITORS = auditors
 
       const b24 = useBitrix24()
-      const response = await b24.callMethod('tasks.task.add', { fields })
+      const response = await b24.actions.v3.call.make<{ task: unknown }>({
+        method: 'tasks.task.add',
+        params: { fields },
+      })
+      if (!response.isSuccess) {
+        throw new Bitrix24ToolError(
+          response.getErrorMessages().join('; ') || 'Failed to create Bitrix24 task',
+        )
+      }
       const [task] = extractTasks(response.getData()?.result)
 
       if (!task) {
