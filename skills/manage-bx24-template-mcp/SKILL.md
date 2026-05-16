@@ -20,6 +20,12 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
 3. **Every tool must have a unit test** in `tests/unit/tools/<name>.test.ts` with the Bitrix24 client mocked.
 4. **Every Zod field must have `.describe()`** — the LLM reads it at runtime.
 5. **No secrets in code or tests.** Use `useRuntimeConfig()` and `.env`.
+6. **Operators talk in names, not ids.** When a tool needs a `responsibleId` / `userId` / similar, **resolve from a name first** via `bitrix24_find_user`. The decision tree:
+   1. Run `bitrix24_find_user { query: "<name from the operator>" }`.
+   2. **0 matches** → tell the operator nobody matched and ask for a fuller name or last name.
+   3. **1 match** → use that user's `id`. No further questions.
+   4. **N > 1 matches** → ask the operator to disambiguate by **last name** (and `position` / `department` if last names also collide). Only ask for a numeric `id` as the **last resort** if natural-language disambiguation fails.
+7. **Prefer REST API v3** — methods under the `tasks.*` / `crm.*` namespaces with apidocs URLs containing `rest-v3/`. Don't use deprecated v2 methods (`task.*`, `task.item.*`) for new tools. When v3 has no equivalent, document the v2 fallback in the tool's docstring with a link to the apidocs page.
 
 ## Feedback mechanism
 

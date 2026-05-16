@@ -47,13 +47,14 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | Tool | What it does |
 |---|---|
 | `bitrix24_current_user` | Returns the Bitrix24 user that owns the configured webhook. Useful as a connectivity check. |
+| `bitrix24_find_user` | Find users by name / surname / position / department, or free-text. **Call this before any tool that takes a userId** — operators speak in names, not numeric ids. |
 | `bitrix24_create_task` | Create a task — title, responsibleId required; description / deadline / groupId / priority / accomplices / auditors optional. |
 | `bitrix24_list_tasks` | List tasks with filter (`{ RESPONSIBLE_ID, STATUS, "!STATUS", ">=DEADLINE", … }`), order, select, and pagination (page size fixed at 50). |
 | `bitrix24_update_task` | Update an existing task by id with a partial UPPERCASE-keyed `fields` object. |
 | `bitrix24_add_task_comment` | Append a comment to a task (BBCode-friendly). |
 | `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 
-MVP tool set (5 Bitrix24 + 1 meta) is now complete.
+MVP tool set (6 Bitrix24 + 1 meta) is now complete.
 
 ## Connecting Claude
 

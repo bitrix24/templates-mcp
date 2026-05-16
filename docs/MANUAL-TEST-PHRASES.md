@@ -41,85 +41,110 @@ Setup: real Bitrix24 portal webhook in `.env`, connector wired to a chat. For ea
 
 ---
 
-## 1. Basic task creation ✅
+## 1. Resolving people by name — the key UX rule
+
+**Operators talk in names, not numeric ids.** A phrase like "create a task for user 5" is bad UX even though it's technically valid — real operators say "for Igor". The correct chain is:
+
+1. Operator says a name.
+2. LLM calls `bitrix24_find_user { query: "<name>" }`.
+3. **One match** → use that id, proceed silently.
+4. **Many matches** → ask the operator to clarify by **last name** (then position / department). **Never** ask for a numeric id unless natural-language disambiguation fails.
+5. **No match** → ask the operator for a fuller name or surname.
+
+The phrases in section 2 are written with this rule in mind. The LLM's response should chain `find_user` → confirm → `create_task` invisibly when there's a clean match, and surface a disambiguation question only when needed.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 1.1 | Создай задачу "Согласовать договор" и назначь на меня, дедлайн пятница 18:00. | `current_user` → `create_task { title, responsibleId: me, deadline }` |
-| 1.2 | Add a task "Review Q2 report" for user 5, priority high, due in 3 days. | `create_task { title, responsibleId: 5, priority: "2", deadline: <iso> }` |
-| 1.3 | Заведи срочную задачу: позвонить клиенту по сделке X, исполнитель Иван (id 12). | `create_task` with `priority: "2"`, `title` referencing the client / deal in plain text |
-| 1.4 | Поставь задачу проверить логи прода. Без дедлайна, просто "когда руки дойдут". | `create_task` with `title`, NO `deadline`, NO `priority` (or `priority: "0"`) |
-| 1.5 | Назначь задачу группе разработки (groupId 7): «Обновить зависимости». Соисполнители 14 и 15, наблюдатели 3. | `create_task` with `groupId: 7`, `accomplices: [14,15]`, `auditors: [3]` |
-| 1.6 | Создай задачу с длинным описанием в BBCode: заголовок "Спецификация API", деталь — список из 5 пунктов. | `create_task` with multi-paragraph `description` containing `[*]`/`[LIST]` BBCode |
+| 1.1 | Кто такой Игорь? | `find_user { query: "Игорь" }` → if 1 match, report id + last name + position; if many, list them compactly. |
+| 1.2 | Найди бэкенд-разработчиков. | `find_user { position: "backend" }` (or `query: "backend"`). |
+| 1.3 | Сколько Иванов работает у нас? | `find_user { query: "Иван", limit: 50 }` → narrate count. |
+| 1.4 | Поищи в отделе 7. | LLM falls back to `find_user { query: ... }` and notes the department filter isn't supported by the current tool (department-id filter is in `user.search` but we don't expose it yet — flag as wishlist). |
+| 1.5 | Игорь это который тестировщик. | LLM should use `find_user { firstName: "Игорь", position: "тестировщик" }`. |
 
-**Failure cases to probe:**
-- 1.7 — Создай задачу. *(Empty)* → Zod should reject missing `title`; LLM should ask for clarification.
-- 1.8 — Создай задачу "X". *(No responsible)* → LLM should default to calling `current_user` first or ask.
+**Negative:**
+- 1.6 — Покажи всех. → `find_user` with no filter returns the guidance message ("Provide at least one of: …"). LLM should ask for any narrowing input.
+
+## 2. Basic task creation ✅ (name-resolved)
+
+| # | Phrase | What we want to see |
+|---|---|---|
+| 2.1 | Создай задачу «Согласовать договор» и назначь на меня, дедлайн пятница 18:00. | `current_user` → `create_task { title, responsibleId: me, deadline }`. No `find_user` needed — operator referenced themselves. |
+| 2.2 | Заведи задачу "Review Q2 report" для Игоря, приоритет высокий, дедлайн через 3 дня. | `find_user { query: "Игорь" }` → if 1 match, `create_task { title, responsibleId: <resolved>, priority: "2", deadline: <iso> }`. **If multiple Igors**, the LLM should ask "Игорь Шевченко, Игорь Петров — кто из них?" |
+| 2.3 | Срочная задача Ивану из бэкенда: позвонить клиенту. | `find_user { firstName: "Иван", position: "backend" }` → exact match → `create_task` with `priority: "2"`. |
+| 2.4 | Поставь задачу Игорю Шевченко проверить логи прода. Без дедлайна, просто "когда руки дойдут". | `find_user { firstName: "Игорь", lastName: "Шевченко" }` → 1 match → `create_task` with `title`, NO `deadline`. |
+| 2.5 | Назначь задачу группе разработки (groupId 7): «Обновить зависимости». Соисполнители Маша и Иван, наблюдатель — тимлид. | Multi-`find_user` (Маша / Иван / "тимлид"), then `create_task` with `groupId: 7`, `accomplices`, `auditors`. **Likely failure cases to probe:** how does the LLM handle "тимлид" (a role, not a name)? It might `find_user { position: "team lead" }` or ask for clarification. |
+| 2.6 | Создай задачу с длинным описанием в BBCode для Игоря: заголовок "Спецификация API", деталь — список из 5 пунктов. | `find_user` → `create_task` with multi-paragraph `description` containing `[*]`/`[LIST]` BBCode. |
+
+**Failure / clarification cases:**
+- 2.7 — Создай задачу. *(Empty)* → Zod rejects missing `title`; LLM asks for clarification.
+- 2.8 — Создай задачу "X". *(No responsible)* → LLM should ask for the assignee (name, not id).
+- 2.9 — Создай задачу Игорю. *(2 Igors on the portal)* → LLM should reply with the list of Igors and ask which one, **by last name**, not by id.
+- 2.10 — Создай задачу пользователю с id 5. → Explicit id should still work — the tool accepts `responsibleId`. But the LLM should note this is unusual phrasing.
 
 ---
 
-## 2. Listing & finding tasks ✅
+## 3. Listing & finding tasks ✅
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 2.1 | Покажи мои задачи. | `current_user` → `list_tasks { filter: { RESPONSIBLE_ID: me } }` |
-| 2.2 | Show my overdue tasks. | `list_tasks { filter: { RESPONSIBLE_ID: me, "<DEADLINE": <today-iso>, "!STATUS": 5 } }` |
-| 2.3 | Покажи активные задачи Ивана (id 12). | `list_tasks { filter: { RESPONSIBLE_ID: 12, "!STATUS": [5,6,7] } }` — note `!STATUS` as array may need iteration |
-| 2.4 | Все задачи группы 7, отсортированные по дедлайну. | `list_tasks { filter: { GROUP_ID: 7 }, order: { DEADLINE: "asc" } }` |
-| 2.5 | Найди задачи со словом "договор" в названии. | `list_tasks { filter: { "%TITLE": "договор" } }` — `%` prefix is the LIKE operator in Bitrix24 |
-| 2.6 | Сколько у меня задач без дедлайна? | `list_tasks { filter: { RESPONSIBLE_ID: me, "DEADLINE": null }, select: ["ID"] }`, returns `total` |
-| 2.7 | Дай мне последние 10 закрытых задач Марии (id 47). | `list_tasks { filter: { RESPONSIBLE_ID: 47, STATUS: 5 }, order: { CLOSED_DATE: "desc" } }` (Bitrix returns 50/page; LLM may not slice to 10) |
-| 2.8 | Поставленные мной задачи на этой неделе. | `list_tasks { filter: { CREATED_BY: me, ">=CREATED_DATE": <monday-iso> } }` |
+| 3.1 | Покажи мои задачи. | `current_user` → `list_tasks { filter: { RESPONSIBLE_ID: me } }` |
+| 3.2 | Show my overdue tasks. | `list_tasks { filter: { RESPONSIBLE_ID: me, "<DEADLINE": <today-iso>, "!STATUS": 5 } }` |
+| 3.3 | Покажи активные задачи Ивана. | `find_user { query: "Иван" }` → if 1 match, `list_tasks { filter: { RESPONSIBLE_ID: <resolved>, "!STATUS": [5,6,7] } }`. If many Ivans, ask for the last name first. |
+| 3.4 | Все задачи группы 7, отсортированные по дедлайну. | `list_tasks { filter: { GROUP_ID: 7 }, order: { DEADLINE: "asc" } }` |
+| 3.5 | Найди задачи со словом "договор" в названии. | `list_tasks { filter: { "%TITLE": "договор" } }` — `%` prefix is the LIKE operator in Bitrix24 |
+| 3.6 | Сколько у меня задач без дедлайна? | `list_tasks { filter: { RESPONSIBLE_ID: me, "DEADLINE": null }, select: ["ID"] }`, returns `total` |
+| 3.7 | Дай мне последние 10 закрытых задач Марии. | `find_user { query: "Мария" }` → resolve, then `list_tasks { filter: { RESPONSIBLE_ID: <resolved>, STATUS: 5 }, order: { CLOSED_DATE: "desc" } }`. Bitrix returns 50/page; LLM should slice to 10 itself. |
+| 3.8 | Поставленные мной задачи на этой неделе. | `list_tasks { filter: { CREATED_BY: me, ">=CREATED_DATE": <monday-iso> } }` |
 
 **Probe behaviour:**
-- 2.9 — Покажи задачи. *(No filter)* — LLM should call `list_tasks` and clarify after the dump if the user wanted a filter.
-- 2.10 — Сколько у нас всего задач? — `list_tasks { select: ["ID"] }` → read `total`. Easy miss: LLM tries `count` which doesn't exist.
+- 3.9 — Покажи задачи. *(No filter)* — LLM should call `list_tasks` and clarify after the dump if the user wanted a filter.
+- 3.10 — Сколько у нас всего задач? — `list_tasks { select: ["ID"] }` → read `total`. Easy miss: LLM tries `count` which doesn't exist.
 
 ---
 
-## 3. Updating fields ✅
+## 4. Updating fields ✅
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 3.1 | Перенеси дедлайн задачи 123 на понедельник. | `update_task { taskId: 123, fields: { DEADLINE: <next-monday-iso> } }` |
-| 3.2 | Reassign task 123 to user 5. | `update_task { taskId: 123, fields: { RESPONSIBLE_ID: 5 } }` |
-| 3.3 | Переименуй задачу 123 в "Согласовать спецификацию API". | `update_task { taskId: 123, fields: { TITLE: "..." } }` |
-| 3.4 | Снизь приоритет задачи 123 до низкого. | `update_task { taskId: 123, fields: { PRIORITY: "0" } }` |
-| 3.5 | Добавь к задаче 123 ещё двух наблюдателей: 3 и 7. | LLM needs to GET current `AUDITORS` first, then `update_task { fields: { AUDITORS: [...existing, 3, 7] } }`. **Likely failure today** — no `get_task` tool, would need to use `list_tasks` with `ID` filter and `select: ["AUDITORS"]`. |
-| 3.6 | Move task 123 to workgroup 7. | `update_task { taskId: 123, fields: { GROUP_ID: 7 } }` |
+| 4.1 | Перенеси дедлайн задачи 123 на понедельник. | `update_task { taskId: 123, fields: { DEADLINE: <next-monday-iso> } }` |
+| 4.2 | Reassign task 123 to Maria. | `find_user { query: "Maria" }` → resolve → `update_task { taskId: 123, fields: { RESPONSIBLE_ID: <resolved> } }`. |
+| 4.3 | Переименуй задачу 123 в "Согласовать спецификацию API". | `update_task { taskId: 123, fields: { TITLE: "..." } }` |
+| 4.4 | Снизь приоритет задачи 123 до низкого. | `update_task { taskId: 123, fields: { PRIORITY: "0" } }` |
+| 4.5 | Добавь к задаче 123 ещё двух наблюдателей: 3 и 7. | LLM needs to GET current `AUDITORS` first, then `update_task { fields: { AUDITORS: [...existing, 3, 7] } }`. **Likely failure today** — no `get_task` tool, would need to use `list_tasks` with `ID` filter and `select: ["AUDITORS"]`. |
+| 4.6 | Move task 123 to workgroup 7. | `update_task { taskId: 123, fields: { GROUP_ID: 7 } }` |
 
 **Probe behaviour:**
-- 3.7 — Обнови задачу 123. *(No fields)* — Zod refine should reject empty `fields`.
-- 3.8 — Перенеси задачу 123 на завтра в 11. — LLM must compute "tomorrow at 11 in the user's timezone" → ISO 8601. Time-zone hallucinations are common.
+- 4.7 — Обнови задачу 123. *(No fields)* — Zod refine should reject empty `fields`.
+- 4.8 — Перенеси задачу 123 на завтра в 11. — LLM must compute "tomorrow at 11 in the user's timezone" → ISO 8601. Time-zone hallucinations are common.
 
 ---
 
-## 4. Adding comments ✅
+## 5. Adding comments ✅
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 4.1 | Прокомментируй задачу 123: «Согласовано, запускаем». | `add_task_comment { taskId: 123, text: "Согласовано, запускаем" }` |
-| 4.2 | Add a comment to task 123 with BBCode: link to https://example.com labelled "spec". | `add_task_comment` with `text: "[URL=https://example.com]spec[/URL]"` |
-| 4.3 | Напиши под задачей 123: «Ждём ответа от заказчика», и от имени пользователя 47. | `add_task_comment { taskId: 123, text: "...", authorId: 47 }` (may fail with permission error on non-admin webhooks — expected) |
+| 5.1 | Прокомментируй задачу 123: «Согласовано, запускаем». | `add_task_comment { taskId: 123, text: "Согласовано, запускаем" }` |
+| 5.2 | Add a comment to task 123 with BBCode: link to https://example.com labelled "spec". | `add_task_comment` with `text: "[URL=https://example.com]spec[/URL]"` |
+| 5.3 | Напиши под задачей 123: «Ждём ответа от заказчика», и от имени пользователя 47. | `add_task_comment { taskId: 123, text: "...", authorId: 47 }` (may fail with permission error on non-admin webhooks — expected) |
 
 ---
 
-## 5. Reading comments ⏳ — NEEDS NEW TOOL
+## 6. Reading comments ⏳ — NEEDS NEW TOOL
 
 **Status:** no tool today. Bitrix24 REST: `tasks.task.chat.message.list` (new, preferred) or `task.commentitem.getlist` (deprecated but works on classic task card).
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 5.1 | Покажи последние 10 комментариев к задаче 123. | ⏳ `list_task_comments { taskId: 123, limit: 10, order: "desc" }` |
-| 5.2 | Read the latest comments on task 123, skip the service messages about renames and time changes. | ⏳ Same + filter out `messageType: "SERVICE"` / `AUTHOR_ID: 0` (system author) |
-| 5.3 | Что писали в задаче 123 на этой неделе? | ⏳ `list_task_comments { taskId: 123, ">=postDate": <monday> }` |
-| 5.4 | Кто последним прокомментировал задачу 123? | ⏳ `list_task_comments { taskId: 123, limit: 1, order: "desc" }` → read `authorId` |
+| 6.1 | Покажи последние 10 комментариев к задаче 123. | ⏳ `list_task_comments { taskId: 123, limit: 10, order: "desc" }` |
+| 6.2 | Read the latest comments on task 123, skip the service messages about renames and time changes. | ⏳ Same + filter out `messageType: "SERVICE"` / `AUTHOR_ID: 0` (system author) |
+| 6.3 | Что писали в задаче 123 на этой неделе? | ⏳ `list_task_comments { taskId: 123, ">=postDate": <monday> }` |
+| 6.4 | Кто последним прокомментировал задачу 123? | ⏳ `list_task_comments { taskId: 123, limit: 1, order: "desc" }` → read `authorId` |
 
 **Filtering service messages** is essential — Bitrix24 tracks every field change as a system comment ("user X changed title from … to …", "user Y added Z hours"). A read-comments tool that doesn't filter these is noise. The new tool should expose a `includeSystem: boolean` (default `false`).
 
 ---
 
-## 6. Checklists ⏳ — NEEDS NEW TOOLS
+## 7. Checklists ⏳ — NEEDS NEW TOOLS
 
 **Status:** no tools today. Bitrix24 REST: `task.checklistitem.{add,update,complete,renew,delete,getlist,get,moveafteritem}`.
 
@@ -127,13 +152,13 @@ A task has multiple checklists; each checklist contains items. The Bitrix24 REST
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 6.1 | Добавь чек-лист "QA" к задаче 123 с пунктами: «UI», «API», «миграция». | ⏳ Three `add_checklist_item` calls; first is the heading, next three are children with `parentId` |
-| 6.2 | Поставь в чек-листе задачи 123 пункт "QA / API" как выполненный. | ⏳ `list_checklist` to find the item id, then `complete_checklist_item { itemId }` |
-| 6.3 | Покажи прогресс чек-листа задачи 123. | ⏳ `list_checklist_items { taskId: 123 }`, count completed vs total |
-| 6.4 | Добавь в чек-лист задачи 123 ещё один пункт «деплой». | ⏳ `add_checklist_item { taskId: 123, title: "деплой" }` |
-| 6.5 | Сними отметку выполнения с пункта «деплой» в задаче 123. | ⏳ `renew_checklist_item { itemId }` |
-| 6.6 | Удали из чек-листа задачи 123 пункт «UI». | ⏳ `delete_checklist_item { itemId }` |
-| 6.7 | Создай в задаче 123 новый чек-лист "Релизный план" с пунктами: «changelog», «прогон тестов», «тег», «smoke». | ⏳ One header + four children |
+| 7.1 | Добавь чек-лист "QA" к задаче 123 с пунктами: «UI», «API», «миграция». | ⏳ Three `add_checklist_item` calls; first is the heading, next three are children with `parentId` |
+| 7.2 | Поставь в чек-листе задачи 123 пункт "QA / API" как выполненный. | ⏳ `list_checklist` to find the item id, then `complete_checklist_item { itemId }` |
+| 7.3 | Покажи прогресс чек-листа задачи 123. | ⏳ `list_checklist_items { taskId: 123 }`, count completed vs total |
+| 7.4 | Добавь в чек-лист задачи 123 ещё один пункт «деплой». | ⏳ `add_checklist_item { taskId: 123, title: "деплой" }` |
+| 7.5 | Сними отметку выполнения с пункта «деплой» в задаче 123. | ⏳ `renew_checklist_item { itemId }` |
+| 7.6 | Удали из чек-листа задачи 123 пункт «UI». | ⏳ `delete_checklist_item { itemId }` |
+| 7.7 | Создай в задаче 123 новый чек-лист "Релизный план" с пунктами: «changelog», «прогон тестов», «тег», «smoke». | ⏳ One header + four children |
 
 **Proposed tools:**
 - `bitrix24_add_checklist_item` (title, taskId, parentId?, sortIndex?, isImportant?)
@@ -145,20 +170,20 @@ A task has multiple checklists; each checklist contains items. The Bitrix24 REST
 
 ---
 
-## 7. Lifecycle (start / pause / complete / approve / decline / defer / renew) ⏳ — NEEDS NEW TOOLS
+## 8. Lifecycle (start / pause / complete / approve / decline / defer / renew) ⏳ — NEEDS NEW TOOLS
 
 **Status:** no tools today. REST methods: `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}`.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 7.1 | Я взялся за задачу 123. | ⏳ `start_task { taskId: 123 }` |
-| 7.2 | Пауза в задаче 123, отвлекли. | ⏳ `pause_task { taskId: 123 }` |
-| 7.3 | Закрой задачу 123, я её сделал. | ⏳ `complete_task { taskId: 123 }` |
-| 7.4 | Прими работу по задаче 123. | ⏳ `approve_task { taskId: 123 }` |
-| 7.5 | Отправь задачу 123 на доработку, исполнитель сделал не то. | ⏳ `disapprove_task { taskId: 123 }` |
-| 7.6 | Отложи задачу 123, пока без приоритета. | ⏳ `defer_task { taskId: 123 }` |
-| 7.7 | Восстанови задачу 123 из закрытых. | ⏳ `renew_task { taskId: 123 }` |
-| 7.8 | Start working on task 123 and add a comment "поехали". | ⏳ Chain: `start_task` then `add_task_comment` |
+| 8.1 | Я взялся за задачу 123. | ⏳ `start_task { taskId: 123 }` |
+| 8.2 | Пауза в задаче 123, отвлекли. | ⏳ `pause_task { taskId: 123 }` |
+| 8.3 | Закрой задачу 123, я её сделал. | ⏳ `complete_task { taskId: 123 }` |
+| 8.4 | Прими работу по задаче 123. | ⏳ `approve_task { taskId: 123 }` |
+| 8.5 | Отправь задачу 123 на доработку, исполнитель сделал не то. | ⏳ `disapprove_task { taskId: 123 }` |
+| 8.6 | Отложи задачу 123, пока без приоритета. | ⏳ `defer_task { taskId: 123 }` |
+| 8.7 | Восстанови задачу 123 из закрытых. | ⏳ `renew_task { taskId: 123 }` |
+| 8.8 | Start working on task 123 and add a comment "поехали". | ⏳ Chain: `start_task` then `add_task_comment` |
 
 **Proposed tools:** a single thin wrapper per lifecycle action. Each takes `{ taskId }` and returns the resulting status. Names mirror Bitrix24 REST one-to-one for predictability:
 - `bitrix24_start_task`, `bitrix24_pause_task`, `bitrix24_complete_task`, `bitrix24_approve_task`, `bitrix24_disapprove_task`, `bitrix24_defer_task`, `bitrix24_renew_task`
@@ -167,16 +192,16 @@ Alternative: one `bitrix24_change_task_status` with `action: "start"|"pause"|...
 
 ---
 
-## 8. Time tracking ⏳ — NEEDS NEW TOOLS
+## 9. Time tracking ⏳ — NEEDS NEW TOOLS
 
 **Status:** no tools today. REST: `task.elapseditem.{add,getlist,update,delete,get}`.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 8.1 | Запиши в задачу 123 два часа потраченных на ревью кода. | ⏳ `add_elapsed_time { taskId: 123, seconds: 7200, comment: "ревью кода" }` |
-| 8.2 | Log 45 minutes against task 123 — debugging the lockfile mismatch. | ⏳ `add_elapsed_time { taskId: 123, seconds: 2700, comment: "..." }` |
-| 8.3 | Сколько в сумме потрачено на задачу 123? | ⏳ `list_elapsed_time { taskId: 123 }` + agent sums `SECONDS` |
-| 8.4 | Покажи логи времени по задаче 123 с описаниями. | ⏳ `list_elapsed_time { taskId: 123 }` |
+| 9.1 | Запиши в задачу 123 два часа потраченных на ревью кода. | ⏳ `add_elapsed_time { taskId: 123, seconds: 7200, comment: "ревью кода" }` |
+| 9.2 | Log 45 minutes against task 123 — debugging the lockfile mismatch. | ⏳ `add_elapsed_time { taskId: 123, seconds: 2700, comment: "..." }` |
+| 9.3 | Сколько в сумме потрачено на задачу 123? | ⏳ `list_elapsed_time { taskId: 123 }` + agent sums `SECONDS` |
+| 9.4 | Покажи логи времени по задаче 123 с описаниями. | ⏳ `list_elapsed_time { taskId: 123 }` |
 
 **Proposed tools:**
 - `bitrix24_add_elapsed_time` — `{ taskId, seconds, comment?, userId? }`
@@ -184,29 +209,29 @@ Alternative: one `bitrix24_change_task_status` with `action: "start"|"pause"|...
 
 ---
 
-## 9. Subtasks ⏳ — partial support today
+## 10. Subtasks ⏳ — partial support today
 
 **Status:** Subtasks **are** just regular tasks with `PARENT_ID` set — `bitrix24_create_task` supports this **if** we surface the field. Currently our schema doesn't accept `parentId`. **One-line fix** in the next PR.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 9.1 | Создай подзадачу к 123: «Согласовать договор с юристами». | ⏳ `create_task { title: "...", responsibleId: …, parentId: 123 }` — needs `parentId` added to `create_task` schema |
-| 9.2 | Покажи подзадачи задачи 123. | ⏳ `list_tasks { filter: { PARENT_ID: 123 } }` — works today, just needs description hint |
-| 9.3 | Разбей задачу 123 на 3 подзадачи: дизайн, реализация, тесты. | ⏳ Three `create_task` calls with the same `parentId: 123` |
+| 10.1 | Создай подзадачу к 123: «Согласовать договор с юристами». | ⏳ `create_task { title: "...", responsibleId: …, parentId: 123 }` — needs `parentId` added to `create_task` schema |
+| 10.2 | Покажи подзадачи задачи 123. | ⏳ `list_tasks { filter: { PARENT_ID: 123 } }` — works today, just needs description hint |
+| 10.3 | Разбей задачу 123 на 3 подзадачи: дизайн, реализация, тесты. | ⏳ Three `create_task` calls with the same `parentId: 123` |
 
 **Proposed change:** extend `create_task` input with optional `parentId`. No new tool — just a schema bump. `list_tasks` already supports `PARENT_ID` filter via the generic filter object.
 
 ---
 
-## 10. Task linking (dependencies / related) ⏳ — NEEDS NEW TOOLS
+## 11. Task linking (dependencies / related) ⏳ — NEEDS NEW TOOLS
 
 **Status:** partial. Bitrix24 has `DEPENDS_ON` field and `tasks.task.dependence.*` (predecessor/successor). "Related" / "similar" is **not** a Bitrix24 concept — it's a search.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 10.1 | Свяжи задачу 123 с задачей 89, 123 зависит от 89. | ⏳ `add_task_dependency { taskId: 123, dependsOnId: 89 }` |
-| 10.2 | Найди задачи похожие на 123 по названию и тегам. | 🧠 `list_tasks` with `%TITLE` filter using keywords extracted from 123's title; agent does the matching |
-| 10.3 | Список зависимостей задачи 123 — от чего она зависит. | ⏳ `list_task_dependencies { taskId: 123 }` |
+| 11.1 | Свяжи задачу 123 с задачей 89, 123 зависит от 89. | ⏳ `add_task_dependency { taskId: 123, dependsOnId: 89 }` |
+| 11.2 | Найди задачи похожие на 123 по названию и тегам. | 🧠 `list_tasks` with `%TITLE` filter using keywords extracted from 123's title; agent does the matching |
+| 11.3 | Список зависимостей задачи 123 — от чего она зависит. | ⏳ `list_task_dependencies { taskId: 123 }` |
 
 **Proposed tools:**
 - `bitrix24_add_task_dependency` — `{ taskId, dependsOnId }`
@@ -215,36 +240,36 @@ Alternative: one `bitrix24_change_task_status` with `action: "start"|"pause"|...
 
 ---
 
-## 11. Analytics / synthesis 🧠 — NO new tools, watch the composition
+## 12. Analytics / synthesis 🧠 — NO new tools, watch the composition
 
 These phrases are about how the LLM **uses** the tools. No new endpoints — pure orchestration. The right behaviour for each is a sequence of existing tool calls plus LLM reasoning.
 
 | # | Phrase | Expected composition |
 |---|---|---|
-| 11.1 | Опиши состояние задачи 123 и её подзадач первого уровня. | `list_tasks { filter: { ID: 123 } }` (or `get_task` once added) → `list_tasks { filter: { PARENT_ID: 123 } }` → list checklist (⏳) → list recent comments (⏳) → narrative summary |
-| 11.2 | Какие трудозатраты по задаче 123? | `list_elapsed_time` (⏳) → sum, group by user/comment → narrative |
-| 11.3 | Найди 5 похожих задач по теме «миграция БД» и расскажи как их решали. | `list_tasks { filter: { "%TITLE": "миграция", "STATUS": 5 } }` (closed only), take top 5 by `CLOSED_DATE desc` → for each: `list_comments` (⏳) and read `RESULT` if available → narrative |
-| 11.4 | Проанализируй задачу 123 и подзадачи 1-го уровня — дай рекомендации. | All of 11.1 → LLM reasoning about completeness, blockers, time over-run, comment patterns |
-| 11.5 | Что сейчас в работе у команды (group 7)? Кто чем занят? | `list_tasks { filter: { GROUP_ID: 7, STATUS: [2,3] } }` → group by `RESPONSIBLE_ID` → narrative |
-| 11.6 | По задаче 123 — что обсуждалось в комментариях, без служебных? | `list_task_comments { taskId: 123, includeSystem: false }` (⏳) → summarise |
-| 11.7 | Покажи "застрявшие" задачи — без активности > 7 дней, статус «в работе». | `list_tasks { filter: { STATUS: 3, "<ACTIVITY_DATE": <today-7d> } }` |
+| 12.1 | Опиши состояние задачи 123 и её подзадач первого уровня. | `list_tasks { filter: { ID: 123 } }` (or `get_task` once added) → `list_tasks { filter: { PARENT_ID: 123 } }` → list checklist (⏳) → list recent comments (⏳) → narrative summary |
+| 12.2 | Какие трудозатраты по задаче 123? | `list_elapsed_time` (⏳) → sum, group by user/comment → narrative |
+| 12.3 | Найди 5 похожих задач по теме «миграция БД» и расскажи как их решали. | `list_tasks { filter: { "%TITLE": "миграция", "STATUS": 5 } }` (closed only), take top 5 by `CLOSED_DATE desc` → for each: `list_comments` (⏳) and read `RESULT` if available → narrative |
+| 12.4 | Проанализируй задачу 123 и подзадачи 1-го уровня — дай рекомендации. | All of 11.1 → LLM reasoning about completeness, blockers, time over-run, comment patterns |
+| 12.5 | Что сейчас в работе у команды (group 7)? Кто чем занят? | `list_tasks { filter: { GROUP_ID: 7, STATUS: [2,3] } }` → group by `RESPONSIBLE_ID` → narrative |
+| 12.6 | По задаче 123 — что обсуждалось в комментариях, без служебных? | `list_task_comments { taskId: 123, includeSystem: false }` (⏳) → summarise |
+| 12.7 | Покажи "застрявшие" задачи — без активности > 7 дней, статус «в работе». | `list_tasks { filter: { STATUS: 3, "<ACTIVITY_DATE": <today-7d> } }` |
 
 These composite queries are the **real test of the description quality** — the LLM has to figure out a multi-step plan without a tool named "describe-state".
 
 ---
 
-## 12. Negative / fuzz phrases — for any section
+## 13. Negative / fuzz phrases — for any section
 
 Useful to see how robust the LLM and our error messages are.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 12.1 | Удали задачу 123. | LLM should report no `delete_task` tool exists; suggest closing instead (or queue it as future work) |
-| 12.2 | Покажи задачу 999999999. | `list_tasks { filter: { ID: 999999999 } }` returns empty; LLM should report "no task found" |
-| 12.3 | Создай задачу с заголовком из 1000 символов. | Zod truncates / rejects at 255 — LLM should retry or surface the error |
-| 12.4 | Назначь задачу 123 несуществующему пользователю 99999. | Bitrix24 returns ERROR_CORE; our `Bitrix24ToolError` wraps it; LLM should explain |
-| 12.5 | Прокомментируй задачу 123 пустым сообщением. | Zod `.min(1)` should reject |
-| 12.6 | Создай задачу. Тестовая нагрузка. | Empty `title` after parse — Zod rejects |
+| 13.1 | Удали задачу 123. | LLM should report no `delete_task` tool exists; suggest closing instead (or queue it as future work) |
+| 13.2 | Покажи задачу 999999999. | `list_tasks { filter: { ID: 999999999 } }` returns empty; LLM should report "no task found" |
+| 13.3 | Создай задачу с заголовком из 1000 символов. | Zod truncates / rejects at 255 — LLM should retry or surface the error |
+| 13.4 | Назначь задачу 123 несуществующему пользователю 99999. | Bitrix24 returns ERROR_CORE; our `Bitrix24ToolError` wraps it; LLM should explain |
+| 13.5 | Прокомментируй задачу 123 пустым сообщением. | Zod `.min(1)` should reject |
+| 13.6 | Создай задачу. Тестовая нагрузка. | Empty `title` after parse — Zod rejects |
 
 ---
 
@@ -265,7 +290,7 @@ After all of those land, sections 5–10 of this doc flip from ⏳ to ✅ and th
 
 ---
 
-## 13. Multilingual phrases — i18n probe
+## 14. Multilingual phrases — i18n probe
 
 Bitrix24 is sold in 20 locales (per `B24LangList` in `@bitrix24/b24jssdk`). The MCP must work for all of them — agents will receive prompts in the operator's language. This section is the i18n probe.
 
@@ -303,23 +328,25 @@ What we're verifying:
 
 ### Create-task — one phrase per script family
 
+> **Why these say "user 5" instead of a name:** the i18n probe focuses on Unicode round-trip and deadline parsing across locales — keeping the assignee as a numeric id removes the user-resolution variable. In real operator usage every phrase below would name a person ("Игорь", "Ahmet", "佐藤") and the LLM **must** run `find_user` first (see section 1). For a name-resolution multilingual probe, swap "user 5" for "Igor" in each phrase and watch the LLM chain `find_user` → `create_task`.
+
 The same intent — "create a task to approve a contract, assign to user 5, deadline Friday 18:00" — translated into a representative set of locales. Pick the ones matching your test portal's language; cycle through 3–4 for cross-script confidence.
 
 | # | Locale | Phrase |
 |---|---|---|
-| 13.1 | `ru` (Cyrillic) | Создай задачу «Согласовать договор» исполнителю 5, дедлайн пятница 18:00. |
-| 13.2 | `en` (Latin) | Create a task "Approve contract" for user 5, deadline Friday 18:00. |
-| 13.3 | `de` (Latin, ß+umlauts) | Erstelle eine Aufgabe „Vertrag genehmigen" für Benutzer 5, Frist Freitag 18:00. |
-| 13.4 | `br` (Portuguese Brazilian) | Crie uma tarefa «Aprovar contrato» para o usuário 5, prazo sexta-feira às 18h00. |
-| 13.5 | `tr` (Turkish, dotted/dotless i) | Kullanıcı 5 için "Sözleşmeyi onayla" görevi oluştur, son tarih Cuma 18:00. |
-| 13.6 | `vn` (Vietnamese, diacritics) | Tạo nhiệm vụ "Phê duyệt hợp đồng" cho người dùng 5, hạn chót thứ Sáu 18:00. |
-| 13.7 | `ar` (Arabic, RTL) | أنشئ مهمة «الموافقة على العقد» للمستخدم 5، الموعد النهائي يوم الجمعة الساعة 18:00. |
-| 13.8 | `sc` (zh-CN, Han Simplified) | 为用户 5 创建任务"批准合同"，截止时间周五 18:00。 |
-| 13.9 | `tc` (zh-TW, Han Traditional) | 為用戶 5 建立任務「批准合約」，截止時間週五 18:00。 |
-| 13.10 | `ja` (Han + kana) | ユーザー5に「契約を承認」タスクを作成、締切は金曜18:00。 |
-| 13.11 | `in` (Devanagari) | उपयोगकर्ता 5 के लिए कार्य 'अनुबंध स्वीकृत करें' बनाएँ, अंतिम तिथि शुक्रवार 18:00। |
-| 13.12 | `th` (Thai) | สร้างงาน "อนุมัติสัญญา" ให้ผู้ใช้ 5 กำหนดส่งวันศุกร์ 18:00 น. |
-| 13.13 | `id` (Indonesian) | Buat tugas "Setujui kontrak" untuk pengguna 5, batas waktu Jumat 18:00. |
+| 14.1 | `ru` (Cyrillic) | Создай задачу «Согласовать договор» исполнителю 5, дедлайн пятница 18:00. |
+| 14.2 | `en` (Latin) | Create a task "Approve contract" for user 5, deadline Friday 18:00. |
+| 14.3 | `de` (Latin, ß+umlauts) | Erstelle eine Aufgabe „Vertrag genehmigen" für Benutzer 5, Frist Freitag 18:00. |
+| 14.4 | `br` (Portuguese Brazilian) | Crie uma tarefa «Aprovar contrato» para o usuário 5, prazo sexta-feira às 18h00. |
+| 14.5 | `tr` (Turkish, dotted/dotless i) | Kullanıcı 5 için "Sözleşmeyi onayla" görevi oluştur, son tarih Cuma 18:00. |
+| 14.6 | `vn` (Vietnamese, diacritics) | Tạo nhiệm vụ "Phê duyệt hợp đồng" cho người dùng 5, hạn chót thứ Sáu 18:00. |
+| 14.7 | `ar` (Arabic, RTL) | أنشئ مهمة «الموافقة على العقد» للمستخدم 5، الموعد النهائي يوم الجمعة الساعة 18:00. |
+| 14.8 | `sc` (zh-CN, Han Simplified) | 为用户 5 创建任务"批准合同"，截止时间周五 18:00。 |
+| 14.9 | `tc` (zh-TW, Han Traditional) | 為用戶 5 建立任務「批准合約」，截止時間週五 18:00。 |
+| 14.10 | `ja` (Han + kana) | ユーザー5に「契約を承認」タスクを作成、締切は金曜18:00。 |
+| 14.11 | `in` (Devanagari) | उपयोगकर्ता 5 के लिए कार्य 'अनुबंध स्वीकृत करें' बनाएँ, अंतिम तिथि शुक्रवार 18:00। |
+| 14.12 | `th` (Thai) | สร้างงาน "อนุมัติสัญญา" ให้ผู้ใช้ 5 กำหนดส่งวันศุกร์ 18:00 น. |
+| 14.13 | `id` (Indonesian) | Buat tugas "Setujui kontrak" untuk pengguna 5, batas waktu Jumat 18:00. |
 
 **What to look for in the response:**
 
@@ -331,20 +358,20 @@ The same intent — "create a task to approve a contract, assign to user 5, dead
 
 | # | Locale | Phrase |
 |---|---|---|
-| 13.14 | `sc` | 显示我的逾期任务。 |
-| 13.15 | `ar` | اعرض مهامي المتأخرة. |
-| 13.16 | `ja` | 期限切れの私のタスクを表示してください。 |
-| 13.17 | `tr` | Süresi geçmiş görevlerimi göster. |
-| 13.18 | `br` | Mostre minhas tarefas atrasadas. |
+| 14.14 | `sc` | 显示我的逾期任务。 |
+| 14.15 | `ar` | اعرض مهامي المتأخرة. |
+| 14.16 | `ja` | 期限切れの私のタスクを表示してください。 |
+| 14.17 | `tr` | Süresi geçmiş görevlerimi göster. |
+| 14.18 | `br` | Mostre minhas tarefas atrasadas. |
 
 ### Comment in non-Latin script
 
 | # | Locale | Phrase |
 |---|---|---|
-| 13.19 | `ar` | أضف تعليقاً للمهمة 123: «تمت الموافقة، تابع». |
-| 13.20 | `sc` | 给任务 123 添加评论："已批准，继续。" |
-| 13.21 | `ja` | タスク 123 にコメント追加: 「承認しました、進めてください。」 |
-| 13.22 | `hi` (in) | कार्य 123 पर टिप्पणी जोड़ें: «स्वीकृत, आगे बढ़ें।» |
+| 14.19 | `ar` | أضف تعليقاً للمهمة 123: «تمت الموافقة، تابع». |
+| 14.20 | `sc` | 给任务 123 添加评论："已批准，继续。" |
+| 14.21 | `ja` | タスク 123 にコメント追加: 「承認しました、進めてください。」 |
+| 14.22 | `hi` (in) | कार्य 123 पर टिप्पणी जोड़ें: «स्वीकृत, आगे बढ़ें।» |
 
 ### Known i18n traps to watch for
 
