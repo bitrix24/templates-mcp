@@ -1,0 +1,113 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
+  defineMcpTool: <T,>(spec: T) => spec,
+}))
+
+const callMethod = vi.fn()
+
+vi.mock('~/server/utils/bitrix24', () => ({
+  useBitrix24: () => ({ callMethod }),
+}))
+
+interface ToolContent {
+  content: { type: 'text'; text: string }[]
+}
+
+interface ListInput {
+  filter?: Record<string, unknown>
+  order?: Record<string, 'asc' | 'desc'>
+  select?: string[]
+  start?: number
+}
+
+const tool = (await import('../../../../server/mcp/tools/tasks/list-tasks')).default as unknown as {
+  handler: (input: ListInput) => Promise<ToolContent>
+}
+
+describe('bitrix24_list_tasks', () => {
+  beforeEach(() => {
+    callMethod.mockReset()
+  })
+
+  it('passes through filter/order/select/start as-is and shapes the response', async () => {
+    callMethod.mockResolvedValue({
+      getData: () => ({
+        result: {
+          tasks: [
+            { id: '1', title: 'one', status: '2', deadline: null, responsibleId: '5' },
+            { id: '2', title: 'two', status: '3', deadline: '2026-06-01', responsibleId: '5' },
+          ],
+          total: 17,
+        },
+      }),
+    })
+
+    const result = await tool.handler({
+      filter: { RESPONSIBLE_ID: 5, '!STATUS': 5 },
+      order: { DEADLINE: 'asc' },
+      select: ['ID', 'TITLE', 'STATUS', 'DEADLINE', 'RESPONSIBLE_ID'],
+      start: 0,
+    })
+
+    expect(callMethod).toHaveBeenCalledWith('tasks.task.list', {
+      filter: { RESPONSIBLE_ID: 5, '!STATUS': 5 },
+      order: { DEADLINE: 'asc' },
+      select: ['ID', 'TITLE', 'STATUS', 'DEADLINE', 'RESPONSIBLE_ID'],
+      start: 0,
+    })
+
+    const payload = JSON.parse(result.content[0]!.text)
+    expect(payload.total).toBe(17)
+    expect(payload.returned).toBe(2)
+    expect(payload.tasks.map((t: { id: string }) => t.id)).toEqual(['1', '2'])
+  })
+
+  it('applies sensible defaults when filter/order/select/start are omitted', async () => {
+    callMethod.mockResolvedValue({ getData: () => ({ result: { tasks: [], total: 0 } }) })
+    await tool.handler({})
+
+    const args = callMethod.mock.calls[0]![1] as {
+      filter: object
+      order: object
+      select: string[]
+      start: number
+    }
+    expect(args.filter).toEqual({})
+    expect(args.order).toEqual({ ID: 'desc' })
+    expect(args.select).toEqual(['ID', 'TITLE', 'STATUS', 'DEADLINE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'PRIORITY'])
+    expect(args.start).toBe(0)
+  })
+
+  it('drops malformed task entries silently', async () => {
+    callMethod.mockResolvedValue({
+      getData: () => ({
+        result: {
+          tasks: [
+            { id: 1, title: 'ok' },
+            { TITLE: 'no id' },
+            null,
+          ],
+          total: 3,
+        },
+      }),
+    })
+    const result = await tool.handler({})
+    const payload = JSON.parse(result.content[0]!.text)
+    // total comes from server (3), returned reflects what we kept (1)
+    expect(payload.total).toBe(3)
+    expect(payload.returned).toBe(1)
+  })
+
+  it('reports total = 0 / tasks = [] on empty result', async () => {
+    callMethod.mockResolvedValue({ getData: () => ({ result: { tasks: [], total: 0 } }) })
+    const result = await tool.handler({})
+    const payload = JSON.parse(result.content[0]!.text)
+    expect(payload).toEqual({ total: 0, returned: 0, tasks: [] })
+  })
+
+  it('wraps SDK errors into Bitrix24ToolError', async () => {
+    callMethod.mockRejectedValue(new Error('connection lost'))
+    await expect(tool.handler({})).rejects.toMatchObject({ name: 'Bitrix24ToolError' })
+  })
+})
