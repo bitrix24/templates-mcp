@@ -148,12 +148,22 @@ bx24-template-mcp/
 
 ### Phase 2 (starts immediately after MVP, no waiting for feedback)
 
-- Deals: create, list, move through stages
-- Contacts: create, list, search by phone/email
-- Task comments and checklists
-- MCP **resources** for static dictionaries (pipelines, stages, users) with TTL cache
-- MCP **prompts** for typical scenarios
-- Client-side rate limiting on Bitrix24 (2 req/sec, queue)
+Tooling depth on tasks (concrete gap analysis lives in [`docs/MANUAL-TEST-PHRASES.md`](./docs/MANUAL-TEST-PHRASES.md) — phrase pack for verifying each tool against a real LLM):
+
+- **Task lifecycle**: `start`, `pause`, `complete`, `approve`, `disapprove`, `defer`, `renew` — 7 thin wrappers around `tasks.task.*` REST methods.
+- **Checklists**: `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item`. Whole tree is flat with `PARENT_ID` nesting.
+- **Comments — read**: `list_task_comments` over the new `tasks.task.chat.message.list`. Default filter strips service messages ("user X changed Y"). Also migrate the existing write tool from the deprecated `task.commentitem.add` to `tasks.task.chat.message.send`.
+- **Subtasks**: extend `bitrix24_create_task` schema with optional `parentId`. No new tool; `list_tasks` already supports `PARENT_ID` filter via the generic filter object.
+- **Time tracking**: `add_elapsed_time`, `list_elapsed_time` over `task.elapseditem.*`.
+- **Task dependencies**: `add_task_dependency`, `remove_task_dependency`, `list_task_dependencies` over `tasks.task.dependence.*`.
+
+CRM & infrastructure:
+
+- **Deals**: create, list, move through stages
+- **Contacts**: create, list, search by phone/email
+- **MCP resources** for static dictionaries (pipelines, stages, users) with TTL cache
+- **MCP prompts** for typical scenarios
+- **Client-side rate limiting** on Bitrix24 (2 req/sec, queue)
 
 ### Phase 3
 
