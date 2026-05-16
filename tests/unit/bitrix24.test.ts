@@ -22,9 +22,7 @@ async function loadFresh(): Promise<typeof Bitrix24Module> {
 describe('useBitrix24', () => {
   beforeEach(() => {
     fromWebhookUrl.mockReset()
-    // Returns an object with a `callMethod` so the wrapper in
-    // `useBitrix24` has something to bind / overwrite.
-    fromWebhookUrl.mockImplementation((url: string) => ({ url, callMethod: vi.fn() }))
+    fromWebhookUrl.mockImplementation((url: string) => ({ url }))
     runtimeConfig.bitrix24WebhookUrl = ''
   })
 
@@ -47,22 +45,5 @@ describe('useBitrix24', () => {
     const second = useBitrix24()
     expect(first).toBe(second)
     expect(fromWebhookUrl).toHaveBeenCalledTimes(1)
-  })
-
-  it('routes every callMethod through the rate limiter before delegating to the SDK', async () => {
-    runtimeConfig.bitrix24WebhookUrl = 'https://example.bitrix24.ru/rest/1/abc/'
-    const sdkCallMethod = vi.fn().mockResolvedValue('ok')
-    fromWebhookUrl.mockImplementation(() => ({ callMethod: sdkCallMethod }))
-
-    const { useBitrix24 } = await loadFresh()
-    const client = useBitrix24()
-
-    const result = await client.callMethod('tasks.task.start', { taskId: 1 })
-
-    expect(result).toBe('ok')
-    expect(sdkCallMethod).toHaveBeenCalledWith('tasks.task.start', { taskId: 1 })
-    // We can't directly observe the rate-limiter promise from here, but the
-    // dedicated suite `tests/unit/rate-limiter.test.ts` exercises its
-    // back-pressure / FIFO semantics with fake timers.
   })
 })

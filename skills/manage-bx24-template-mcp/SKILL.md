@@ -26,6 +26,7 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
    3. **1 match** → use that user's `id`. No further questions.
    4. **N > 1 matches** → ask the operator to disambiguate by **last name** (and `position` / `department` if last names also collide). Only ask for a numeric `id` as the **last resort** if natural-language disambiguation fails.
 7. **Prefer REST API v3** — methods under the `tasks.*` / `crm.*` namespaces with apidocs URLs containing `rest-v3/`. Don't use deprecated v2 methods (`task.*`, `task.item.*`) for new tools. When v3 has no equivalent, document the v2 fallback in the tool's docstring with a link to the apidocs page.
+8. **Read the SDK before reinventing it.** Before adding rate limiting, retry, logging, request inspection, or any other cross-cutting concern around Bitrix24 calls — read `@bitrix24/b24jssdk`'s `dist/esm/index.d.ts` for first-class extension points. The SDK already ships a leaky-bucket `RestrictionManager` (configured via `setRestrictionManagerParams` + `ParamsFactory`), retry with adaptive delay, structured logging (`setLogger`), and `getStats()`. Monkey-patching is forbidden (see "Things you must NOT do" below). When in doubt, search the `.d.ts` for `set*` / `add*` / `on*` / `*Manager` / `*Factory` — that's where the hooks live.
 
 ## Code review — persona walk
 
@@ -126,6 +127,7 @@ If the SDK doesn't expose it, use `b24.callMethod('rest.method.name', params)`. 
 - Rebase or force-push to an open PR.
 - Mix unrelated changes in a single PR.
 - Disable Renovate or merge over its objections.
+- **Monkey-patch the Bitrix24 SDK.** Don't reassign or wrap methods on `B24Hook` / `B24OAuth` / `RestrictionManager` / any other SDK class. The SDK ships first-class extension points (`setRestrictionManagerParams`, `setLogger`, `ParamsFactory.{getDefault,getEnterprise,getBatchProcessing,getRealtime,fromTariffPlan}`, `getStats`, `getRestrictionManagerParams`). If the feature you need looks like "intercept every call", read the SDK's `.d.ts` for the right hook BEFORE writing a wrapper — patches are a smell that says "I didn't find the right API", not "the API doesn't exist".
 
 ## Where to read more
 

@@ -163,7 +163,7 @@ CRM & infrastructure:
 - **Contacts**: create, list, search by phone/email
 - **MCP resources** for static dictionaries (pipelines, stages, users) with TTL cache
 - **MCP prompts** for typical scenarios
-- **Client-side rate limiting** on Bitrix24 (2 req/sec, queue) — ✅ **shipped via issue #7 Phase A** (token-bucket in `useBitrix24()`, applies to every tool, batch input on the 8 mutation tools via Phase B).
+- **Client-side rate limiting** on Bitrix24 (2 req/sec, queue) — ✅ **provided by the SDK out of the box**. `@bitrix24/b24jssdk` 1.1+ ships `RestrictionManager` (leaky-bucket, default burst 50 / drain 2 req/sec, adaptive delay on `QUERY_LIMIT_EXCEEDED`, retry × 3 with backoff), initialised in `B24Hook`'s constructor via `ParamsFactory.getDefault()`. No project-side wrapper. Configurable per-tariff (`getEnterprise`, `getBatchProcessing`, `getRealtime`). Issue #7's bulk input on the 8 mutation tools shipped on top of this.
 
 ### Phase 3
 
