@@ -46,10 +46,12 @@ Setup: real Bitrix24 portal webhook in `.env`, connector wired to a chat. For ea
 **Operators talk in names, not numeric ids.** A phrase like "create a task for user 5" is bad UX even though it's technically valid — real operators say "for Igor". The correct chain is:
 
 1. Operator says a name.
-2. LLM calls `bitrix24_find_user { query: "<name>" }`.
+2. LLM calls `bitrix24_find_user { query: "<name>" }` (or structured `firstName`/`secondName`/`lastName`/`position`).
 3. **One match** → use that id, proceed silently.
-4. **Many matches** → ask the operator to clarify by **last name** (then position / department). **Never** ask for a numeric id unless natural-language disambiguation fails.
-5. **No match** → ask the operator for a fuller name or surname.
+4. **Many matches** → ask the operator to clarify, in this order: **patronymic (отчество)** if Russian-style, then **lastName**, then **position** / **department**. **Never** ask for a numeric id unless natural-language disambiguation fails entirely.
+5. **No match** → ask the operator for a fuller name, patronymic, or surname.
+
+Patronymic priority is deliberate: in Russian business culture an "Игорь Сергеевич" identifies the person more naturally than "Игорь с id 12" or even "Игорь Шевченко". The `find_user` tool returns `secondName` (Bitrix24 `SECOND_NAME`) for exactly this reason.
 
 The phrases in section 2 are written with this rule in mind. The LLM's response should chain `find_user` → confirm → `create_task` invisibly when there's a clean match, and surface a disambiguation question only when needed.
 
@@ -60,9 +62,12 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 | 1.3 | Сколько Иванов работает у нас? | `find_user { query: "Иван", limit: 50 }` → narrate count. |
 | 1.4 | Поищи в отделе 7. | LLM falls back to `find_user { query: ... }` and notes the department filter isn't supported by the current tool (department-id filter is in `user.search` but we don't expose it yet — flag as wishlist). |
 | 1.5 | Игорь это который тестировщик. | LLM should use `find_user { firstName: "Игорь", position: "тестировщик" }`. |
+| 1.6 | Поручи задачу Игорю Сергеевичу. | LLM should use `find_user { firstName: "Игорь", secondName: "Сергеевич" }` — patronymic is the natural Russian disambiguator before lastName. |
+| 1.7 | Игорь Алексеевич Шевченко — что он делает? | `find_user { query: "Игорь Алексеевич Шевченко" }` (free-text covers all three name parts), or structured `{ firstName, secondName, lastName }`. |
+| 1.8 | Найди Сергеевну в бухгалтерии. | `find_user { secondName: "Сергеевна", position: "бухгалтер" }` — feminine patronymic. |
 
 **Negative:**
-- 1.6 — Покажи всех. → `find_user` with no filter returns the guidance message ("Provide at least one of: …"). LLM should ask for any narrowing input.
+- 1.9 — Покажи всех. → `find_user` with no filter returns the guidance message ("Provide at least one of: …"). LLM should ask for any narrowing input.
 
 ## 2. Basic task creation ✅ (name-resolved)
 
@@ -72,6 +77,7 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 | 2.2 | Заведи задачу "Review Q2 report" для Игоря, приоритет высокий, дедлайн через 3 дня. | `find_user { query: "Игорь" }` → if 1 match, `create_task { title, responsibleId: <resolved>, priority: "2", deadline: <iso> }`. **If multiple Igors**, the LLM should ask "Игорь Шевченко, Игорь Петров — кто из них?" |
 | 2.3 | Срочная задача Ивану из бэкенда: позвонить клиенту. | `find_user { firstName: "Иван", position: "backend" }` → exact match → `create_task` with `priority: "2"`. |
 | 2.4 | Поставь задачу Игорю Шевченко проверить логи прода. Без дедлайна, просто "когда руки дойдут". | `find_user { firstName: "Игорь", lastName: "Шевченко" }` → 1 match → `create_task` with `title`, NO `deadline`. |
+| 2.4.1 | Поручи Игорю Сергеевичу написать changelog к релизу 0.2.0. | `find_user { firstName: "Игорь", secondName: "Сергеевич" }` — patronymic-first disambiguation. → `create_task`. |
 | 2.5 | Назначь задачу группе разработки (groupId 7): «Обновить зависимости». Соисполнители Маша и Иван, наблюдатель — тимлид. | Multi-`find_user` (Маша / Иван / "тимлид"), then `create_task` with `groupId: 7`, `accomplices`, `auditors`. **Likely failure cases to probe:** how does the LLM handle "тимлид" (a role, not a name)? It might `find_user { position: "team lead" }` or ask for clarification. |
 | 2.6 | Создай задачу с длинным описанием в BBCode для Игоря: заголовок "Спецификация API", деталь — список из 5 пунктов. | `find_user` → `create_task` with multi-paragraph `description` containing `[*]`/`[LIST]` BBCode. |
 

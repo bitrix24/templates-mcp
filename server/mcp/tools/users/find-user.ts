@@ -17,22 +17,26 @@ import { toToolError } from '~/server/utils/errors'
 export default defineMcpTool({
   name: 'bitrix24_find_user',
   description:
-    'Find Bitrix24 users by name / surname / position / department, or a free-text query across all of them. Use this BEFORE any tool that needs a userId — operators speak in names, not numeric ids. If the response has duplicates, narrow down with `lastName` or `position` and ask the operator to confirm. Returns id, name, last name, position, and department membership for each match.',
+    'Find Bitrix24 users by name / patronymic (отчество) / surname / position / department, or a free-text query across all of them. Use this BEFORE any tool that needs a userId — operators speak in names, not numeric ids. Russian users are commonly identified by "Имя Отчество Фамилия" (e.g. "Игорь Сергеевич Шевченко"); the response includes `secondName` (отчество) for disambiguation. If the response has duplicates, narrow down with `lastName` or `secondName` (patronymic) first, then `position`, and ask the operator to confirm. Returns id, name, patronymic, last name, position, and department membership for each match.',
   inputSchema: {
     query: z
       .string()
       .optional()
       .describe(
-        'Free-text query — matched across first name, last name, position, and department name. Use this when the operator gives a single name like "Igor" or "Igor Shevchenko". Mutually exclusive with the structured filters below — supply either `query` OR a combination of `firstName`/`lastName`/`position`.',
+        'Free-text query — matched across first name, last name, position, and department name. Bitrix24 full-text typically also covers patronymic (otchestvo). Use this when the operator gives a full or partial name string like "Igor", "Игорь Сергеевич", or "Шевченко Игорь". Mutually exclusive with the structured filters below — supply either `query` OR a combination of `firstName`/`lastName`/`secondName`/`position`.',
       ),
     firstName: z
       .string()
       .optional()
       .describe('Exact-or-prefix match on first name. Use together with `lastName` when the operator gives "Имя Фамилия".'),
+    secondName: z
+      .string()
+      .optional()
+      .describe('Patronymic (отчество) — exact-or-prefix match. The natural disambiguator in Russian usage when first names collide ("Игорь Сергеевич" vs "Игорь Алексеевич"). Bitrix24 SECOND_NAME field.'),
     lastName: z
       .string()
       .optional()
-      .describe('Exact-or-prefix match on last name. The disambiguator when `firstName` alone has duplicates.'),
+      .describe('Exact-or-prefix match on last name. The disambiguator when `firstName` alone has duplicates and no patronymic was supplied.'),
     position: z
       .string()
       .optional()
@@ -45,12 +49,13 @@ export default defineMcpTool({
       .optional()
       .describe('Cap on the returned matches. Default 10. Bitrix24 paginates at 50; if you need more, run the search again with a tighter filter.'),
   },
-  handler: async ({ query, firstName, lastName, position, limit }) => {
+  handler: async ({ query, firstName, secondName, lastName, position, limit }) => {
     const filter: Record<string, unknown> = {}
     if (query) {
       filter.FIND = query
     } else {
       if (firstName) filter.NAME = firstName
+      if (secondName) filter.SECOND_NAME = secondName
       if (lastName) filter.LAST_NAME = lastName
       if (position) filter.WORK_POSITION = position
     }

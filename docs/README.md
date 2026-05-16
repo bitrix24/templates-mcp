@@ -9,7 +9,8 @@ Start here if you are about to change code.
 1. [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — commits, PR rules, CI gates.
 2. `ADDING-TOOLS.md` — how to add a new MCP tool *(lands with MVP)*.
 3. `TESTING.md` — three test layers *(lands with MVP)*.
-4. `ARCHITECTURE.md` — system design *(lands with MVP)*.
+4. [`EVALS.md`](./EVALS.md) — automated tool-selection eval (Evalite + DeepSeek); how to run, how to add cases.
+5. `ARCHITECTURE.md` — system design *(lands with MVP)*.
 
 ## Operator
 

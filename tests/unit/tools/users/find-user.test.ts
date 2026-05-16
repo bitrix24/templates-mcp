@@ -17,6 +17,7 @@ interface ToolContent {
 interface FindInput {
   query?: string
   firstName?: string
+  secondName?: string
   lastName?: string
   position?: string
   limit?: number
@@ -101,6 +102,18 @@ describe('bitrix24_find_user', () => {
 
     expect(callMethod).toHaveBeenCalledWith('user.search', {
       FILTER: { NAME: 'Игорь', LAST_NAME: 'Шевченко' },
+      sort: 'ID',
+      order: 'ASC',
+    })
+  })
+
+  it('disambiguates by patronymic via SECOND_NAME', async () => {
+    callMethod.mockResolvedValue({ getData: () => ({ result: [] }) })
+
+    await tool.handler({ firstName: 'Игорь', secondName: 'Сергеевич' })
+
+    expect(callMethod).toHaveBeenCalledWith('user.search', {
+      FILTER: { NAME: 'Игорь', SECOND_NAME: 'Сергеевич' },
       sort: 'ID',
       order: 'ASC',
     })

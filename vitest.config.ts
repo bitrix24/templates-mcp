@@ -5,8 +5,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Unit tests live in *.test.ts. Evals live in *.eval.ts and are picked
+    // up by the `evalite` CLI separately (see evalite.config.ts).
     include: ['tests/**/*.test.ts'],
-    exclude: ['tests/evals/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
