@@ -28,7 +28,7 @@ export interface CreateIssueResult {
 
 export class GithubFeedbackError extends Error {
   override readonly name = 'GithubFeedbackError'
-  readonly code: 'NOT_CONFIGURED' | 'RATE_LIMITED' | 'UPSTREAM' | 'NETWORK'
+  readonly code: 'NOT_CONFIGURED' | 'UPSTREAM' | 'NETWORK'
 
   constructor(message: string, code: GithubFeedbackError['code']) {
     super(message)
@@ -92,7 +92,18 @@ export async function createGithubIssue(input: CreateIssueInput): Promise<Create
     )
   }
 
-  const data = (await response.json()) as { html_url?: string; number?: number }
+  let data: { html_url?: string; number?: number }
+  try {
+    data = (await response.json()) as { html_url?: string; number?: number }
+  } catch {
+    // Rare but possible — proxies, GHE misconfig, etc. We must not let raw
+    // SyntaxError reach the agent unwrapped.
+    throw new GithubFeedbackError(
+      'GitHub returned a non-JSON response.',
+      'UPSTREAM',
+    )
+  }
+
   if (!data.html_url || typeof data.number !== 'number') {
     throw new GithubFeedbackError(
       'GitHub returned a malformed issue payload.',
@@ -107,6 +118,10 @@ export async function createGithubIssue(input: CreateIssueInput): Promise<Create
 //
 // Sliding-window counter. Cheap, in-memory, single-instance. Phase 3 will move
 // this to a shared store when we go multi-tenant — until then it's adequate.
+//
+// Counts ATTEMPTS, not successes: a failed call (auth, network, 5xx) still
+// consumes one slot. This is the deliberate trade-off — it discourages tight
+// retry loops at the cost of being unfair on flaky networks. See FEEDBACK.md.
 
 const WINDOW_MS = 60 * 60 * 1000 // 1 hour
 const MAX_REQUESTS_PER_WINDOW = 5
@@ -145,6 +160,17 @@ export function consumeFeedbackQuota(now: number = Date.now()): {
 
 const MAX_DETAILS_LENGTH = 10000
 
+// Hostile / accidentally-confusing characters in agent-supplied details.
+// Spelled out with `\u` / `\x` escapes so reviewers can verify what is
+// stripped without trusting invisible code points in the source — embedding
+// the literal characters here would itself be a Trojan Source vector against
+// the reviewer.
+//   - C0 controls except tab (0x09), LF (0x0A), CR (0x0D)
+//   - Bidi overrides (U+202A..U+202E, U+2066..U+2069)
+//   - Zero-width / BOM (U+200B..U+200D, U+FEFF)
+// eslint-disable-next-line no-control-regex
+const HOSTILE_CHARS = /[\x00-\x08\x0b\x0c\x0e-\x1f\u202a-\u202e\u2066-\u2069\u200b-\u200d\ufeff]/g
+
 /**
  * Trims an agent-supplied free-text field to a maximum length and replaces a
  * narrow set of control characters that would corrupt the issue payload.
@@ -153,9 +179,7 @@ const MAX_DETAILS_LENGTH = 10000
  * everything as inert text.
  */
 export function sanitizeDetails(input: string): string {
-  // Strip C0 control characters except for tab (0x09), LF (0x0A), CR (0x0D).
-  // eslint-disable-next-line no-control-regex
-  const stripped = input.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+  const stripped = input.replace(HOSTILE_CHARS, '')
   if (stripped.length <= MAX_DETAILS_LENGTH) return stripped
   return `${stripped.slice(0, MAX_DETAILS_LENGTH)}…\n\n[truncated to ${MAX_DETAILS_LENGTH} characters]`
 }

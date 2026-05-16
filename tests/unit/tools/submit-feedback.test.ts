@@ -86,7 +86,9 @@ describe('bx24mcp_submit_feedback', () => {
     await tool.handler({ ...validInput, relatedTool: '!!!' })
 
     const call = createGithubIssue.mock.calls[0]![0] as { labels: string[] }
-    expect(call.labels).not.toContain(expect.stringMatching(/^tool:/))
+    // `toContain` with an asymmetric matcher silently passes — use a real
+    // predicate so the assertion actually verifies the absence.
+    expect(call.labels.some((l) => l.startsWith('tool:'))).toBe(false)
   })
 
   it('omits the severity label when severity is absent', async () => {
@@ -99,7 +101,7 @@ describe('bx24mcp_submit_feedback', () => {
     await tool.handler(withoutSeverity)
 
     const call = createGithubIssue.mock.calls[0]![0] as { labels: string[] }
-    expect(call.labels).not.toContain(expect.stringMatching(/^severity:/))
+    expect(call.labels.some((l) => l.startsWith('severity:'))).toBe(false)
   })
 
   it('flattens newlines in the summary so the GitHub title stays single-line', async () => {

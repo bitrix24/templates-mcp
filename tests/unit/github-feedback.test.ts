@@ -118,6 +118,24 @@ describe('createGithubIssue', () => {
       message: /malformed/i,
     })
   })
+
+  it('wraps non-JSON success body as UPSTREAM (proxy/GHE misconfig)', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      // Mimics Cloudflare / GHE returning HTML on success.
+      json: async () => {
+        throw new SyntaxError('Unexpected token < in JSON')
+      },
+    } as unknown as Response)
+
+    const { createGithubIssue } = await loadFresh()
+
+    await expect(createGithubIssue({ title: 't', body: 'b', labels: [] })).rejects.toMatchObject({
+      code: 'UPSTREAM',
+      message: /non-JSON/i,
+    })
+  })
 })
 
 describe('consumeFeedbackQuota', () => {
@@ -159,6 +177,25 @@ describe('sanitizeDetails', () => {
     const { sanitizeDetails } = await loadFresh()
     const noisy = `a\x00b\x07c\td\re\nf`
     expect(sanitizeDetails(noisy)).toBe('abc\td\re\nf')
+  })
+
+  it('strips bidi overrides (Trojan Source defence)', async () => {
+    const { sanitizeDetails } = await loadFresh()
+    // Explicit \u escapes so reviewers don't have to trust invisible code
+    // points in the test source.
+    const RLO = '\u202e' // Right-to-Left Override
+    const PDF = '\u202c' // Pop Directional Formatting
+    const trojan = `hello ${RLO}inject${PDF} world`
+    expect(sanitizeDetails(trojan)).toBe('hello inject world')
+  })
+
+  it('strips zero-width characters and BOM', async () => {
+    const { sanitizeDetails } = await loadFresh()
+    const ZWSP = '\u200b'
+    const ZWNJ = '\u200c'
+    const BOM = '\ufeff'
+    const smuggled = `visi${ZWSP}ble${ZWNJ} here${BOM}.`
+    expect(sanitizeDetails(smuggled)).toBe('visible here.')
   })
 
   it('truncates input over 10000 chars and annotates it', async () => {
@@ -204,5 +241,23 @@ describe('formatIssueBody', () => {
     const body = formatIssueBody({ kind: 'positive', details: 'good' })
     expect(body).toContain('**Related tool**: n/a')
     expect(body).toContain('**Severity**: n/a')
+  })
+
+  it('places the sanitiser truncation marker inside the <pre><code> block', async () => {
+    // Composition test — the truncation marker emitted by sanitizeDetails must
+    // remain inside the code fence in the rendered body, so the issue doesn't
+    // get a stray Markdown paragraph after the closing tag.
+    const { sanitizeDetails, formatIssueBody } = await loadFresh()
+    const details = sanitizeDetails('x'.repeat(10100))
+    const body = formatIssueBody({ kind: 'issue', details })
+
+    const openIdx = body.indexOf('<pre><code>')
+    const closeIdx = body.indexOf('</code></pre>')
+    const truncatedIdx = body.indexOf('truncated to 10000 characters')
+
+    expect(openIdx).toBeGreaterThan(-1)
+    expect(closeIdx).toBeGreaterThan(openIdx)
+    expect(truncatedIdx).toBeGreaterThan(openIdx)
+    expect(truncatedIdx).toBeLessThan(closeIdx)
   })
 })
