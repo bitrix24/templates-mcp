@@ -15,7 +15,11 @@ interface ToolContent {
 }
 
 const tool = (await import('../../../../server/mcp/tools/tasks/rate-task')).default as unknown as {
-  handler: (input: { taskId: number; rating: 'positive' | 'negative' | 'none' }) => Promise<ToolContent>
+  handler: (input: {
+    taskId: number | number[]
+    rating: 'positive' | 'negative' | 'none'
+    force?: boolean
+  }) => Promise<ToolContent>
 }
 
 describe('bitrix24_rate_task', () => {
@@ -80,6 +84,45 @@ describe('bitrix24_rate_task', () => {
     await expect(tool.handler({ taskId: 7, rating: 'positive' })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'action not allowed',
+    })
+  })
+
+  it('batch mode: applies the same rating to every id and returns a summary', async () => {
+    callMethod
+      .mockResolvedValueOnce({ getData: () => ({ result: { task: { id: 10, title: 'a' } } }) })
+      .mockRejectedValueOnce(new Error('action not allowed'))
+      .mockResolvedValueOnce({ getData: () => ({ result: { task: { id: 30, title: 'c' } } }) })
+
+    const result = await tool.handler({ taskId: [10, 20, 30], rating: 'negative' })
+
+    expect(callMethod).toHaveBeenCalledTimes(3)
+    // Every call gets the same MARK=N.
+    for (const call of callMethod.mock.calls) {
+      expect(call[1]).toMatchObject({ fields: { MARK: 'N' } })
+    }
+
+    const payload = JSON.parse(result.content[0]!.text) as {
+      batch: boolean
+      rating: string
+      mark: string
+      total: number
+      ok: number
+      failed: number
+      results: { taskId: number; ok: boolean }[]
+    }
+    expect(payload).toMatchObject({ batch: true, rating: 'negative', mark: 'N', total: 3, ok: 2, failed: 1 })
+    expect(payload.results.map((r) => [r.taskId, r.ok])).toEqual([
+      [10, true],
+      [20, false],
+      [30, true],
+    ])
+  })
+
+  it('batch mode rejects > 25 ids without force', async () => {
+    const ids = Array.from({ length: 26 }, (_, i) => i + 1)
+    await expect(tool.handler({ taskId: ids, rating: 'positive' })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'BATCH_TOO_LARGE',
     })
   })
 })

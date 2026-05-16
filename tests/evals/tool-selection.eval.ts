@@ -319,6 +319,22 @@ const CASES: Case[] = [
     notes: '"Верни в работу" of a closed task = renew. NOT disapprove (which is "верни на доработку" and only applies under task control).',
   },
 
+  // ── Batch / bulk phrasing (issue #7) ───────────────────────────────────
+  // The model should still pick the same single-tool name; whether to use
+  // taskId: number | number[] is a parameter-shape decision, not a tool
+  // choice. These cases probe that bulk phrasing doesn't trick the model
+  // into picking list_tasks alone (which only reads).
+  {
+    input: 'Закрой все мои задачи по корпусу №3.',
+    expected: 'bitrix24_list_tasks',
+    notes: 'First call: list to enumerate ids. Follow-up complete_task is out of scope for first-tool-exact-match.',
+  },
+  {
+    input: 'Approve everything from sprint 14, all looks good.',
+    expected: 'bitrix24_list_tasks',
+    notes: 'EN bulk approval: must enumerate via list_tasks first; approve_task comes second on the resolved ids.',
+  },
+
   // ── Task rating (MARK field, P/N/null) ─────────────────────────────────
   {
     input: 'Поставь задаче 55 положительную оценку.',

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
 import { extractTasks } from '~/server/utils/tasks'
 
 /**
@@ -17,6 +17,9 @@ import { extractTasks } from '~/server/utils/tasks'
  * The agent-friendly enum `positive | negative | none` is mapped to the
  * underlying P / N / null at the boundary so the LLM never has to know about
  * single-letter codes.
+ *
+ * Batch mode mirrors the lifecycle factory (#7): pass an array of ids to
+ * rate many tasks in one call, paced by the client-side rate limiter.
  */
 const RATING_TO_MARK = {
   positive: 'P',
@@ -24,58 +27,129 @@ const RATING_TO_MARK = {
   none: null,
 } as const
 
+const DEFAULT_BATCH_CAP = 25
+
+interface BatchEntryResult {
+  taskId: number
+  ok: boolean
+  error?: string
+}
+
 export default defineMcpTool({
   name: 'bitrix24_rate_task',
   description:
-    'Set or clear the rating on a Bitrix24 task — `positive` (👍, MARK=P), `negative` (👎, MARK=N), or `none` to remove an existing rating. Typically set by the task creator after the task is completed (status 5). Operates on one task at a time — for bulk ratings call `bitrix24_list_tasks` first, then loop (Bitrix24 caps ~2 req/sec). If the operator names a task in free text instead of an id, resolve it via `bitrix24_list_tasks` with a `%TITLE` filter first.',
+    'Set or clear the rating on a Bitrix24 task — `positive` (👍, MARK=P), `negative` (👎, MARK=N), or `none` to remove an existing rating. Typically set by the task creator after the task is completed (status 5). Accepts a single task id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. Calls are paced by the client-side rate limiter (~2 req/sec). If the operator names a task in free text instead of an id, resolve via `bitrix24_list_tasks` with a `%TITLE` filter first.',
   inputSchema: {
-    taskId: z.number().int().positive().describe('Task id to rate.'),
+    taskId: z
+      .union([z.number().int().positive(), z.array(z.number().int().positive()).min(1)])
+      .describe('Task id to rate, or an array of task ids for batch mode.'),
     rating: z
       .enum(['positive', 'negative', 'none'])
       .describe(
-        'New rating. `positive` = thumbs-up (Bitrix24 MARK=P), `negative` = thumbs-down (MARK=N), `none` clears the rating back to unset (MARK=null).',
+        'New rating. `positive` = thumbs-up (Bitrix24 MARK=P), `negative` = thumbs-down (MARK=N), `none` clears the rating back to unset (MARK=null). Same rating applies to every id in batch mode.',
+      ),
+    force: z
+      .boolean()
+      .optional()
+      .describe(
+        `Set true to allow batches larger than ${DEFAULT_BATCH_CAP}. Use sparingly — MCP clients may time out on long-running tool calls. Ignored for single-task input.`,
       ),
   },
-  handler: async ({ taskId, rating }) => {
-    try {
-      const b24 = useBitrix24()
-      const response = await b24.callMethod('tasks.task.update', {
-        taskId,
-        fields: { MARK: RATING_TO_MARK[rating] },
-      })
-      const [task] = extractTasks(response.getData()?.result)
+  handler: async (input: { taskId: number | number[]; rating: 'positive' | 'negative' | 'none'; force?: boolean }) => {
+    const { taskId, rating, force } = input
+    const mark = RATING_TO_MARK[rating]
+    if (typeof taskId === 'number') {
+      return runOne(taskId, rating, mark)
+    }
+    return runBatch(taskId, rating, mark, force ?? false)
+  },
+})
 
-      if (!task) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Task ${taskId} rating set to ${rating}, but Bitrix24 returned no task body. Re-list to verify.`,
-            },
-          ],
-        }
-      }
+async function runOne(taskId: number, rating: 'positive' | 'negative' | 'none', mark: 'P' | 'N' | null) {
+  try {
+    const b24 = useBitrix24()
+    const response = await b24.callMethod('tasks.task.update', { taskId, fields: { MARK: mark } })
+    const [task] = extractTasks(response.getData()?.result)
 
+    if (!task) {
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify(
-              {
-                rated: true,
-                id: task.id,
-                title: task.title,
-                rating,
-                mark: RATING_TO_MARK[rating],
-              },
-              null,
-              2,
-            ),
+            text: `Task ${taskId} rating set to ${rating}, but Bitrix24 returned no task body. Re-list to verify.`,
           },
         ],
       }
-    } catch (err) {
-      throw toToolError(err, `Failed to rate Bitrix24 task ${taskId}`)
     }
-  },
-})
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(
+            {
+              rated: true,
+              id: task.id,
+              title: task.title,
+              rating,
+              mark,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    }
+  } catch (err) {
+    throw toToolError(err, `Failed to rate Bitrix24 task ${taskId}`)
+  }
+}
+
+async function runBatch(
+  taskIds: number[],
+  rating: 'positive' | 'negative' | 'none',
+  mark: 'P' | 'N' | null,
+  force: boolean,
+) {
+  if (taskIds.length > DEFAULT_BATCH_CAP && !force) {
+    throw new Bitrix24ToolError(
+      `Batch of ${taskIds.length} exceeds the default cap of ${DEFAULT_BATCH_CAP}. Pass force=true to override, or split into multiple calls.`,
+      'BATCH_TOO_LARGE',
+    )
+  }
+
+  const b24 = useBitrix24()
+  const results: BatchEntryResult[] = []
+
+  for (const taskId of taskIds) {
+    try {
+      await b24.callMethod('tasks.task.update', { taskId, fields: { MARK: mark } })
+      results.push({ taskId, ok: true })
+    } catch (err) {
+      const wrapped = toToolError(err, `Failed to rate Bitrix24 task ${taskId}`)
+      results.push({ taskId, ok: false, error: wrapped.message })
+    }
+  }
+
+  const ok = results.filter((r) => r.ok).length
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify(
+          {
+            batch: true,
+            rating,
+            mark,
+            total: results.length,
+            ok,
+            failed: results.length - ok,
+            results,
+          },
+          null,
+          2,
+        ),
+      },
+    ],
+  }
+}

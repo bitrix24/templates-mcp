@@ -163,7 +163,7 @@ CRM & infrastructure:
 - **Contacts**: create, list, search by phone/email
 - **MCP resources** for static dictionaries (pipelines, stages, users) with TTL cache
 - **MCP prompts** for typical scenarios
-- **Client-side rate limiting** on Bitrix24 (2 req/sec, queue)
+- **Client-side rate limiting** on Bitrix24 (2 req/sec, queue) — ✅ **shipped via issue #7 Phase A** (token-bucket in `useBitrix24()`, applies to every tool, batch input on the 8 mutation tools via Phase B).
 
 ### Phase 3
 
