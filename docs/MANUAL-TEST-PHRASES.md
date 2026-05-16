@@ -10,6 +10,25 @@ This is the operator's natural-language test pack for the MCP. Paste each phrase
 
 The point is to see how a real LLM **disambiguates phrasing** — not to assert exact outputs. Phrasings deliberately vary in formality, completeness, and language (Russian / English) so we can spot tool-description gaps and prompt-engineering needs.
 
+## REST API version notes
+
+Bitrix24 has two parallel REST API generations:
+
+- **v3** (modern, recommended) — methods under the `tasks.*` / `crm.*` namespaces. URL pattern `apidocs.bitrix24.com/api-reference/rest-v3/…`.
+- **v2** (legacy / deprecated for new development) — methods like `task.*` (without the `s.`), `task.item.*`. Still work, but docs flag them with "Метод устарел".
+
+**Always prefer v3.** Our coverage today:
+
+| Tool | Method | API |
+|---|---|---|
+| `bitrix24_current_user` | `user.current` | shared |
+| `bitrix24_create_task` | `tasks.task.add` | **v3** ✓ |
+| `bitrix24_list_tasks` | `tasks.task.list` | **v3** ✓ |
+| `bitrix24_update_task` | `tasks.task.update` | **v3** ✓ |
+| `bitrix24_add_task_comment` | `task.commentitem.add` | **v2 deprecated** — v3 replacement is `tasks.task.chat.message.send`. **Migration is queued; see roadmap.** |
+
+When you see a Bitrix24 method name in a tool's source, sanity-check it has the `tasks.` (with `s`) prefix or lives under a documented v3 URL. The phrase pack below assumes v3 throughout.
+
 ## Legend
 
 | Mark | Meaning |
@@ -245,6 +264,94 @@ Roughly in order of value-for-effort:
 After all of those land, sections 5–10 of this doc flip from ⏳ to ✅ and the analytics queries in section 11 become realistic.
 
 ---
+
+## 13. Multilingual phrases — i18n probe
+
+Bitrix24 is sold in 20 locales (per `B24LangList` in `@bitrix24/b24jssdk`). The MCP must work for all of them — agents will receive prompts in the operator's language. This section is the i18n probe.
+
+What we're verifying:
+
+1. **Unicode end-to-end** — title / description / comment text containing non-Latin scripts arrives at Bitrix24 unchanged (no `?` substitution, no double-encoding).
+2. **Numeric extraction** — the LLM can pull `responsibleId: 5` out of a sentence that's otherwise in Thai, Arabic, or Devanagari.
+3. **RTL handling** — Arabic test phrases mix RTL Arabic with LTR digits and English brand names. The Bitrix24 UI must render the title correctly.
+4. **CJK width** — Chinese / Japanese characters count as 1 in `string.length` but render wider in the UI. Our 255-char `title` cap is byte-agnostic, so a CJK title of 100 characters still fits.
+
+### Locale matrix (from `B24LangList`)
+
+| code | locale | script | sample bitrix24 portals |
+|---|---|---|---|
+| `ru` | ru-RU | Cyrillic | russia.bitrix24.ru, *.bitrix24.ru |
+| `en` | en-EN | Latin | *.bitrix24.com |
+| `de` | de-DE | Latin | *.bitrix24.de |
+| `fr` | fr-FR | Latin | *.bitrix24.fr |
+| `it` | it-IT | Latin | *.bitrix24.it |
+| `pl` | pl-PL | Latin | *.bitrix24.pl |
+| `la` | es-ES | Latin | *.bitrix24.es |
+| `br` | pt-BR | Latin | *.bitrix24.com.br |
+| `ua` | uk-UA | Cyrillic | *.bitrix24.ua |
+| `tr` | tr-TR | Latin (dotted/dotless i) | *.bitrix24.com.tr |
+| `kz` | kk | Cyrillic | *.bitrix24.kz |
+| `vn` | vi-VN | Latin (heavy diacritics) | *.bitrix24.vn |
+| `id` | id-ID | Latin | *.bitrix24.id |
+| `ms` | ms-MY | Latin | *.bitrix24.com.my |
+| `th` | th-TH | Thai | *.bitrix24.co.th |
+| `in` | hi-IN | Devanagari | *.bitrix24.in |
+| `ar` | ar-SA | Arabic (RTL) | *.bitrix24.com (with Arabic locale) |
+| `sc` | zh-CN | Han Simplified | *.bitrix24.cn |
+| `tc` | zh-TW | Han Traditional | *.bitrix24.tw |
+| `ja` | ja-JP | Han + kana | *.bitrix24.jp |
+
+### Create-task — one phrase per script family
+
+The same intent — "create a task to approve a contract, assign to user 5, deadline Friday 18:00" — translated into a representative set of locales. Pick the ones matching your test portal's language; cycle through 3–4 for cross-script confidence.
+
+| # | Locale | Phrase |
+|---|---|---|
+| 13.1 | `ru` (Cyrillic) | Создай задачу «Согласовать договор» исполнителю 5, дедлайн пятница 18:00. |
+| 13.2 | `en` (Latin) | Create a task "Approve contract" for user 5, deadline Friday 18:00. |
+| 13.3 | `de` (Latin, ß+umlauts) | Erstelle eine Aufgabe „Vertrag genehmigen" für Benutzer 5, Frist Freitag 18:00. |
+| 13.4 | `br` (Portuguese Brazilian) | Crie uma tarefa «Aprovar contrato» para o usuário 5, prazo sexta-feira às 18h00. |
+| 13.5 | `tr` (Turkish, dotted/dotless i) | Kullanıcı 5 için "Sözleşmeyi onayla" görevi oluştur, son tarih Cuma 18:00. |
+| 13.6 | `vn` (Vietnamese, diacritics) | Tạo nhiệm vụ "Phê duyệt hợp đồng" cho người dùng 5, hạn chót thứ Sáu 18:00. |
+| 13.7 | `ar` (Arabic, RTL) | أنشئ مهمة «الموافقة على العقد» للمستخدم 5، الموعد النهائي يوم الجمعة الساعة 18:00. |
+| 13.8 | `sc` (zh-CN, Han Simplified) | 为用户 5 创建任务"批准合同"，截止时间周五 18:00。 |
+| 13.9 | `tc` (zh-TW, Han Traditional) | 為用戶 5 建立任務「批准合約」，截止時間週五 18:00。 |
+| 13.10 | `ja` (Han + kana) | ユーザー5に「契約を承認」タスクを作成、締切は金曜18:00。 |
+| 13.11 | `in` (Devanagari) | उपयोगकर्ता 5 के लिए कार्य 'अनुबंध स्वीकृत करें' बनाएँ, अंतिम तिथि शुक्रवार 18:00। |
+| 13.12 | `th` (Thai) | สร้างงาน "อนุมัติสัญญา" ให้ผู้ใช้ 5 กำหนดส่งวันศุกร์ 18:00 น. |
+| 13.13 | `id` (Indonesian) | Buat tugas "Setujui kontrak" untuk pengguna 5, batas waktu Jumat 18:00. |
+
+**What to look for in the response:**
+
+- The `title` field that lands in Bitrix24 matches the source phrase byte-for-byte (open the task in the portal UI to verify).
+- `responsibleId: 5` is correctly extracted regardless of the surrounding script.
+- `deadline` is converted to ISO 8601 — note the LLM may guess the timezone wrong if it's not stated; this is a separate prompt-engineering issue, not an MCP bug.
+
+### List overdue / by responsible — selected locales
+
+| # | Locale | Phrase |
+|---|---|---|
+| 13.14 | `sc` | 显示我的逾期任务。 |
+| 13.15 | `ar` | اعرض مهامي المتأخرة. |
+| 13.16 | `ja` | 期限切れの私のタスクを表示してください。 |
+| 13.17 | `tr` | Süresi geçmiş görevlerimi göster. |
+| 13.18 | `br` | Mostre minhas tarefas atrasadas. |
+
+### Comment in non-Latin script
+
+| # | Locale | Phrase |
+|---|---|---|
+| 13.19 | `ar` | أضف تعليقاً للمهمة 123: «تمت الموافقة، تابع». |
+| 13.20 | `sc` | 给任务 123 添加评论："已批准，继续。" |
+| 13.21 | `ja` | タスク 123 にコメント追加: 「承認しました、進めてください。」 |
+| 13.22 | `hi` (in) | कार्य 123 पर टिप्पणी जोड़ें: «स्वीकृत, आगे बढ़ें।» |
+
+### Known i18n traps to watch for
+
+- **Turkish dotted/dotless `i`** — JavaScript's `.toLowerCase()` produces unexpected results in tr-TR locale on the `I`/`i`/`İ`/`ı` set. Our `sanitizeToolName` (feedback tool) does `.toLowerCase()` without locale — fine for tool names (ASCII), but flag if we ever sanitize user input here.
+- **Arabic + Trojan Source defence collision** — `stripHostileChars` (in the feedback tool only, not in task tools) strips U+202A–202E / U+2066–2069 (Bidi controls). Real Arabic text **may** carry these legitimately, especially when mixing with Latin URLs or numbers. Trade-off accepted: agent-feedback issues are short, and the GitHub UI handles base RTL fine without explicit overrides. Task titles and comments are **not** stripped — agents in Arabic locales aren't affected.
+- **CJK character width** — string `length` is in code units, not visual columns. A 100-char Chinese title fits the 255-cap easily.
+- **Right-to-left titles in `[agent-feedback/<kind>] <summary>`** — the `<summary>` is RTL but the prefix is LTR. GitHub renders the issue title correctly in mixed direction.
 
 ## What still won't have a tool (deliberate)
 
