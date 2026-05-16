@@ -17,6 +17,11 @@
  *
  * Process-wide singleton. Tests reset it via `vi.resetModules()` — same
  * pattern as `useBitrix24`.
+ *
+ * TODO(phase-3): when OAuth multi-tenant lands, key the bucket by portal id
+ * so portal A's traffic does not back-pressure portal B. For now Phase 1/2
+ * is single-tenant (one webhook URL per process) and a global bucket is
+ * correct.
  */
 
 export interface RateLimiterOptions {
@@ -54,7 +59,11 @@ function drain(): void {
     drainScheduled = true
     // Time until the next whole token is available.
     const waitMs = Math.ceil(((1 - tokens) / opts.refillRatePerSec) * 1000)
-    setTimeout(drain, Math.max(1, waitMs))
+    const timer = setTimeout(drain, Math.max(1, waitMs))
+    // `.unref()` lets a Node process exit even if a refill timer is pending —
+    // matters for CLIs / test runners; harmless in long-running servers. The
+    // optional-chain handles browser shims where Timeout has no `.unref`.
+    timer.unref?.()
   }
 }
 

@@ -80,7 +80,10 @@ export function defineTaskLifecycleTool(spec: LifecycleToolSpec) {
     name: spec.name,
     description: spec.description + LIFECYCLE_USAGE_NOTES,
     inputSchema: {
-      taskId: taskIdSchema.describe(spec.taskIdHint),
+      taskId: taskIdSchema.describe(
+        spec.taskIdHint +
+          ' Pass a number for single-task semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
+      ),
       force: z
         .boolean()
         .optional()

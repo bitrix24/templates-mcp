@@ -42,7 +42,9 @@ export default defineMcpTool({
   inputSchema: {
     taskId: z
       .union([z.number().int().positive(), z.array(z.number().int().positive()).min(1)])
-      .describe('Task id to rate, or an array of task ids for batch mode.'),
+      .describe(
+        'Task id to rate, or an array of task ids for batch mode. Pass a number for single-task semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
+      ),
     rating: z
       .enum(['positive', 'negative', 'none'])
       .describe(
