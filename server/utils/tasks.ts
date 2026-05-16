@@ -114,26 +114,70 @@ export function normalizeBitrix24Key(key: string): string {
   if (!field) return key
   // Already UPPER_SNAKE → keep as-is (no surprise mutation of legacy keys).
   if (/^[A-Z][A-Z0-9_]*$/.test(field)) return prefix + field
-  // camelCase → UPPER_SNAKE.
-  const snake = field.replace(/([A-Z])/g, '_$1').toUpperCase()
+  // camelCase or PascalCase → UPPER_SNAKE.
+  // The negative-lookbehind `(?<!^)` skips the very first character so
+  // PascalCase inputs like `Title` / `>=Deadline` don't get a leading
+  // underscore (`_TITLE` / `>=_DEADLINE` would be silently rejected by
+  // Bitrix24).
+  const snake = field.replace(/(?<!^)([A-Z])/g, '_$1').toUpperCase()
   return prefix + snake
 }
 
-/** Translate every key of a filter object via {@link normalizeBitrix24Key}. */
+/**
+ * Translate every key of a filter object via {@link normalizeBitrix24Key}.
+ *
+ * Throws if two input keys collide after normalisation (e.g. `responsibleId`
+ * and `RESPONSIBLE_ID` in the same filter). A silent drop of the earlier
+ * value would be the worst class of bug — the call still succeeds, the LLM
+ * thinks the filter is honoured, but one criterion has quietly vanished.
+ */
 export function normalizeBitrix24Filter(filter: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(filter)) out[normalizeBitrix24Key(k)] = v
+  for (const [k, v] of Object.entries(filter)) {
+    const normalised = normalizeBitrix24Key(k)
+    if (Object.prototype.hasOwnProperty.call(out, normalised)) {
+      throw new Error(
+        `Duplicate Bitrix24 filter key after normalisation: "${k}" maps to "${normalised}" which is already set. Use one casing per field — camelCase preferred.`,
+      )
+    }
+    out[normalised] = v
+  }
   return out
 }
 
-/** Translate every key of an order map via {@link normalizeBitrix24Key}. */
+/**
+ * Translate every key of an order map via {@link normalizeBitrix24Key}.
+ * Same collision check as {@link normalizeBitrix24Filter}.
+ */
 export function normalizeBitrix24Order<T>(order: Record<string, T>): Record<string, T> {
   const out: Record<string, T> = {}
-  for (const [k, v] of Object.entries(order)) out[normalizeBitrix24Key(k)] = v
+  for (const [k, v] of Object.entries(order)) {
+    const normalised = normalizeBitrix24Key(k)
+    if (Object.prototype.hasOwnProperty.call(out, normalised)) {
+      throw new Error(
+        `Duplicate Bitrix24 order key after normalisation: "${k}" maps to "${normalised}" which is already set. Use one casing per field — camelCase preferred.`,
+      )
+    }
+    out[normalised] = v
+  }
   return out
 }
 
-/** Translate every field name in a select array via {@link normalizeBitrix24Key}. */
+/**
+ * Translate every field name in a select array via {@link normalizeBitrix24Key}
+ * and deduplicate the result. Duplicates on the wire are harmless to
+ * Bitrix24 (it returns the field once anyway), but removing them here keeps
+ * the payload tidy and makes the eventual wire log match the caller's
+ * intent.
+ */
 export function normalizeBitrix24Select(select: string[]): string[] {
-  return select.map(normalizeBitrix24Key)
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const key of select) {
+    const normalised = normalizeBitrix24Key(key)
+    if (seen.has(normalised)) continue
+    seen.add(normalised)
+    out.push(normalised)
+  }
+  return out
 }

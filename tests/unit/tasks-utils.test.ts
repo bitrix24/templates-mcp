@@ -123,6 +123,14 @@ describe('normalizeBitrix24Key', () => {
     expect(normalizeBitrix24Key('>=DEADLINE')).toBe('>=DEADLINE')
     expect(normalizeBitrix24Key('%TITLE')).toBe('%TITLE')
   })
+
+  it('handles PascalCase without producing a leading underscore', () => {
+    expect(normalizeBitrix24Key('Title')).toBe('TITLE')
+    expect(normalizeBitrix24Key('Deadline')).toBe('DEADLINE')
+    expect(normalizeBitrix24Key('ResponsibleId')).toBe('RESPONSIBLE_ID')
+    expect(normalizeBitrix24Key('>=Deadline')).toBe('>=DEADLINE')
+    expect(normalizeBitrix24Key('!Status')).toBe('!STATUS')
+  })
 })
 
 describe('normalizeBitrix24Filter / Order / Select', () => {
@@ -161,5 +169,21 @@ describe('normalizeBitrix24Filter / Order / Select', () => {
       'RESPONSIBLE_ID',
       'STATUS',
     ])
+  })
+
+  it('throws on duplicate filter keys after normalisation (silent-drop guard)', () => {
+    expect(() =>
+      normalizeBitrix24Filter({ responsibleId: 5, RESPONSIBLE_ID: 7 }),
+    ).toThrow(/Duplicate Bitrix24 filter key/)
+  })
+
+  it('throws on duplicate order keys after normalisation', () => {
+    expect(() =>
+      normalizeBitrix24Order({ deadline: 'asc' as const, DEADLINE: 'desc' as const }),
+    ).toThrow(/Duplicate Bitrix24 order key/)
+  })
+
+  it('deduplicates select array entries after normalisation', () => {
+    expect(normalizeBitrix24Select(['id', 'ID', 'title', 'Title'])).toEqual(['ID', 'TITLE'])
   })
 })
