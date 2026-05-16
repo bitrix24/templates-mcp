@@ -12,6 +12,6 @@ export default defineTaskLifecycleTool({
   verb: 'start',
   pastTense: 'started',
   description:
-    'Start work on a Bitrix24 task — moves it from Pending (2) to In progress (3). Call when the responsible user is "taking" the task to work on it. Only the responsible user (or someone with rights) can start a task.',
+    'Start work on a Bitrix24 task — moves it from Pending (2) to In progress (3). Call when the responsible user is "taking" the task to work on it. Only the responsible user (or someone with rights) can start a task. Counterpart: `bitrix24_pause_task`.',
   taskIdHint: 'Task id to start. Get it from `bitrix24_list_tasks` or `bitrix24_create_task`.',
 })

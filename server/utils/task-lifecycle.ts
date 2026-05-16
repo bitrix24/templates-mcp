@@ -15,11 +15,22 @@ import { extractTasks } from '~/server/utils/tasks'
  * `extractTasks` / `toTaskShort` stay importable from unit tests without
  * dragging in Nitro / mcp-toolkit at evaluation time.
  */
+/** The seven REST methods this factory is allowed to wrap. Listed explicitly
+ *  (not as `tasks.task.${string}`) so a typo would fail typecheck. */
+export type LifecycleMethod =
+  | 'tasks.task.start'
+  | 'tasks.task.pause'
+  | 'tasks.task.complete'
+  | 'tasks.task.approve'
+  | 'tasks.task.disapprove'
+  | 'tasks.task.defer'
+  | 'tasks.task.renew'
+
 export interface LifecycleToolSpec {
   /** MCP tool name, e.g. `bitrix24_start_task`. */
   name: string
   /** Bitrix24 REST method, e.g. `tasks.task.start`. */
-  method: `tasks.task.${string}`
+  method: LifecycleMethod
   /** Infinitive verb used in error messages, e.g. `start`. */
   verb: string
   /** Past-tense verb used as the success payload's boolean key, e.g. `started`. */
@@ -41,6 +52,10 @@ export function defineTaskLifecycleTool(spec: LifecycleToolSpec) {
       try {
         const b24 = useBitrix24()
         const response = await b24.callMethod(spec.method, { taskId })
+        // Lifecycle methods always return a single `{ task: {...} }`. We use
+        // `extractTasks` (which also handles list-shaped responses) and take
+        // the first element so there's one shared parser across all task
+        // tools — same code path as `update_task`.
         const [task] = extractTasks(response.getData()?.result)
 
         if (!task) {

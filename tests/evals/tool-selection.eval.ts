@@ -65,6 +65,20 @@ import updateTask from '~/server/mcp/tools/tasks/update-task'
 // eslint-disable-next-line import/first
 import addTaskComment from '~/server/mcp/tools/tasks/add-task-comment'
 // eslint-disable-next-line import/first
+import startTask from '~/server/mcp/tools/tasks/start-task'
+// eslint-disable-next-line import/first
+import pauseTask from '~/server/mcp/tools/tasks/pause-task'
+// eslint-disable-next-line import/first
+import completeTask from '~/server/mcp/tools/tasks/complete-task'
+// eslint-disable-next-line import/first
+import approveTask from '~/server/mcp/tools/tasks/approve-task'
+// eslint-disable-next-line import/first
+import disapproveTask from '~/server/mcp/tools/tasks/disapprove-task'
+// eslint-disable-next-line import/first
+import deferTask from '~/server/mcp/tools/tasks/defer-task'
+// eslint-disable-next-line import/first
+import renewTask from '~/server/mcp/tools/tasks/renew-task'
+// eslint-disable-next-line import/first
 import submitFeedback from '~/server/mcp/tools/meta/submit-feedback'
 
 interface McpToolDef {
@@ -80,6 +94,13 @@ const ALL_TOOLS: McpToolDef[] = [
   listTasks as unknown as McpToolDef,
   updateTask as unknown as McpToolDef,
   addTaskComment as unknown as McpToolDef,
+  startTask as unknown as McpToolDef,
+  pauseTask as unknown as McpToolDef,
+  completeTask as unknown as McpToolDef,
+  approveTask as unknown as McpToolDef,
+  disapproveTask as unknown as McpToolDef,
+  deferTask as unknown as McpToolDef,
+  renewTask as unknown as McpToolDef,
   submitFeedback as unknown as McpToolDef,
 ]
 
@@ -222,6 +243,43 @@ const CASES: Case[] = [
     input: 'Запиши в баг-трекер: при пустом фильтре find_user падает.',
     expected: 'bx24mcp_submit_feedback',
     notes: 'Bug report against the MCP — submit_feedback, not anything tasks-related.',
+  },
+
+  // ── Task lifecycle (7 thin v3 wrappers) ────────────────────────────────
+  {
+    input: 'Возьми задачу 42 в работу.',
+    expected: 'bitrix24_start_task',
+    notes: 'Russian "take into work" — start the task.',
+  },
+  {
+    input: 'Поставь задачу 88 на паузу.',
+    expected: 'bitrix24_pause_task',
+    notes: 'Pause an in-progress task.',
+  },
+  {
+    input: 'Отметь задачу 15 как выполненную.',
+    expected: 'bitrix24_complete_task',
+    notes: 'Mark task as done — responsible user closes the task.',
+  },
+  {
+    input: 'Прими работу по задаче 27, всё устраивает.',
+    expected: 'bitrix24_approve_task',
+    notes: 'Creator accepts work after taskControl review — approve, not complete.',
+  },
+  {
+    input: 'Верни задачу 27 на доработку — нужно переделать.',
+    expected: 'bitrix24_disapprove_task',
+    notes: 'Creator rejects work after taskControl review.',
+  },
+  {
+    input: 'Отложи задачу 99 на потом.',
+    expected: 'bitrix24_defer_task',
+    notes: 'Defer — postpone, do not close.',
+  },
+  {
+    input: 'Возобнови задачу 10, она снова в работе.',
+    expected: 'bitrix24_renew_task',
+    notes: 'Renew a previously closed/deferred task back to Pending.',
   },
 
   // ── Multilingual / non-Latin (i18n probe) ──────────────────────────────
