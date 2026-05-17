@@ -19,11 +19,13 @@ export interface ElapsedTimeShort {
   commentText: string
   seconds: number
   createdDate: string | null
-  /** Bitrix24's `DATE_START` — when the time entry began (operator-supplied
-   *  or stopwatch-recorded). Empty string on the wire is normalised to null. */
+  /** Bitrix24's `DATE_START` — when the stopwatch session began.
+   *  For manual entries posted via `task.elapseditem.add` (without a
+   *  stopwatch), Bitrix24 sets this to the CREATED_DATE; the two will
+   *  often match. Empty string on the wire is normalised to null. */
   dateStart: string | null
-  /** Bitrix24's `DATE_STOP` — when the time entry ended. Same null
-   *  normalisation as `dateStart`. */
+  /** Bitrix24's `DATE_STOP` — when the stopwatch session ended. Same
+   *  manual-entry behaviour and null normalisation as `dateStart`. */
   dateStop: string | null
 }
 
@@ -41,8 +43,12 @@ export function toElapsedTimeShort(raw: unknown): ElapsedTimeShort | null {
     // to '' so the projection shape stays stable.
     commentText: pick<string>(r as Record<string, unknown>, 'commentText', 'COMMENT_TEXT') ?? '',
     // SECONDS is the canonical duration. Missing → 0 (Bitrix24 occasionally
-    // ships zero-second entries for stopwatch start markers; surfacing them
-    // as 0 keeps the contract honest).
+    // ships zero-second entries for stopwatch start markers; surfacing
+    // them as 0 keeps the projection shape stable). Sibling parsers like
+    // `toTaskShort` would return `null` for a missing numeric — the choice
+    // here is intentionally different because `seconds` is the headline
+    // field every agent reads, and `null` would force the LLM through a
+    // null-check it doesn't need for the stopwatch-marker case.
     seconds: toNumber(pick(r as Record<string, unknown>, 'seconds', 'SECONDS')) ?? 0,
     createdDate: pick<string>(r as Record<string, unknown>, 'createdDate', 'CREATED_DATE') || null,
     dateStart: pick<string>(r as Record<string, unknown>, 'dateStart', 'DATE_START') || null,

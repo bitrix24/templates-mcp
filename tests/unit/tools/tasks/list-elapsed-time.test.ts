@@ -41,7 +41,7 @@ describe('bitrix24_list_elapsed_time', () => {
         ORDER: Record<string, string>
         FILTER: Record<string, unknown>
         SELECT: string[]
-        PARAMS: { NAV_PARAMS: { start: number; nPageSize: number } }
+        PARAMS: { NAV_PARAMS: { iNumPage: number; nPageSize: number } }
       }
     }
     expect(args.method).toBe('task.elapseditem.getlist')
@@ -58,7 +58,8 @@ describe('bitrix24_list_elapsed_time', () => {
       'DATE_STOP',
     ])
     expect(args.params.PARAMS.NAV_PARAMS.nPageSize).toBe(50)
-    expect(args.params.PARAMS.NAV_PARAMS.start).toBe(0)
+    // No start → iNumPage = 1 (first page).
+    expect(args.params.PARAMS.NAV_PARAMS.iNumPage).toBe(1)
   })
 
   it('translates the top-level taskId convenience field into FILTER.TASK_ID', async () => {
@@ -147,7 +148,8 @@ describe('bitrix24_list_elapsed_time', () => {
     expect(payload.returned).toBe(1)
   })
 
-  it('passes through start / order / select overrides', async () => {
+  it('converts `start` offset into 1-based `iNumPage` for Bitrix24 v2 getlist', async () => {
+    // start=100 / pageSize=50 + 1 = page 3
     fake.v2Call.mockResolvedValue(fakeOk([]))
     await tool.handler({
       order: { createdDate: 'asc' },
@@ -159,12 +161,55 @@ describe('bitrix24_list_elapsed_time', () => {
       params: {
         ORDER: Record<string, string>
         SELECT: string[]
-        PARAMS: { NAV_PARAMS: { start: number } }
+        PARAMS: { NAV_PARAMS: { iNumPage: number; nPageSize: number } }
       }
     }
     expect(args.params.ORDER).toEqual({ CREATED_DATE: 'asc' })
     expect(args.params.SELECT).toEqual(['ID', 'SECONDS'])
-    expect(args.params.PARAMS.NAV_PARAMS.start).toBe(100)
+    expect(args.params.PARAMS.NAV_PARAMS.iNumPage).toBe(3)
+    expect(args.params.PARAMS.NAV_PARAMS.nPageSize).toBe(50)
+  })
+
+  it('rounds sub-page `start` offsets DOWN to the start of the containing page', async () => {
+    // start=75 → page 2 (offset 50-99). Operator must pass multiples of
+    // 50; non-multiples lose the intra-page offset (documented behaviour).
+    fake.v2Call.mockResolvedValue(fakeOk([]))
+    await tool.handler({ start: 75 })
+
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as {
+      params: { PARAMS: { NAV_PARAMS: { iNumPage: number } } }
+    }
+    expect(args.params.PARAMS.NAV_PARAMS.iNumPage).toBe(2)
+  })
+
+  it('does NOT override an explicit `filter: { !taskId: ... }` with the convenience field (operator-prefix guard)', async () => {
+    // Without the prefix-stripped guard, taskId=91 would inject
+    // `TASK_ID: 91` alongside `!TASK_ID: 5`, producing a contradictory
+    // filter that Bitrix24 silently swallows.
+    fake.v2Call.mockResolvedValue(fakeOk([]))
+    await tool.handler({ taskId: 91, filter: { '!taskId': 5 } })
+
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { FILTER: Record<string, unknown> } }
+    expect(args.params.FILTER).toEqual({ '!TASK_ID': 5 })
+  })
+
+  it('does NOT override an explicit `filter: { TASK_ID: ... }` (UPPERCASE form of convenience guard)', async () => {
+    fake.v2Call.mockResolvedValue(fakeOk([]))
+    await tool.handler({ taskId: 99, filter: { TASK_ID: 800 } })
+
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { FILTER: Record<string, unknown> } }
+    expect(args.params.FILTER).toEqual({ TASK_ID: 800 })
+  })
+
+  it('schema rejects start values above the 100_000 DoS cap', () => {
+    // Reach into the handler input by parsing the schema directly via the
+    // exported tool — the runtime would Zod-reject before the handler runs.
+    // (The tool default export is a McpToolDefinition; the start schema
+    // lives in inputSchema.start.)
+    const startSchema = (tool as unknown as { inputSchema: { start: { safeParse: (v: unknown) => { success: boolean } } } }).inputSchema.start
+    expect(startSchema.safeParse(0).success).toBe(true)
+    expect(startSchema.safeParse(100_000).success).toBe(true)
+    expect(startSchema.safeParse(100_001).success).toBe(false)
   })
 
   it('wraps SDK errors into Bitrix24ToolError', async () => {

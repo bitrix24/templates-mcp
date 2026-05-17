@@ -10,7 +10,9 @@ import { callV2 } from '~/server/utils/sdk-helpers'
  * Operators use this to correct miss-clicked durations or to back-fill a
  * comment they forgot. Author / responsible-user / admin scope: Bitrix24
  * server-side enforces — non-author edits surface as `ACCESS_DENIED` from
- * the REST layer (see issue #24 for the planned pre-flight).
+ * the REST layer. A pre-flight check (`user.current` + entry-author
+ * comparison) is planned per issue #24 to give the agent an earlier,
+ * typed `AUTHOR_ONLY` error instead of waiting for the wire round-trip.
  *
  * Bitrix24 REST: task.elapseditem.update (v2 — no v3 equivalent)
  *   https://apidocs.bitrix24.com/api-reference/tasks/elapsed-item/task-elapsed-item-update.html
@@ -48,7 +50,7 @@ export default defineMcpTool({
       .positive()
       .optional()
       .describe(
-        'Re-attribute the entry to another user. Default: leave unchanged. Requires permission to edit task entries on behalf of others.',
+        'Re-attribute the entry to another user — this REWRITES the recorded authorship of the entry, not just the assignee. Default: leave unchanged. Requires Bitrix24 MANAGER or PORTAL-ADMIN rights — plain task-edit permission is NOT enough. Use only when the operator explicitly requests re-attribution (e.g. "log this under Игорь, не под мной"). If the agent has only standard rights and supplies `userId`, Bitrix24 responds with ACCESS_DENIED.',
       ),
   },
   handler: async ({ taskId, itemId, seconds, comment, userId }) => {

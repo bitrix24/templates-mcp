@@ -22,7 +22,7 @@ import { callV2 } from '~/server/utils/sdk-helpers'
 export default defineMcpTool({
   name: 'bitrix24_add_elapsed_time',
   description:
-    'Log a manual elapsed-time entry on a Bitrix24 task. Operators use these to record after-the-fact "how long did this take" — separate from the Bitrix24 stopwatch which fires automatically during in-progress / paused transitions. Returns the new entry id. To read existing entries on a task, use `bitrix24_list_elapsed_time`. To correct or remove an entry, use `bitrix24_update_elapsed_time` / `bitrix24_delete_elapsed_time`.',
+    'Log a manual elapsed-time entry on a Bitrix24 task. Operators use these to record after-the-fact "how long did this take" — separate from the Bitrix24 stopwatch which fires automatically during in-progress / paused transitions. `seconds` is capped at 86400 (24h) — split multi-day work into separate entries per day. Returns the new entry id. To read existing entries on a task, use `bitrix24_list_elapsed_time`. To correct or remove an entry, use `bitrix24_update_elapsed_time` / `bitrix24_delete_elapsed_time`.',
   inputSchema: {
     taskId: z.number().int().positive().describe('Task id to attach the entry to. Get it from `bitrix24_list_tasks` or `bitrix24_create_task`.'),
     seconds: z
@@ -46,7 +46,7 @@ export default defineMcpTool({
       .positive()
       .optional()
       .describe(
-        'Log the entry on behalf of another user. Default: the user owning the webhook (i.e. "you"). Use this when a team lead is recording time worked by a direct report. The acting user must have permission to edit the task.',
+        'Log the entry on behalf of another user. Default: the user owning the webhook (i.e. "you"). Use this when a team lead is recording time worked by a direct report. Requires Bitrix24 MANAGER or PORTAL-ADMIN rights for the acting webhook user — plain task-edit permission is NOT enough. If the agent has only standard rights and supplies `userId`, Bitrix24 responds with ACCESS_DENIED.',
       ),
   },
   handler: async ({ taskId, seconds, comment, userId }) => {

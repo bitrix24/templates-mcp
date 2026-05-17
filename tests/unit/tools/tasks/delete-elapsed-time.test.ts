@@ -19,6 +19,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/delete-elapsed-ti
   handler: (input: {
     taskId: number
     itemId: number | number[]
+    confirmDelete?: boolean
     force?: boolean
   }) => Promise<ToolContent>
 }
@@ -29,9 +30,9 @@ describe('bitrix24_delete_elapsed_time', () => {
     fake.v2Batch.mockReset()
   })
 
-  it('single mode: posts task.elapseditem.delete with TASKID + ITEMID', async () => {
+  it('single mode: posts task.elapseditem.delete with TASKID + ITEMID (confirmDelete: true)', async () => {
     fake.v2Call.mockResolvedValue(fakeOk(null))
-    const result = await tool.handler({ taskId: 691, itemId: 5 })
+    const result = await tool.handler({ taskId: 691, itemId: 5, confirmDelete: true })
 
     expect(fake.v2Call).toHaveBeenCalledWith({
       method: 'task.elapseditem.delete',
@@ -45,7 +46,7 @@ describe('bitrix24_delete_elapsed_time', () => {
     })
   })
 
-  it('batch mode: dispatches one batchV2 round-trip and shapes per-id results', async () => {
+  it('batch mode: dispatches one batchV2 round-trip and shapes per-id results (confirmDelete: true)', async () => {
     fake.v2Batch.mockResolvedValue({
       isSuccess: true,
       getData: () => [
@@ -56,7 +57,7 @@ describe('bitrix24_delete_elapsed_time', () => {
       getErrorMessages: () => [],
     })
 
-    const result = await tool.handler({ taskId: 700, itemId: [10, 11, 12] })
+    const result = await tool.handler({ taskId: 700, itemId: [10, 11, 12], confirmDelete: true })
     const payload = JSON.parse(result.content[0]!.text) as {
       batch: boolean
       verb: string
@@ -85,10 +86,33 @@ describe('bitrix24_delete_elapsed_time', () => {
     expect(payload.results[1]!.error).toMatch(/action not allowed/)
   })
 
+  it('refuses single delete without confirmDelete: true (Ground Rule #10)', async () => {
+    await expect(tool.handler({ taskId: 1, itemId: 5 })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+    })
+    await expect(tool.handler({ taskId: 1, itemId: 5, confirmDelete: false })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+    })
+    // No wire call should have fired in either refusal path.
+    expect(fake.v2Call).not.toHaveBeenCalled()
+  })
+
+  it('refuses batch delete without confirmDelete: true (Ground Rule #10)', async () => {
+    await expect(tool.handler({ taskId: 1, itemId: [5, 7, 9] })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+      // Message must name the targets so the operator sees what they're confirming.
+      message: expect.stringMatching(/3 elapsed-time entries \[5, 7, 9\] on task 1/) as unknown as string,
+    })
+    expect(fake.v2Batch).not.toHaveBeenCalled()
+  })
+
   it('batch mode rejects > 50 ids by default and accepts the same with force=true', async () => {
     const ids = Array.from({ length: 51 }, (_, i) => i + 1)
 
-    await expect(tool.handler({ taskId: 1, itemId: ids })).rejects.toMatchObject({
+    await expect(tool.handler({ taskId: 1, itemId: ids, confirmDelete: true })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: 'BATCH_TOO_LARGE',
     })
@@ -100,7 +124,7 @@ describe('bitrix24_delete_elapsed_time', () => {
       getErrorMessages: () => [],
     })
     const payload = JSON.parse(
-      (await tool.handler({ taskId: 1, itemId: ids, force: true })).content[0]!.text,
+      (await tool.handler({ taskId: 1, itemId: ids, confirmDelete: true, force: true })).content[0]!.text,
     ) as { total: number; ok: number }
     expect(payload.total).toBe(51)
     expect(payload.ok).toBe(51)
@@ -112,19 +136,35 @@ describe('bitrix24_delete_elapsed_time', () => {
       getData: () => [fakeOk(null)],
       getErrorMessages: () => [],
     })
-    const result = await tool.handler({ taskId: 1, itemId: [42] })
+    const result = await tool.handler({ taskId: 1, itemId: [42], confirmDelete: true })
 
     expect(fake.v2Call).not.toHaveBeenCalled()
     expect(fake.v2Batch).toHaveBeenCalledTimes(1)
-    const payload = JSON.parse(result.content[0]!.text)
+    const payload = JSON.parse(result.content[0]!.text) as {
+      batch: boolean
+      total: number
+      taskId: number
+      results: { itemId: number; ok: boolean }[]
+    }
     expect(payload).toMatchObject({ batch: true, total: 1, taskId: 1 })
+    expect(payload.results[0]!.itemId).toBe(42)
   })
 
   it('wraps SDK errors into Bitrix24ToolError on single mode', async () => {
     fake.v2Call.mockRejectedValue(new Error('not found'))
-    await expect(tool.handler({ taskId: 1, itemId: 99 })).rejects.toMatchObject({
+    await expect(tool.handler({ taskId: 1, itemId: 99, confirmDelete: true })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'not found',
+    })
+  })
+
+  it('wraps SDK errors into Bitrix24ToolError on batch mode (network throw)', async () => {
+    fake.v2Batch.mockRejectedValue(new Error('timeout'))
+    await expect(
+      tool.handler({ taskId: 1, itemId: [5, 7, 9], confirmDelete: true }),
+    ).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      message: 'timeout',
     })
   })
 })

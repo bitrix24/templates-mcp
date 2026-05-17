@@ -56,13 +56,13 @@ export interface BatchRow {
 }
 
 /**
- * Standard `force` flag schema for batch-cap overrides. Both factory
- * families (lifecycle, checklist) wire this verbatim — keeping the LLM-
- * facing copy in one place prevents drift between tools.
+ * Standard `force` flag schema for batch-cap overrides. Every factory
+ * family wires this verbatim — keeping the LLM-facing copy in one place
+ * prevents drift between tools.
  *
  * @param cap — the batch cap the description should mention, so the LLM
- *   sees the family-specific number (25 for v3 lifecycle, 50 for v2
- *   checklist) rather than a generic blurb.
+ *   sees the family-specific number (e.g. 25 for v3 lifecycle, 50 for v2
+ *   checklist / elapsed-time) rather than a generic blurb.
  */
 export function forceFlagSchema(cap: number) {
   return z
@@ -70,6 +70,31 @@ export function forceFlagSchema(cap: number) {
     .optional()
     .describe(
       `Set true to allow batches larger than ${cap}. Use sparingly — MCP clients may time out on long-running tool calls. Ignored for single-id input.`,
+    )
+}
+
+/**
+ * Shared schema fragment for the universal `confirmDelete` gate, mandated
+ * by SKILL.md Ground Rule #10 — every delete tool MUST require an explicit
+ * confirmation before proceeding. Single or batch, cascade or not.
+ *
+ * The handler is responsible for the actual refusal — read
+ * `input.confirmDelete` and throw a {@link Bitrix24ToolError} with code
+ * `DELETE_NEEDS_CONFIRM` if it's not `true`. The schema-level optional is
+ * deliberate: the field defaults to `undefined`, the handler raises a
+ * typed error, and the agent gets a clear "re-call with confirmDelete:
+ * true" path instead of a generic Zod failure.
+ *
+ * Cascade-destructive deletes (e.g. checklist heading delete) layer a
+ * second confirm field (e.g. `confirmDeleteHeading`) per Ground Rule #9 —
+ * the agent must set BOTH to true.
+ */
+export function confirmDeleteSchema() {
+  return z
+    .boolean()
+    .optional()
+    .describe(
+      'REQUIRED for every delete operation (SKILL.md Ground Rule #10). Pass `true` only after the operator has explicitly agreed to the deletion ("да, удали", not "посмотри"). The tool refuses with DELETE_NEEDS_CONFIRM if absent or `false`. Applies to BOTH single and batch deletes — the confirm is per-call, not per-id, so confirming once authorises the whole batch (good for "удали записи 5, 7, 9 — да, точно"). For cascade-destructive deletes (e.g. checklist heading), a second `confirm<Cascade>` field stacks on top.',
     )
 }
 

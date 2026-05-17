@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
@@ -23,6 +24,11 @@ const tool = (await import('../../../../server/mcp/tools/tasks/update-elapsed-ti
     comment?: string
     userId?: number
   }) => Promise<ToolContent>
+  inputSchema: {
+    seconds: z.ZodOptional<z.ZodNumber>
+    comment: z.ZodOptional<z.ZodString>
+    userId: z.ZodOptional<z.ZodNumber>
+  }
 }
 
 describe('bitrix24_update_elapsed_time', () => {
@@ -80,11 +86,46 @@ describe('bitrix24_update_elapsed_time', () => {
     expect(fake.v2Call).not.toHaveBeenCalled()
   })
 
+  it('treats `comment: ""` as a real change (explicit clear) — does NOT trigger NO_CHANGES', async () => {
+    // Edge of the semantics: empty-string is a deliberate operator
+    // action ("wipe the comment"), distinguishable from undefined (no-op).
+    // Without this guard, the LLM's "clear it" intent would hit the
+    // NO_CHANGES refusal and look like a bug.
+    fake.v2Call.mockResolvedValue(fakeOk(null))
+    const result = await tool.handler({ taskId: 691, itemId: 5, comment: '' })
+
+    expect(fake.v2Call).toHaveBeenCalledTimes(1)
+    const payload = JSON.parse(result.content[0]!.text)
+    expect(payload).toEqual({ updated: true, taskId: 691, itemId: 5, comment: '' })
+  })
+
   it('wraps SDK errors (e.g. ACCESS_DENIED from non-author edits) into Bitrix24ToolError', async () => {
     fake.v2Call.mockRejectedValue(new Error('access denied'))
     await expect(tool.handler({ taskId: 5, itemId: 7, seconds: 600 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'access denied',
     })
+  })
+
+  it('schema rejects non-positive / zero / float / >86400 seconds (same guards as add)', () => {
+    expect(tool.inputSchema.seconds.safeParse(0).success).toBe(false)
+    expect(tool.inputSchema.seconds.safeParse(-1).success).toBe(false)
+    expect(tool.inputSchema.seconds.safeParse(1.5).success).toBe(false)
+    expect(tool.inputSchema.seconds.safeParse(86_400).success).toBe(true)
+    expect(tool.inputSchema.seconds.safeParse(86_401).success).toBe(false)
+    expect(tool.inputSchema.seconds.safeParse(undefined).success).toBe(true)
+  })
+
+  it('schema rejects comment longer than 4000 chars (memory-DoS guard)', () => {
+    expect(tool.inputSchema.comment.safeParse('a'.repeat(4_000)).success).toBe(true)
+    expect(tool.inputSchema.comment.safeParse('a'.repeat(4_001)).success).toBe(false)
+    expect(tool.inputSchema.comment.safeParse('').success).toBe(true) // empty is fine — explicit-clear
+  })
+
+  it('schema rejects non-positive / zero / float userId', () => {
+    expect(tool.inputSchema.userId.safeParse(0).success).toBe(false)
+    expect(tool.inputSchema.userId.safeParse(-1).success).toBe(false)
+    expect(tool.inputSchema.userId.safeParse(1.5).success).toBe(false)
+    expect(tool.inputSchema.userId.safeParse(47).success).toBe(true)
   })
 })

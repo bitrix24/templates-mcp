@@ -45,7 +45,7 @@ const DEFAULT_SELECT_WIRE = normalizeBitrix24Select(DEFAULT_SELECT_CAMEL)
 export default defineMcpTool({
   name: 'bitrix24_list_elapsed_time',
   description:
-    'List elapsed-time entries on Bitrix24 tasks. Use this to read what was logged via `bitrix24_add_elapsed_time` (or via the Bitrix24 stopwatch — both flows write to the same table). Filter by `taskId` for a single-task view, or pass `filter` with camelCase keys + operator prefixes (e.g. { ">=createdDate": "2025-01-01", userId: 5 }) for a custom slice. Page size is fixed at 50 by Bitrix24; use `start` for pagination. Returns id, taskId, userId, commentText, seconds, createdDate, and the stopwatch DATE_START / DATE_STOP timestamps.',
+    'List elapsed-time entries on Bitrix24 tasks. Use this to read what was logged via `bitrix24_add_elapsed_time` (or via the Bitrix24 stopwatch — both flows write to the same table). Filter by `taskId` for a single-task view, or pass `filter` with camelCase keys + operator prefixes (e.g. { ">=createdDate": "2025-01-01", userId: 5 }) for a custom slice. Page size is fixed at 50 by Bitrix24; use `start` for pagination (multiples of 50). Returns id, taskId, userId, commentText, seconds, createdDate, and the stopwatch dateStart / dateStop timestamps (camelCase in the JSON response).',
   inputSchema: {
     taskId: z
       .number()
@@ -77,33 +77,46 @@ export default defineMcpTool({
       .number()
       .int()
       .nonnegative()
+      .max(100_000)
       .optional()
-      .describe('Pagination offset (0 = first page, 50 = second, …). Omit for first page.'),
+      .describe(
+        'Pagination offset (0 = first page, 50 = second, …). Must be a multiple of 50 — Bitrix24 v2 `getlist` paginates by 1-based page number, and non-multiple offsets round DOWN to the start of the containing page (e.g. start=75 → page 2 starting at 50). Capped at 100_000 to guard against accidental huge offsets. Omit for first page.',
+      ),
   },
   handler: async ({ taskId, filter, order, select, start }) => {
     const b24 = useBitrix24()
 
     // Merge `taskId` convenience field into the filter unless the operator
-    // already supplied an explicit TASK_ID-shaped key. We do the merge BEFORE
-    // normalisation so the conflict detection in `normalizeBitrix24Filter`
-    // catches the redundant-key case loudly.
+    // already supplied any TASK_ID-shaped key — including operator-prefix
+    // variants like `!taskId` or `>=TASK_ID`. Without the prefix-stripped
+    // check, `{ taskId: 91, filter: { '!taskId': 5 } }` would emit a
+    // contradictory filter on the wire (both equality and not-equal on
+    // TASK_ID). The strip pattern matches `normalizeBitrix24Key`'s
+    // operator prefix set: `!`, `%`, `>=`, `<=`, `>`, `<`.
     const mergedFilter: Record<string, unknown> = { ...(filter ?? {}) }
-    if (taskId !== undefined && !('taskId' in mergedFilter) && !('TASK_ID' in mergedFilter)) {
+    const taskIdAlreadyFiltered = Object.keys(mergedFilter).some((k) => {
+      const fieldName = k.replace(/^[!%<>=]+/, '')
+      return fieldName === 'taskId' || fieldName === 'TASK_ID'
+    })
+    if (taskId !== undefined && !taskIdAlreadyFiltered) {
       mergedFilter.taskId = taskId
     }
 
-    // Bitrix24 v2 `getlist` family ignores SELECT when called via the
-    // object-form (it returns the full row); SELECT is only honoured in the
-    // positional-form. We still pass it through normalisation so a future
-    // SDK / endpoint upgrade picks it up without a tool-side change.
-    const data = await callV2<{ result?: unknown[] } | unknown[]>(
+    // Bitrix24 v2 `getlist` uses 1-based `iNumPage` for pagination, not the
+    // v3-style byte-offset `start`. Convert the operator-friendly `start`
+    // (offset) into `iNumPage` so the agent doesn't have to do math. Page
+    // size is fixed at 50; sub-page offsets round down to the start of
+    // their containing page (documented in the `start` field describe).
+    const pageSize = 50
+    const iNumPage = Math.floor((start ?? 0) / pageSize) + 1
+    const data = await callV2<unknown[] | { result?: unknown[] }>(
       b24,
       'task.elapseditem.getlist',
       {
         ORDER: order ? normalizeBitrix24Order(order) : { ID: 'desc' },
         FILTER: Object.keys(mergedFilter).length > 0 ? normalizeBitrix24Filter(mergedFilter) : {},
         SELECT: select ? normalizeBitrix24Select(select) : DEFAULT_SELECT_WIRE,
-        PARAMS: { NAV_PARAMS: { iNumPage: 1, nPageSize: 50, start: start ?? 0 } },
+        PARAMS: { NAV_PARAMS: { iNumPage, nPageSize: pageSize } },
       },
       'Failed to list Bitrix24 elapsed-time entries',
     )
