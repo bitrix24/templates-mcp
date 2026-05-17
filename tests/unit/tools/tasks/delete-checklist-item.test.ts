@@ -20,6 +20,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/delete-checklist-
     taskId: number
     itemId: number | number[]
     force?: boolean
+    confirmDelete?: boolean
     confirmDeleteHeading?: boolean
   }) => Promise<ToolContent>
 }
@@ -39,10 +40,10 @@ describe('bitrix24_delete_checklist_item', () => {
     fake.v2Batch.mockReset()
   })
 
-  it('deletes a regular (non-heading) item without confirmation, single call', async () => {
+  it('deletes a regular (non-heading) item with confirmDelete: true, single call', async () => {
     fake.v2Call.mockResolvedValueOnce(fakeChecklistList()).mockResolvedValueOnce(fakeOk(true))
 
-    const result = await tool.handler({ taskId: 13, itemId: 475 })
+    const result = await tool.handler({ taskId: 13, itemId: 475, confirmDelete: true })
 
     // First call is the pre-flight getlist; second is the real delete.
     expect(fake.v2Call).toHaveBeenNthCalledWith(1, {
@@ -56,10 +57,33 @@ describe('bitrix24_delete_checklist_item', () => {
     expect(JSON.parse(result.content[0]!.text)).toEqual({ deleted: true, taskId: 13, itemId: 475 })
   })
 
-  it('refuses to delete a heading without confirmDeleteHeading', async () => {
+  it('refuses single delete without confirmDelete: true and names the target (Ground Rule #9, universal)', async () => {
+    // Rule #9 fires BEFORE the heading pre-flight — the agent learns the
+    // confirm requirement without burning a getlist round-trip.
+    await expect(tool.handler({ taskId: 13, itemId: 475 })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+      message: expect.stringMatching(/checklist item 475 on task 13/) as unknown as string,
+    })
+    expect(fake.v2Call).not.toHaveBeenCalled()
+  })
+
+  it('refuses batch delete without confirmDelete: true (Ground Rule #9)', async () => {
+    await expect(tool.handler({ taskId: 13, itemId: [475, 433] })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+      message: expect.stringMatching(/2 checklist item\(s\) \[475, 433\] on task 13/) as unknown as string,
+    })
+    expect(fake.v2Call).not.toHaveBeenCalled()
+    expect(fake.v2Batch).not.toHaveBeenCalled()
+  })
+
+  it('refuses to delete a heading without confirmDeleteHeading (Rule #10 stacks on Rule #9)', async () => {
     fake.v2Call.mockResolvedValue(fakeChecklistList())
 
-    await expect(tool.handler({ taskId: 13, itemId: 431 })).rejects.toMatchObject({
+    // confirmDelete: true alone is not enough for a heading target — Rule #10
+    // (cascade) stacks on top, requiring confirmDeleteHeading as well.
+    await expect(tool.handler({ taskId: 13, itemId: 431, confirmDelete: true })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: 'HEADING_DELETE_NEEDS_CONFIRM',
     })
@@ -71,10 +95,15 @@ describe('bitrix24_delete_checklist_item', () => {
     })
   })
 
-  it('proceeds with heading deletion when confirmDeleteHeading: true (skips pre-flight)', async () => {
+  it('proceeds with heading deletion when BOTH confirmDelete and confirmDeleteHeading are true (skips pre-flight)', async () => {
     fake.v2Call.mockResolvedValue(fakeOk(true))
 
-    const result = await tool.handler({ taskId: 13, itemId: 431, confirmDeleteHeading: true })
+    const result = await tool.handler({
+      taskId: 13,
+      itemId: 431,
+      confirmDelete: true,
+      confirmDeleteHeading: true,
+    })
 
     expect(fake.v2Call).toHaveBeenCalledTimes(1)
     expect(fake.v2Call).toHaveBeenCalledWith({
@@ -86,16 +115,20 @@ describe('bitrix24_delete_checklist_item', () => {
 
   it('wraps SDK errors with task and item ids in the fallback', async () => {
     fake.v2Call.mockResolvedValueOnce(fakeChecklistList()).mockRejectedValueOnce(new Error('action not allowed'))
-    await expect(tool.handler({ taskId: 13, itemId: 475 })).rejects.toMatchObject({
+    await expect(tool.handler({ taskId: 13, itemId: 475, confirmDelete: true })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'action not allowed',
     })
   })
 
-  it('batch mode: pre-flight refuses any batch that targets a heading without confirmation', async () => {
+  it('batch mode: pre-flight refuses any batch that targets a heading without cascade confirmation', async () => {
     fake.v2Call.mockResolvedValue(fakeChecklistList())
 
-    await expect(tool.handler({ taskId: 13, itemId: [433, 431, 475] })).rejects.toMatchObject({
+    // confirmDelete: true satisfies Rule #9; the cascade (heading 431 in the
+    // batch) still triggers Rule #10's pre-flight refusal.
+    await expect(
+      tool.handler({ taskId: 13, itemId: [433, 431, 475], confirmDelete: true }),
+    ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: 'HEADING_DELETE_NEEDS_CONFIRM',
     })
@@ -114,7 +147,7 @@ describe('bitrix24_delete_checklist_item', () => {
       getErrorMessages: () => [],
     })
 
-    const result = await tool.handler({ taskId: 13, itemId: [475, 476] })
+    const result = await tool.handler({ taskId: 13, itemId: [475, 476], confirmDelete: true })
 
     const payload = JSON.parse(result.content[0]!.text) as {
       batch: boolean

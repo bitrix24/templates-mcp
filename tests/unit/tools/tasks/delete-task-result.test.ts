@@ -17,8 +17,8 @@ interface ToolContent {
 }
 
 const tool = (await import('../../../../server/mcp/tools/tasks/delete-task-result')).default as unknown as {
-  handler: (input: { resultId: number }) => Promise<ToolContent>
-  inputSchema: { resultId: z.ZodNumber }
+  handler: (input: { resultId: number; confirmDelete?: boolean }) => Promise<ToolContent>
+  inputSchema: { resultId: z.ZodNumber; confirmDelete: z.ZodOptional<z.ZodBoolean> }
 }
 
 describe('bitrix24_delete_task_result', () => {
@@ -26,10 +26,10 @@ describe('bitrix24_delete_task_result', () => {
     fake.v3Call.mockReset()
   })
 
-  it('posts to tasks.task.result.delete with { id }', async () => {
+  it('posts to tasks.task.result.delete with { id } when confirmDelete: true', async () => {
     fake.v3Call.mockResolvedValue(fakeOk({ result: true }))
 
-    const result = await tool.handler({ resultId: 17 })
+    const result = await tool.handler({ resultId: 17, confirmDelete: true })
 
     expect(fake.v3Call).toHaveBeenCalledWith({
       method: 'tasks.task.result.delete',
@@ -38,9 +38,23 @@ describe('bitrix24_delete_task_result', () => {
     expect(JSON.parse(result.content[0]!.text)).toEqual({ deleted: true, resultId: 17 })
   })
 
+  it('refuses without confirmDelete: true and names the target in the message (Ground Rule #9)', async () => {
+    await expect(tool.handler({ resultId: 42 })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+      message: expect.stringMatching(/task result 42/) as unknown as string,
+    })
+    await expect(tool.handler({ resultId: 42, confirmDelete: false })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+    })
+    // No wire call should have fired in either refusal path.
+    expect(fake.v3Call).not.toHaveBeenCalled()
+  })
+
   it('wraps SDK errors with the resultId in the fallback', async () => {
     fake.v3Call.mockRejectedValue(new Error('access denied'))
-    await expect(tool.handler({ resultId: 42 })).rejects.toMatchObject({
+    await expect(tool.handler({ resultId: 42, confirmDelete: true })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'access denied',
     })
@@ -52,7 +66,7 @@ describe('bitrix24_delete_task_result', () => {
     // payload — it only checks isSuccess. The tool should still respond
     // with `deleted: true` so the agent doesn't loop on retries.
     fake.v3Call.mockResolvedValue(fakeOk({ result: false }))
-    const result = await tool.handler({ resultId: 999999 })
+    const result = await tool.handler({ resultId: 999999, confirmDelete: true })
     expect(JSON.parse(result.content[0]!.text)).toEqual({ deleted: true, resultId: 999999 })
   })
 
@@ -62,7 +76,7 @@ describe('bitrix24_delete_task_result', () => {
         code: 'BITRIX_REST_V3_EXCEPTION_ACCESSDENIEDEXCEPTION',
       }),
     )
-    await expect(tool.handler({ resultId: 42 })).rejects.toMatchObject({
+    await expect(tool.handler({ resultId: 42, confirmDelete: true })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: 'BITRIX_REST_V3_EXCEPTION_ACCESSDENIEDEXCEPTION',
     })
@@ -72,5 +86,14 @@ describe('bitrix24_delete_task_result', () => {
     expect(tool.inputSchema.resultId.safeParse(0).success).toBe(false)
     expect(tool.inputSchema.resultId.safeParse(-1).success).toBe(false)
     expect(tool.inputSchema.resultId.safeParse(1.5).success).toBe(false)
+  })
+
+  it('schema accepts confirmDelete as optional boolean', () => {
+    expect(tool.inputSchema.confirmDelete.safeParse(undefined).success).toBe(true)
+    expect(tool.inputSchema.confirmDelete.safeParse(true).success).toBe(true)
+    expect(tool.inputSchema.confirmDelete.safeParse(false).success).toBe(true)
+    // Zod's strict boolean — `"true"` string is rejected; no coercion bypass.
+    expect(tool.inputSchema.confirmDelete.safeParse('true').success).toBe(false)
+    expect(tool.inputSchema.confirmDelete.safeParse(1).success).toBe(false)
   })
 })

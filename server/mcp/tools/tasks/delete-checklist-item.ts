@@ -6,10 +6,20 @@ import { defineChecklistActionTool } from '~/server/utils/checklist'
  * Bitrix24 REST: task.checklistitem.delete (v2 — no v3 equivalent)
  *   https://apidocs.bitrix24.ru/api-reference/tasks/checklist-item/task-checklist-item-delete.html
  *
- * The factory adds a `confirmDeleteHeading: boolean` field for this tool
- * only; deletions targeting a checklist heading are refused with
- * `HEADING_DELETE_NEEDS_CONFIRM` until the agent re-calls with confirmation.
- * See `server/utils/checklist.ts` (`assertNotHeading` / `assertBatchNoHeadings`).
+ * The factory adds TWO confirm fields for this tool only (omitted from the
+ * sibling `complete` / `renew` tools' schema):
+ *
+ *   - `confirmDelete: boolean` (SKILL.md Rule #9, universal) — required for
+ *     every delete; refused with `DELETE_NEEDS_CONFIRM` if not `true`.
+ *   - `confirmDeleteHeading: boolean` (SKILL.md Rule #10, cascade-specific)
+ *     — additionally required when the target is a checklist heading
+ *     (parentId === 0). Refused with `HEADING_DELETE_NEEDS_CONFIRM` after a
+ *     single pre-flight `task.checklistitem.getlist` that gates both
+ *     single-id and batch flows. See `server/utils/checklist.ts`
+ *     (`assertConfirmedDelete` / `assertNotHeading` / `assertBatchNoHeadings`).
+ *
+ * Heading deletes need BOTH flags `true`; regular-item deletes only need
+ * `confirmDelete: true`.
  */
 export default defineChecklistActionTool({
   name: 'bitrix24_delete_checklist_item',
@@ -17,5 +27,5 @@ export default defineChecklistActionTool({
   verb: 'delete',
   pastTense: 'deleted',
   description:
-    'Delete one item from a Bitrix24 task checklist. Destructive — there is no undo. Deleting a checklist HEADING (the item that names the whole checklist) wipes every child item with it; the tool refuses such requests with HEADING_DELETE_NEEDS_CONFIRM unless you also pass `confirmDeleteHeading: true` after the operator has agreed. **NOTE**: this tool pre-dates SKILL.md Ground Rule #9 (universal `confirmDelete` required for every delete). Retrofit to require `confirmDelete: true` for regular-item deletions is tracked in issue #29 — until that lands, treat operator-agreement as a HUMAN responsibility before calling this tool, even when no heading is involved.',
+    'Delete one item from a Bitrix24 task checklist. Destructive — there is no undo. **Requires `confirmDelete: true`** (SKILL.md Rule #9, universal) after the operator has explicitly agreed to the deletion. Additionally, deleting a checklist HEADING (the item that names the whole checklist) wipes every child item with it; heading deletes ALSO require `confirmDeleteHeading: true` (Rule #10, cascade) — pre-flight refuses with HEADING_DELETE_NEEDS_CONFIRM otherwise. Regular-item deletes need only `confirmDelete: true`.',
 })
