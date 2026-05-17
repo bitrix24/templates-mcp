@@ -81,6 +81,16 @@ import renewTask from '~/server/mcp/tools/tasks/renew-task'
 // eslint-disable-next-line import/first
 import rateTask from '~/server/mcp/tools/tasks/rate-task'
 // eslint-disable-next-line import/first
+import addChecklistItem from '~/server/mcp/tools/tasks/add-checklist-item'
+// eslint-disable-next-line import/first
+import listChecklistItems from '~/server/mcp/tools/tasks/list-checklist-items'
+// eslint-disable-next-line import/first
+import completeChecklistItem from '~/server/mcp/tools/tasks/complete-checklist-item'
+// eslint-disable-next-line import/first
+import renewChecklistItem from '~/server/mcp/tools/tasks/renew-checklist-item'
+// eslint-disable-next-line import/first
+import deleteChecklistItem from '~/server/mcp/tools/tasks/delete-checklist-item'
+// eslint-disable-next-line import/first
 import submitFeedback from '~/server/mcp/tools/meta/submit-feedback'
 
 interface McpToolDef {
@@ -104,6 +114,11 @@ const ALL_TOOLS: McpToolDef[] = [
   deferTask as unknown as McpToolDef,
   renewTask as unknown as McpToolDef,
   rateTask as unknown as McpToolDef,
+  addChecklistItem as unknown as McpToolDef,
+  listChecklistItems as unknown as McpToolDef,
+  completeChecklistItem as unknown as McpToolDef,
+  renewChecklistItem as unknown as McpToolDef,
+  deleteChecklistItem as unknown as McpToolDef,
   submitFeedback as unknown as McpToolDef,
 ]
 
@@ -342,6 +357,48 @@ const CASES: Case[] = [
     input: 'Approve everything from sprint 14, all looks good.',
     expected: 'bitrix24_list_tasks',
     notes: 'EN bulk approval without explicit ids: enumerate via list_tasks first; approve_task batch follows.',
+  },
+
+  // ── Task checklist (5 v2 wrappers — add / list / complete / renew / delete) ─
+  {
+    input: 'Добавь в задачу 123 пункт чек-листа «деплой».',
+    expected: 'bitrix24_add_checklist_item',
+    notes: 'Add a regular item — the operator picks a checklist by context; tool defaults to new-checklist when parentId is omitted.',
+  },
+  {
+    input: 'Создай в задаче 123 новый чек-лист «Релиз» с пунктами changelog и smoke.',
+    expected: 'bitrix24_add_checklist_item',
+    notes: 'New checklist + items — LLM should still pick add_checklist_item; multiple calls follow.',
+  },
+  {
+    input: 'Покажи чек-лист задачи 123.',
+    expected: 'bitrix24_list_checklist_items',
+    notes: 'Read the whole checklist tree.',
+  },
+  {
+    input: 'Какой прогресс по чек-листу задачи 123?',
+    expected: 'bitrix24_list_checklist_items',
+    notes: 'Progress = list + count completed; first tool is the list.',
+  },
+  {
+    input: 'Отметь в задаче 123 пункт 47 как выполненный.',
+    expected: 'bitrix24_complete_checklist_item',
+    notes: 'Both ids given — go straight to complete.',
+  },
+  {
+    input: 'Сними галку с пункта 47 в задаче 123, ещё не доделано.',
+    expected: 'bitrix24_renew_checklist_item',
+    notes: 'Un-check = renew; must NOT route to renew_task (the task-level wrapper).',
+  },
+  {
+    input: 'Удали из задачи 123 пункт 47 чек-листа.',
+    expected: 'bitrix24_delete_checklist_item',
+    notes: 'Delete a single item.',
+  },
+  {
+    input: 'Mark checklist item 21 on task 13 as done.',
+    expected: 'bitrix24_complete_checklist_item',
+    notes: 'EN variant — both ids given; tests the description reads in English.',
   },
 
   // ── Task rating (MARK field, P/N/null) ─────────────────────────────────

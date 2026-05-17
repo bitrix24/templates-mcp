@@ -1,6 +1,6 @@
 # Manual test phrases for the Bitrix24 MCP
 
-`Last reviewed: 2026-05-16`
+`Last reviewed: 2026-05-17`
 
 This is the operator's natural-language test pack for the MCP. Paste each phrase into Claude (or any MCP-connected LLM) with the connector enabled and observe:
 
@@ -26,6 +26,11 @@ Bitrix24 has two parallel REST API generations:
 | `bitrix24_list_tasks` | `tasks.task.list` | **v3** ✓ |
 | `bitrix24_update_task` | `tasks.task.update` | **v3** ✓ |
 | `bitrix24_add_task_comment` | `task.commentitem.add` | **v2 deprecated** — v3 replacement is `tasks.task.chat.message.send`. **Migration is queued; see roadmap.** |
+| `bitrix24_add_checklist_item` | `task.checklistitem.add` | **v2 only** — no v3 equivalent for task checklists (v3 `tasks.template.checklist.*` is for templates). |
+| `bitrix24_list_checklist_items` | `task.checklistitem.getlist` | **v2 only** — same reason. |
+| `bitrix24_complete_checklist_item` | `task.checklistitem.complete` | **v2 only** — same reason. |
+| `bitrix24_renew_checklist_item` | `task.checklistitem.renew` | **v2 only** — same reason. |
+| `bitrix24_delete_checklist_item` | `task.checklistitem.delete` | **v2 only** — same reason. |
 
 When you see a Bitrix24 method name in a tool's source, sanity-check it has the `tasks.` (with `s`) prefix or lives under a documented v3 URL. The phrase pack below assumes v3 throughout.
 
@@ -150,29 +155,31 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 
 ---
 
-## 7. Checklists ⏳ — NEEDS NEW TOOLS
+## 7. Checklists ✅ (PR for Phase 2)
 
-**Status:** no tools today. Bitrix24 REST: `task.checklistitem.{add,update,complete,renew,delete,getlist,get,moveafteritem}`.
-
-A task has multiple checklists; each checklist contains items. The Bitrix24 REST treats the whole tree as flat items with a `PARENT_ID` to nest. For an MCP-friendly API we'll likely expose two tools and let the agent compose:
+**Status:** five tools shipped. Bitrix24 REST: `task.checklistitem.{add,getlist,complete,renew,delete}` — v2 namespace; v3 has no equivalent for task checklists (only `tasks.template.checklist.*` for task templates). The whole checklist tree on a task is FLAT — every item carries a `parentId`; the special value `0` marks a **checklist heading**, and every regular item references its heading (or a deeper parent) by id. Multiple headings per task → multiple checklists.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 7.1 | Добавь чек-лист "QA" к задаче 123 с пунктами: «UI», «API», «миграция». | ⏳ Three `add_checklist_item` calls; first is the heading, next three are children with `parentId` |
-| 7.2 | Поставь в чек-листе задачи 123 пункт "QA / API" как выполненный. | ⏳ `list_checklist` to find the item id, then `complete_checklist_item { itemId }` |
-| 7.3 | Покажи прогресс чек-листа задачи 123. | ⏳ `list_checklist_items { taskId: 123 }`, count completed vs total |
-| 7.4 | Добавь в чек-лист задачи 123 ещё один пункт «деплой». | ⏳ `add_checklist_item { taskId: 123, title: "деплой" }` |
-| 7.5 | Сними отметку выполнения с пункта «деплой» в задаче 123. | ⏳ `renew_checklist_item { itemId }` |
-| 7.6 | Удали из чек-листа задачи 123 пункт «UI». | ⏳ `delete_checklist_item { itemId }` |
-| 7.7 | Создай в задаче 123 новый чек-лист "Релизный план" с пунктами: «changelog», «прогон тестов», «тег», «smoke». | ⏳ One header + four children |
+| 7.1 | Добавь чек-лист "QA" к задаче 123 с пунктами: «UI», «API», «миграция». | Four `add_checklist_item` calls. First: `{ taskId: 123, title: "QA" }` (no `parentId` → starts a new checklist; the returned id is the heading id). Next three: `{ taskId: 123, title: "UI", parentId: <heading-id> }` etc. |
+| 7.2 | Поставь в чек-листе задачи 123 пункт "QA / API" как выполненный. | `list_checklist_items { taskId: 123 }` → find the item by title → `complete_checklist_item { taskId: 123, itemId: <found> }` |
+| 7.3 | Покажи прогресс чек-листа задачи 123. | `list_checklist_items { taskId: 123 }` — agent counts `isComplete: true` over the items in each heading. |
+| 7.4 | Добавь в чек-лист задачи 123 ещё один пункт «деплой». | `list_checklist_items` to locate the heading (or accept the operator naming it), then `add_checklist_item { taskId: 123, title: "деплой", parentId: <heading-id> }`. |
+| 7.5 | Сними отметку выполнения с пункта «деплой» в задаче 123. | `list_checklist_items` → match title → `renew_checklist_item { taskId: 123, itemId: <found> }`. |
+| 7.6 | Удали из чек-листа задачи 123 пункт «UI». | `list_checklist_items` → match → `delete_checklist_item { taskId: 123, itemId: <found> }`. |
+| 7.7 | Создай в задаче 123 новый чек-лист "Релизный план" с пунктами: «changelog», «прогон тестов», «тег», «smoke». | Heading add (no `parentId`) + four child adds with the returned heading id. |
+| 7.8 | Закрой пункты 47, 48 и 49 в задаче 123 одним вызовом. | `complete_checklist_item { taskId: 123, itemId: [47, 48, 49] }` — batch mode mirrors the lifecycle tools, returns `{ batch, total, ok, failed, results }`. |
 
-**Proposed tools:**
-- `bitrix24_add_checklist_item` (title, taskId, parentId?, sortIndex?, isImportant?)
-- `bitrix24_list_checklist_items` (taskId) — returns the tree
-- `bitrix24_complete_checklist_item` (itemId)
-- `bitrix24_renew_checklist_item` (itemId)
-- `bitrix24_delete_checklist_item` (itemId)
-- (optional) `bitrix24_update_checklist_item` (itemId, title?, isImportant?)
+**Tools shipped:**
+- `bitrix24_add_checklist_item` — `{ taskId, title, parentId?, sortIndex?, isImportant? }`. `parentId: 0` (or omitted) creates a new checklist; the `title` becomes the heading.
+- `bitrix24_list_checklist_items` — `{ taskId, order? }` (order: `{ field, direction }`, sort fields per apidocs).
+- `bitrix24_complete_checklist_item` — `{ taskId, itemId | itemId[] }` (single or batch up to 25).
+- `bitrix24_renew_checklist_item` — `{ taskId, itemId | itemId[] }`.
+- `bitrix24_delete_checklist_item` — `{ taskId, itemId | itemId[] }`. Heading deletion removes the whole checklist (heading + children) — confirm with the operator before deleting a heading.
+
+**Out of scope this PR (file as follow-ups if real demand emerges):**
+- `update_checklist_item` (move / rename / reassign members). The five tools above cover every phrase in this section; rename + move are rarely demanded and would expand the surface for marginal value.
+- `MEMBERS` field on `add_checklist_item`. The Bitrix24 API accepts `MEMBERS: { <userId>: { TYPE: "A"|"U" } }` for per-item assignees / watchers, but no test phrase exercises it today.
 
 ---
 
@@ -285,12 +292,12 @@ Roughly in order of value-for-effort:
 
 | Priority | PR scope | Tools |
 |---|---|---|
-| 1 | **`feat(tools): task lifecycle`** | `start_task`, `pause_task`, `complete_task`, `approve_task`, `disapprove_task`, `defer_task`, `renew_task` (7 thin wrappers) |
-| 2 | **`feat(tools): task checklist`** | `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` |
-| 3 | **`feat(tools): list task comments + subtask parentId`** | `list_task_comments` (new tool, filters service messages by default); schema bump on `create_task` to accept `parentId` |
-| 4 | **`feat(tools): task time tracking`** | `add_elapsed_time`, `list_elapsed_time` |
-| 5 | **`feat(tools): task dependencies`** | `add_task_dependency`, `remove_task_dependency`, `list_task_dependencies` |
-| 6 | **(retire `task.commentitem.add` → `tasks.task.chat.message.send`)** | Migrate `add_task_comment` to the modern endpoint; this also fixes "deprecated" warning |
+| ✅ | **`feat(tools): task lifecycle`** (PR #5) | `start_task`, `pause_task`, `complete_task`, `approve_task`, `disapprove_task`, `defer_task`, `renew_task` (7 thin wrappers) |
+| ✅ | **`feat(tools): task checklist`** | `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` |
+| 1 | **`feat(tools): list task comments + subtask parentId`** | `list_task_comments` (new tool, filters service messages by default); schema bump on `create_task` to accept `parentId` |
+| 2 | **`feat(tools): task time tracking`** | `add_elapsed_time`, `list_elapsed_time` |
+| 3 | **`feat(tools): task dependencies`** | `add_task_dependency`, `remove_task_dependency`, `list_task_dependencies` |
+| 4 | **(retire `task.commentitem.add` → `tasks.task.chat.message.send`)** | Migrate `add_task_comment` to the modern endpoint; this also fixes "deprecated" warning |
 
 After all of those land, sections 5–10 of this doc flip from ⏳ to ✅ and the analytics queries in section 11 become realistic.
 
