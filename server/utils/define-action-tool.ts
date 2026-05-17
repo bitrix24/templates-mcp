@@ -130,9 +130,10 @@ export function confirmDeleteSchema() {
  *
  * Closes #32 — previously duplicated as module-local functions in
  * `delete-elapsed-time.ts` + `checklist.ts`, and inline in
- * `delete-task-result.ts`. The 3rd factory consumer (PR-C task.dependence.*)
- * lands on this helper, so the consolidation lives here rather than
- * proliferating a fourth copy.
+ * `delete-task-result.ts` (3 existing callsites). PR-C adds a 4th
+ * (`remove-task-dependency.ts`); the consolidation lives here so the
+ * 4th callsite lands on the shared helper rather than proliferating a
+ * fourth copy.
  */
 export function assertConfirmedDelete(
   toolName: string,
