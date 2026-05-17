@@ -8,7 +8,7 @@ Build a Model Context Protocol (MCP) server that gives AI assistants (Claude and
 
 ## Project coordinates
 
-- **Repository**: https://github.com/bitrix24/templates-dashboard
+- **Repository**: https://github.com/bitrix24/templates-mcp
 - **Production domain**: `prod.example.com`
 - **Eval LLM**: DeepSeek (OpenAI-compatible API)
 - **Production posture**: server is self-sufficient, GitHub Actions deploys on `v*` tag, `nginx-proxy` + `acme-companion` are already running on the host and serve the `proxy-net` network
@@ -17,7 +17,7 @@ Build a Model Context Protocol (MCP) server that gives AI assistants (Claude and
 
 | Layer | Choice | Rationale |
 |---|---|---|
-| Runtime | Node.js 20+ | Stable LTS, native `fetch`, ESM |
+| Runtime | Node.js 22+ | LTS, native `fetch`, ESM. CI / Docker / `package.json#engines` all align on 22. |
 | Language | TypeScript 5.x (strict) | Type safety, IDE support |
 | Framework | Nuxt 3.x (Nitro) | Base for `@nuxtjs/mcp-toolkit`, h3 as HTTP layer, auto-imports |
 | MCP toolkit | `@nuxtjs/mcp-toolkit` ^0.15 | File-based discovery, Inspector, Evalite, Agent Skills, Code Mode |
@@ -143,7 +143,7 @@ bx24-template-mcp/
   5. `bitrix24_current_user`
 - **Meta-tool `bx24mcp_submit_feedback`** — lets the AI agent submit feedback (positive/issue/suggestion). Each call creates a GitHub issue in `bitrix24/templates-mcp` with label `agent-feedback` (see "Agent Feedback" section).
 - Inspector in Nuxt DevTools for tool debugging during development.
-- Structured logging (`consola` pretty in dev, JSON in prod).
+- Structured logging via the SDK's own `Logger` system (`@bitrix24/b24jssdk`'s `Logger` + `ConsoleHandler`), wired into `useBitrix24()` via `client.setLogger(useLogger())` so SDK retry / rate-limit / 503 events flow through the same channel as app logs. See `server/utils/logger.ts`.
 - `/api/health` endpoint, no auth.
 
 ### Phase 2 (starts immediately after MVP, no waiting for feedback)
@@ -157,13 +157,22 @@ Tooling depth on tasks (concrete gap analysis lives in [`docs/MANUAL-TEST-PHRASE
 - **Time tracking**: `add_elapsed_time`, `list_elapsed_time` over `task.elapseditem.*`.
 - **Task dependencies**: `add_task_dependency`, `remove_task_dependency`, `list_task_dependencies` over `tasks.task.dependence.*`.
 
-CRM & infrastructure:
+Infrastructure:
 
-- **Deals**: create, list, move through stages
-- **Contacts**: create, list, search by phone/email
 - **MCP resources** for static dictionaries (pipelines, stages, users) with TTL cache
 - **MCP prompts** for typical scenarios
 - **Client-side rate limiting** on Bitrix24 (2 req/sec, queue) — ✅ **provided by the SDK out of the box**. `@bitrix24/b24jssdk` 1.1+ ships `RestrictionManager` (leaky-bucket, default burst 50 / drain 2 req/sec, adaptive delay on `QUERY_LIMIT_EXCEEDED`, retry × 3 with backoff), initialised in `B24Hook`'s constructor via `ParamsFactory.getDefault()`. No project-side wrapper. Configurable per-tariff (`getEnterprise`, `getBatchProcessing`, `getRealtime`). Issue #7's bulk input on the 8 mutation tools shipped on top of this.
+
+### Post-pilot expansion (after the pilot launch — incremental, via the new-tool process)
+
+Once the pilot is in production, the toolset grows entity by entity rather than as one big committed block. Every addition follows [`docs/ADDING-TOOLS.md`](./docs/ADDING-TOOLS.md) (mirror for agents: [`skills/manage-bx24-template-mcp/adding-tools.md`](./skills/manage-bx24-template-mcp/adding-tools.md)) — one tool per PR with Zod schema, unit tests, eval cases, and a description tightened against the persona walk.
+
+CRM coverage we expect to ship this way:
+
+- **Deals**: create, list, move through stages
+- **Contacts**: create, list, search by phone/email
+
+No fixed delivery order — driven by pilot feedback and `bx24mcp_submit_feedback` signal. Further CRM entities (companies, leads, invoices, etc.) come in the same way when demand appears.
 
 ### Phase 3
 
@@ -544,17 +553,43 @@ export default defineNuxtConfig({
 ## Bitrix24 client (`server/utils/bitrix24.ts`)
 
 ```typescript
-import { B24Hook } from '@bitrix24/b24jssdk';
+import { B24Hook } from '@bitrix24/b24jssdk'
+import { useLogger } from '~/server/utils/logger'
 
-let client: B24Hook | null = null;
+let client: B24Hook | null = null
 
 export function useBitrix24(): B24Hook {
-  if (client) return client;
-  const config = useRuntimeConfig();
-  client = new B24Hook(config.bitrix24WebhookUrl);
-  return client;
+  if (client) return client
+
+  const { bitrix24WebhookUrl } = useRuntimeConfig()
+  if (!bitrix24WebhookUrl) {
+    throw new Error('NUXT_BITRIX24_WEBHOOK_URL is not configured')
+  }
+
+  // SDK 1.1+ exposes a static factory that parses portal host / user id /
+  // secret out of the full webhook URL. The raw constructor (`new B24Hook(url)`)
+  // was removed in SDK 1.1.
+  try {
+    client = B24Hook.fromWebhookUrl(bitrix24WebhookUrl)
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    throw new Error(
+      `NUXT_BITRIX24_WEBHOOK_URL is not a valid Bitrix24 webhook URL: ${reason}`,
+    )
+  }
+
+  // Wire the SDK's internal events (retry, rate-limit, errors) into our
+  // structured logger. One sink for app + SDK events.
+  client.setLogger(useLogger())
+  return client
 }
 ```
+
+Tool handlers do not call `client.actions.*.make` directly — they go through
+`callV3<T>` / `callV2<T>` / `batchV3<T>` from `server/utils/sdk-helpers.ts`,
+which own the `isSuccess` / `getErrorMessages` / transport-error funnel
+once for the whole project. The deprecated `b24.callMethod` is forbidden
+(removed in SDK 2.0).
 
 In Phase 3, `useBitrix24OAuth()` joins it.
 
@@ -613,7 +648,7 @@ Evalite UI at `http://localhost:3006`.
 ## Docker
 
 ```dockerfile
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
@@ -621,7 +656,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/.output ./.output
@@ -674,7 +709,7 @@ networks:
 
 `.github/workflows/deploy.yml`, triggered by `v*` tag push:
 
-1. pnpm + Node 20
+1. pnpm + Node 22
 2. `pnpm install --frozen-lockfile`
 3. `pnpm lint && pnpm typecheck && pnpm test`
 4. Docker image build
@@ -789,7 +824,7 @@ Sections:
    - Why pnpm
 5. **State and persistence** — none in MVP, what changes in Phase 2 (cache for resources)
 6. **Concurrency model** — Node event loop, no shared state between requests, singleton client
-7. **Logging and observability** — `consola`, request IDs via h3 context, what gets logged where
+7. **Logging and observability** — SDK `Logger` (one channel for app + SDK events), request IDs via h3 context, what gets logged where
 8. **Failure modes** — Bitrix24 down, GitHub API down, exhausted rate limit, expired webhook
 9. **Open questions** — list of things explicitly deferred
 
@@ -804,7 +839,7 @@ Sections:
 3. **Skeleton** — full code template with `defineMcpTool`, Zod schema, handler
 4. **Naming conventions** — verbs, plurality, meta-tool prefix
 5. **Zod schemas** — every field gets `.describe()`, narrow types, use enums where possible
-6. **Calling Bitrix24** — `useBitrix24()`, prefer typed SDK methods, fall back to `b24.callMethod('rest.method', params)` with a comment linking to apidocs
+6. **Calling Bitrix24** — `useBitrix24()`, then `b24.actions.v3.call.make<T>({ method, params })` for v3 (`tasks.task.*`, `crm.*`) and `b24.actions.v2.call.make<T>({ method, params })` for v2 (`user.*`, `task.commentitem.*`). Use `b24.actions.v3.batch.make` for bulk operations (`isHaltOnError: false, returnAjaxResult: true`). Always check `response.isSuccess` and read via `response.getData()?.result`. The deprecated `b24.callMethod` is forbidden (removed in SDK 2.0). One-line `// REST: …` comment linking to apidocs above the call.
 7. **Error handling** — let SDK errors bubble; rely on `server/utils/errors.ts` to map them
 8. **Unit test** — template for `tests/unit/tools/<name>.test.ts`, what to mock
 9. **Eval case** — when to add an entry in `tests/evals/tool-selection.eval.ts`
@@ -940,12 +975,13 @@ Already drafted in the brief; final version stays terse and rule-oriented:
 | Phase | Scope | Definition of done |
 |---|---|---|
 | MVP | 5 base tools + `bx24mcp_submit_feedback`, webhook auth, HTTP transport, Inspector, Docker, nginx-proxy, GH Actions, Renovate, docs, tests | Claude.ai creates/reads tasks in prod; agent can submit feedback as an issue; Renovate is active |
-| Phase 2 | Deals, contacts, rate limiting, resources, prompts, caching. Starts **immediately** after MVP | All major Bitrix24 entities available, error rate < 1% over 100 calls |
+| Phase 2 | Task comments and checklists, rate limiting, resources, prompts, caching. Starts **immediately** after MVP | Infrastructure ready for entity expansion, error rate < 1% over 100 calls |
+| Post-pilot expansion | CRM (Deals, Contacts, …) added incrementally via [`docs/ADDING-TOOLS.md`](./docs/ADDING-TOOLS.md) — one tool per PR, driven by pilot feedback | All major Bitrix24 entities reachable through tools shipped via the new-tool process |
 | Phase 3 | OAuth, multi-tenant, batch, Code Mode | Multiple users connect their own portals, LLM orchestrates via JS code |
 
 ## Resolved open questions
 
-1. **Repository**: https://github.com/bitrix24/templates-dashboard
+1. **Repository**: https://github.com/bitrix24/templates-mcp
 2. **Production domain**: `prod.example.com`
 3. **Test Bitrix24 portal**: webhook → `NUXT_BITRIX24_TEST_WEBHOOK_URL`
 4. **Phase 2 starts immediately** after MVP, no waiting for feedback

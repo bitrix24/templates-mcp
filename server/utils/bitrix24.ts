@@ -1,24 +1,31 @@
 import { B24Hook } from '@bitrix24/b24jssdk'
+import { useLogger } from '~/server/utils/logger'
 
 let client: B24Hook | null = null
 
 /**
  * Returns a process-singleton Bitrix24 client backed by the incoming webhook
- * configured via NUXT_BITRIX24_WEBHOOK_URL.
+ * configured via `NUXT_BITRIX24_WEBHOOK_URL`.
  *
  * Rate limiting / retry / adaptive back-pressure are provided by the SDK's
  * own `RestrictionManager` — initialised in `B24Hook`'s constructor with
  * `ParamsFactory.getDefault()` (standard tariff: burst 50, drain 2 req/sec,
  * adaptive delay on 503 / QUERY_LIMIT_EXCEEDED, 3 retries with backoff). We
- * do NOT wrap or monkey-patch `callMethod` — the SDK already does this
+ * do NOT wrap or monkey-patch any SDK method — the SDK already does this
  * correctly, with knowledge of Bitrix24's server-side leaky bucket.
  *
  * To override the defaults (Enterprise tariff, batch profile, custom retry):
  *   const client = useBitrix24()
  *   await client.setRestrictionManagerParams(ParamsFactory.getEnterprise())
  * The SDK also exposes `getRestrictionManagerParams()` and `getStats()` for
- * introspection. See `@bitrix24/b24jssdk/dist/esm/index.d.ts` for the full
- * `RestrictionParams` surface.
+ * introspection.
+ *
+ * REST calls go through `client.actions.v3.call.make({ method, params })`
+ * for v3 methods (`tasks.task.*`, `crm.*`, …) and `client.actions.v2.call.make`
+ * for v2 (`user.*`, `task.commentitem.*`, …). The deprecated `callMethod` is
+ * forbidden — it disappears in SDK 2.0. Use the {@link callV3} / {@link callV2}
+ * helpers from `server/utils/sdk-helpers.ts` instead of calling `actions.*`
+ * directly — they own the `isSuccess` / `getErrorMessages` boilerplate.
  *
  * Phase 1 uses the webhook flow only. Phase 3 will introduce useBitrix24OAuth()
  * alongside this helper without changing its signature.
@@ -26,6 +33,14 @@ let client: B24Hook | null = null
  * The cache lives in module scope, so tests that need a clean state should
  * `vi.resetModules()` and re-import this module — we deliberately do not
  * export a reset hook to avoid leaking test-only API into production builds.
+ *
+ * @throws {Error} when `NUXT_BITRIX24_WEBHOOK_URL` is missing — the operator
+ *   has not finished the deployment. The message includes the env-var name
+ *   so the fix is self-evident.
+ * @throws {Error} when `NUXT_BITRIX24_WEBHOOK_URL` is malformed — propagated
+ *   from `B24Hook.fromWebhookUrl(url)` but re-wrapped with a hint pointing at
+ *   the expected URL shape, so the SDK's raw parse error doesn't surface to
+ *   the operator with no context.
  */
 export function useBitrix24(): B24Hook {
   if (client) return client
@@ -36,7 +51,22 @@ export function useBitrix24(): B24Hook {
   }
 
   // SDK 1.1+ no longer accepts a raw URL in the constructor — the helper
-  // parses portal host, user id, and secret out of the webhook URL.
-  client = B24Hook.fromWebhookUrl(bitrix24WebhookUrl)
+  // parses portal host, user id, and secret out of the webhook URL. The
+  // parse throws on malformed input; rewrap so the operator sees the
+  // expected shape, not a raw stack from the SDK.
+  try {
+    client = B24Hook.fromWebhookUrl(bitrix24WebhookUrl)
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    throw new Error(
+      `NUXT_BITRIX24_WEBHOOK_URL is not a valid Bitrix24 webhook URL `
+        + `(expected https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/): ${reason}`,
+    )
+  }
+
+  // Wire the SDK's internal events (retry, rate-limit, errors) into the
+  // project-wide structured logger. One sink for app + SDK events.
+  client.setLogger(useLogger())
+
   return client
 }

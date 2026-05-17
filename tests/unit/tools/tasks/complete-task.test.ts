@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
   defineMcpTool: <T,>(spec: T) => spec,
 }))
 
-const callMethod = vi.fn()
+const fake = makeFakeBitrix24()
 
 vi.mock('~/server/utils/bitrix24', () => ({
-  useBitrix24: () => ({ callMethod }),
+  useBitrix24: () => fake.b24,
 }))
 
 interface ToolContent {
@@ -20,17 +21,15 @@ const tool = (await import('../../../../server/mcp/tools/tasks/complete-task')).
 
 describe('bitrix24_complete_task', () => {
   beforeEach(() => {
-    callMethod.mockReset()
+    fake.v3Call.mockReset()
   })
 
-  it('calls tasks.task.complete and reports status 5 when task control is off', async () => {
-    callMethod.mockResolvedValue({
-      getData: () => ({ result: { task: { id: 12, title: 'done', status: '5', responsibleId: '5' } } }),
-    })
+  it('calls actions.v3.call.make with tasks.task.complete and reports status 5 when task control is off', async () => {
+    fake.v3Call.mockResolvedValue(fakeOk({ task: { id: 12, title: 'done', status: '5', responsibleId: '5' } }))
 
     const result = await tool.handler({ taskId: 12 })
 
-    expect(callMethod).toHaveBeenCalledWith('tasks.task.complete', { taskId: 12 })
+    expect(fake.v3Call).toHaveBeenCalledWith({ method: 'tasks.task.complete', params: { taskId: 12 } })
     expect(JSON.parse(result.content[0]!.text)).toEqual({
       completed: true,
       id: 12,
@@ -41,23 +40,21 @@ describe('bitrix24_complete_task', () => {
   })
 
   it('surfaces status 4 (Supposedly completed) when task control is on', async () => {
-    callMethod.mockResolvedValue({
-      getData: () => ({ result: { task: { id: 13, title: 'review me', status: '4' } } }),
-    })
+    fake.v3Call.mockResolvedValue(fakeOk({ task: { id: 13, title: 'review me', status: '4' } }))
 
     const payload = JSON.parse((await tool.handler({ taskId: 13 })).content[0]!.text)
     expect(payload.status).toBe('4')
   })
 
   it('falls back to a re-list message when Bitrix24 returns no task body', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: {} }) })
+    fake.v3Call.mockResolvedValue(fakeOk({}))
     const result = await tool.handler({ taskId: 99 })
     expect(result.content[0]!.text).toMatch(/99/)
     expect(result.content[0]!.text).toMatch(/Re-list/i)
   })
 
   it('wraps SDK errors with the task id in the fallback', async () => {
-    callMethod.mockRejectedValue(new Error('action not allowed'))
+    fake.v3Call.mockRejectedValue(new Error('action not allowed'))
     await expect(tool.handler({ taskId: 7 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'action not allowed',

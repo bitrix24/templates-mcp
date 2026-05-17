@@ -29,7 +29,6 @@
     "@bitrix24/b24jssdk-nuxt": "^1.1.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nuxtjs/mcp-toolkit": "^0.16.1",
-    "consola": "^3.4.2",
     "nuxt": "^4.4.5",
     "zod": "^4.4.3"
   },

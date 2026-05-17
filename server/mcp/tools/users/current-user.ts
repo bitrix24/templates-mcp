@@ -1,71 +1,65 @@
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { callV2 } from '~/server/utils/sdk-helpers'
 
 /**
  * Returns the Bitrix24 user identity behind the configured incoming webhook.
  * Useful as a smoke test for AI agents to confirm the MCP is wired correctly.
  *
  * Bitrix24 REST: https://apidocs.bitrix24.com/api-reference/user/user-current.html
+ * (v2 namespace — `user.*` predates v3 and has no v3 equivalent.)
  */
+interface CurrentUserResponse {
+  ID?: string | number
+  NAME?: string
+  LAST_NAME?: string
+  EMAIL?: string
+  ADMIN?: boolean
+  SERVER_NAME?: string
+}
+
 export default defineMcpTool({
   name: 'bitrix24_current_user',
   description:
     'Get the Bitrix24 user that owns the configured incoming webhook. Use this as a connectivity check or when you need the operator id/name/email before any subsequent Bitrix24 calls.',
   inputSchema: {},
   handler: async () => {
-    try {
-      const b24 = useBitrix24()
-      const response = await b24.callMethod('user.current', {})
-      // The SDK's callMethod returns AjaxResult<unknown>; user.current's REST
-      // contract is stable and documented (see apidocs link above), so we cast
-      // to the known field shape here rather than redeclaring it everywhere.
-      const user = response.getData()?.result as
-        | {
-            ID?: string | number
-            NAME?: string
-            LAST_NAME?: string
-            EMAIL?: string
-            ADMIN?: boolean
-            SERVER_NAME?: string
-          }
-        | undefined
+    const b24 = useBitrix24()
+    const user = await callV2<CurrentUserResponse>(
+      b24,
+      'user.current',
+      {},
+      'Failed to fetch current Bitrix24 user',
+    )
 
-      if (!user) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'Bitrix24 returned no user — verify the webhook URL is valid and not revoked.',
-            },
-          ],
-        }
-      }
-
+    if (!user) {
       return {
         content: [
           {
             type: 'text' as const,
-            // Explicit `?? null` on optional fields: JSON.stringify drops
-            // undefined keys, which makes the agent guess whether the field
-            // was absent or unknown. `null` is unambiguous.
-            text: JSON.stringify(
-              {
-                id: user.ID ?? null,
-                name: user.NAME ?? null,
-                lastName: user.LAST_NAME ?? null,
-                email: user.EMAIL ?? null,
-                isAdmin: user.ADMIN === true,
-                portal: user.SERVER_NAME ?? null,
-              },
-              null,
-              2,
-            ),
+            text: 'Bitrix24 returned no user — verify the webhook URL is valid and not revoked.',
           },
         ],
       }
-    } catch (err) {
-      throw toToolError(err, 'Failed to fetch current Bitrix24 user')
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          // Explicit `?? null` on optional fields: JSON.stringify drops
+          // undefined keys, which makes the agent guess whether the field
+          // was absent or unknown. `null` is unambiguous.
+          text: JSON.stringify({
+            id: user.ID ?? null,
+            name: user.NAME ?? null,
+            lastName: user.LAST_NAME ?? null,
+            email: user.EMAIL ?? null,
+            isAdmin: user.ADMIN === true,
+            portal: user.SERVER_NAME ?? null,
+          }),
+        },
+      ],
     }
   },
 })

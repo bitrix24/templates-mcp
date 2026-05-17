@@ -1,8 +1,10 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
+import { Bitrix24ToolError } from '~/server/utils/errors'
+import { batchV3, callV3 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
+import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
 
 /**
  * Factory for the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}`
@@ -87,8 +89,8 @@ export function defineTaskLifecycleTool(spec: LifecycleToolSpec) {
     description: spec.description + LIFECYCLE_USAGE_NOTES,
     inputSchema: {
       taskId: taskIdSchema.describe(
-        spec.taskIdHint +
-          ' Pass a number for single-task semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
+        spec.taskIdHint
+          + ' Pass a number for single-task semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
       ),
       force: z
         .boolean()
@@ -108,46 +110,43 @@ export function defineTaskLifecycleTool(spec: LifecycleToolSpec) {
 }
 
 async function runOne(spec: LifecycleToolSpec, taskId: number) {
-  try {
-    const b24 = useBitrix24()
-    const response = await b24.callMethod(spec.method, { taskId })
-    // Lifecycle methods always return a single `{ task: {...} }`. We use
-    // `extractTasks` (which also handles list-shaped responses) and take
-    // the first element so there's one shared parser across all task
-    // tools — same code path as `update_task`.
-    const [task] = extractTasks(response.getData()?.result)
+  const b24 = useBitrix24()
+  // Lifecycle methods always return a single `{ task: {...} }`. We use
+  // `extractTasks` (which also handles list-shaped responses) and take
+  // the first element so there's one shared parser across all task
+  // tools — same code path as `update_task`.
+  const result = await callV3<SingleTaskEnvelope>(
+    b24,
+    spec.method,
+    { taskId },
+    `Failed to ${spec.verb} Bitrix24 task ${taskId}`,
+  )
+  const [task] = extractTasks(result)
 
-    if (!task) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Task ${taskId} ${spec.pastTense}, but Bitrix24 returned no task body. Re-list to verify the status change.`,
-          },
-        ],
-      }
-    }
-
+  if (!task) {
     return {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify(
-            {
-              [spec.pastTense]: true,
-              id: task.id,
-              title: task.title,
-              status: task.status ?? null,
-              responsibleId: task.responsibleId ?? null,
-            },
-            null,
-            2,
-          ),
+          text: `Task ${taskId} ${spec.pastTense}, but Bitrix24 returned no task body. Re-list to verify the status change.`,
         },
       ],
     }
-  } catch (err) {
-    throw toToolError(err, `Failed to ${spec.verb} Bitrix24 task ${taskId}`)
+  }
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          [spec.pastTense]: true,
+          id: task.id,
+          title: task.title,
+          status: task.status ?? null,
+          responsibleId: task.responsibleId ?? null,
+        }),
+      },
+    ],
   }
 }
 
@@ -160,44 +159,51 @@ async function runBatch(spec: LifecycleToolSpec, taskIds: number[], force: boole
   }
 
   const b24 = useBitrix24()
-  const results: BatchEntryResult[] = []
+  const rows = await batchV3<SingleTaskEnvelope>(
+    b24,
+    taskIds.map((id) => [spec.method, { taskId: id }]),
+    `Failed to ${spec.verb} a batch of ${taskIds.length} task(s)`,
+  )
 
-  // Sequential, not parallel: the client-side rate limiter would serialise
-  // them anyway, and sequential ordering preserves a clean results[]
-  // alignment with the input order and predictable error semantics.
-  for (const taskId of taskIds) {
-    try {
-      const response = await b24.callMethod(spec.method, { taskId })
-      const [task] = extractTasks(response.getData()?.result)
-      results.push({
-        taskId,
-        ok: true,
-        status: task?.status ?? null,
-        responsibleId: task?.responsibleId ?? null,
-      })
-    } catch (err) {
-      const wrapped = toToolError(err, `Failed to ${spec.verb} Bitrix24 task ${taskId}`)
-      results.push({ taskId, ok: false, error: wrapped.message })
+  const results: BatchEntryResult[] = rows.map((row, index) => {
+    const taskId = taskIds[index]
+    if (taskId === undefined) {
+      // Defensive: SDK contract guarantees rows.length === taskIds.length when
+      // returnAjaxResult is true. If that ever drifts, fail loud rather than
+      // silently producing an entry with `taskId: undefined`.
+      throw new Bitrix24ToolError(
+        `Batch row index ${index} has no corresponding taskId; SDK rows/input length mismatch.`,
+      )
     }
-  }
+    if (!row.isSuccess) {
+      return {
+        taskId,
+        ok: false,
+        error: row.getErrorMessages().join('; ') || `Failed to ${spec.verb} Bitrix24 task ${taskId}`,
+      }
+    }
+    const [task] = extractTasks(row.getData()?.result)
+    return {
+      taskId,
+      ok: true,
+      status: task?.status ?? null,
+      responsibleId: task?.responsibleId ?? null,
+    }
+  })
 
   const ok = results.filter((r) => r.ok).length
   return {
     content: [
       {
         type: 'text' as const,
-        text: JSON.stringify(
-          {
-            batch: true,
-            verb: spec.pastTense,
-            total: results.length,
-            ok,
-            failed: results.length - ok,
-            results,
-          },
-          null,
-          2,
-        ),
+        text: JSON.stringify({
+          batch: true,
+          verb: spec.pastTense,
+          total: results.length,
+          ok,
+          failed: results.length - ok,
+          results,
+        }),
       },
     ],
   }

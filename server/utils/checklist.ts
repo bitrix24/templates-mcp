@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
+import { callV2 } from '~/server/utils/sdk-helpers'
 
 /**
  * Shared types and helpers for the Bitrix24 task-checklist tools.
@@ -79,11 +80,14 @@ export function toChecklistItemShort(raw: unknown): ChecklistItemShort | null {
  * Factory for the three `task.checklistitem.{complete,renew,delete}` tools.
  *
  * All three take the same `[TASKID, ITEMID]` positional contract on the wire
- * (the documented form on apidocs.bitrix24.ru). All three accept either a
- * single `itemId: number` or an array for batch mode — same shape as the
- * lifecycle factory in `task-lifecycle.ts`, kept separate because the wire
- * call is positional, not named, and the success payload is a boolean rather
- * than a task body.
+ * (the documented form on apidocs.bitrix24.ru — only the `delete` page also
+ * shows a named `{TASKID, ITEMID}` example, while `complete`/`renew` show
+ * positional only). Positional is the lowest-common-denominator that all
+ * three honour. All three accept either a single `itemId: number` or an
+ * array for batch mode — same shape as the lifecycle factory in
+ * `task-lifecycle.ts`, kept separate because (a) the wire call is positional,
+ * not named, and (b) `task.checklistitem.*` is v2-only, so we cannot piggy-
+ * back on the v3 batch endpoint and have to loop `callV2` sequentially.
  */
 export type ChecklistActionMethod =
   | 'task.checklistitem.complete'
@@ -142,33 +146,36 @@ export function defineChecklistActionTool(spec: ChecklistActionToolSpec) {
   })
 }
 
-async function runOne(spec: ChecklistActionToolSpec, taskId: number, itemId: number) {
-  try {
-    const b24 = useBitrix24()
-    // Positional `[taskId, itemId]` is the only form documented for these
-    // methods on apidocs.bitrix24.ru. The `delete` page also shows a named
-    // `{TASKID, ITEMID}` example, but positional works for all three and
-    // keeps one wire contract across the action factory.
-    await b24.callMethod(spec.method, [taskId, itemId])
+/**
+ * Wire the positional `[taskId, itemId]` tuple through `callV2`. The SDK
+ * types `params` as `Record<string, unknown>`, but the v2 REST adapter
+ * serialises `[a, b]` to `0=a&1=b` form — which is what `task.checklistitem.
+ * {complete,renew,delete}` expect per the apidocs examples. Localise the
+ * cast so the type-system gap doesn't propagate beyond this file.
+ */
+function positional(taskId: number, itemId: number): Record<string, unknown> {
+  return [taskId, itemId] as unknown as Record<string, unknown>
+}
 
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(
-            {
-              [spec.pastTense]: true,
-              taskId,
-              itemId,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    }
-  } catch (err) {
-    throw toToolError(err, `Failed to ${spec.verb} Bitrix24 checklist item ${itemId} on task ${taskId}`)
+async function runOne(spec: ChecklistActionToolSpec, taskId: number, itemId: number) {
+  await callV2<unknown>(
+    useBitrix24(),
+    spec.method,
+    positional(taskId, itemId),
+    `Failed to ${spec.verb} Bitrix24 checklist item ${itemId} on task ${taskId}`,
+  )
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          [spec.pastTense]: true,
+          taskId,
+          itemId,
+        }),
+      },
+    ],
   }
 }
 
@@ -188,13 +195,19 @@ async function runBatch(
   const b24 = useBitrix24()
   const results: BatchEntryResult[] = []
 
-  // Sequential, not parallel: the client-side rate limiter would serialise
-  // them anyway, and sequential ordering preserves a clean results[]
-  // alignment with the input order and predictable error semantics — mirror
-  // of the lifecycle batch in `task-lifecycle.ts`.
+  // Sequential, not parallel: `task.checklistitem.*` is v2 and cannot ride
+  // the v3 batch endpoint, so we loop `callV2`. The SDK's client-side rate
+  // limiter would serialise them anyway, and sequential ordering preserves
+  // a clean results[] alignment with the input order and predictable error
+  // semantics.
   for (const itemId of itemIds) {
     try {
-      await b24.callMethod(spec.method, [taskId, itemId])
+      await callV2<unknown>(
+        b24,
+        spec.method,
+        positional(taskId, itemId),
+        `Failed to ${spec.verb} Bitrix24 checklist item ${itemId} on task ${taskId}`,
+      )
       results.push({ itemId, ok: true })
     } catch (err) {
       const wrapped = toToolError(err, `Failed to ${spec.verb} Bitrix24 checklist item ${itemId} on task ${taskId}`)
@@ -207,19 +220,15 @@ async function runBatch(
     content: [
       {
         type: 'text' as const,
-        text: JSON.stringify(
-          {
-            batch: true,
-            verb: spec.pastTense,
-            taskId,
-            total: results.length,
-            ok,
-            failed: results.length - ok,
-            results,
-          },
-          null,
-          2,
-        ),
+        text: JSON.stringify({
+          batch: true,
+          verb: spec.pastTense,
+          taskId,
+          total: results.length,
+          ok,
+          failed: results.length - ok,
+          results,
+        }),
       },
     ],
   }

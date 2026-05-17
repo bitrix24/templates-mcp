@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { callV2 } from '~/server/utils/sdk-helpers'
 
 /**
  * Adds a comment to a Bitrix24 task.
@@ -33,39 +33,38 @@ export default defineMcpTool({
       .describe('User id to post the comment as. Omit to use the webhook owner. Most portals reject this for non-admins.'),
   },
   handler: async ({ taskId, text, authorId }) => {
-    try {
-      const fields: Record<string, unknown> = { POST_MESSAGE: text }
-      if (authorId !== undefined) fields.AUTHOR_ID = authorId
+    const fields: Record<string, unknown> = { POST_MESSAGE: text }
+    if (authorId !== undefined) fields.AUTHOR_ID = authorId
 
-      const b24 = useBitrix24()
-      const response = await b24.callMethod('task.commentitem.add', {
-        TASKID: taskId,
-        FIELDS: fields,
-      })
+    const b24 = useBitrix24()
+    // task.commentitem.add is a v2 method (the v3 replacement
+    // tasks.task.chat.message.send is queued for a separate migration PR).
+    // The result payload is a bare commentId — number or string per portal.
+    const commentId = await callV2<number | string>(
+      b24,
+      'task.commentitem.add',
+      { TASKID: taskId, FIELDS: fields },
+      `Failed to comment on Bitrix24 task ${taskId}`,
+    )
 
-      // task.commentitem.add returns { result: <commentId int>, time: {...} }
-      const commentId = response.getData()?.result
-      if (typeof commentId !== 'number' && typeof commentId !== 'string') {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Comment on task ${taskId} accepted, but Bitrix24 returned no comment id.`,
-            },
-          ],
-        }
-      }
-
+    if (typeof commentId !== 'number' && typeof commentId !== 'string') {
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({ posted: true, taskId, commentId }, null, 2),
+            text: `Comment on task ${taskId} accepted, but Bitrix24 returned no comment id.`,
           },
         ],
       }
-    } catch (err) {
-      throw toToolError(err, `Failed to comment on Bitrix24 task ${taskId}`)
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({ posted: true, taskId, commentId }),
+        },
+      ],
     }
   },
 })

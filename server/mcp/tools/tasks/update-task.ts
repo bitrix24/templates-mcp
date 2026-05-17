@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
+import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { callV3 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 
 /**
@@ -28,43 +29,40 @@ export default defineMcpTool({
       ),
   },
   handler: async ({ taskId, fields }) => {
-    try {
-      const b24 = useBitrix24()
-      const response = await b24.callMethod('tasks.task.update', { taskId, fields })
-      const [task] = extractTasks(response.getData()?.result)
+    const b24 = useBitrix24()
+    const result = await callV3<SingleTaskEnvelope>(
+      b24,
+      'tasks.task.update',
+      { taskId, fields },
+      `Failed to update Bitrix24 task ${taskId}`,
+    )
+    const [task] = extractTasks(result)
 
-      if (!task) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Task ${taskId} updated, but Bitrix24 returned no task body. Re-list to verify the change landed.`,
-            },
-          ],
-        }
-      }
-
+    if (!task) {
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify(
-              {
-                updated: true,
-                id: task.id,
-                title: task.title,
-                deadline: task.deadline ?? null,
-                responsibleId: task.responsibleId ?? null,
-                status: task.status ?? null,
-              },
-              null,
-              2,
-            ),
+            text: `Task ${taskId} updated, but Bitrix24 returned no task body. Re-list to verify the change landed.`,
           },
         ],
       }
-    } catch (err) {
-      throw toToolError(err, `Failed to update Bitrix24 task ${taskId}`)
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            updated: true,
+            id: task.id,
+            title: task.title,
+            deadline: task.deadline ?? null,
+            responsibleId: task.responsibleId ?? null,
+            status: task.status ?? null,
+          }),
+        },
+      ],
     }
   },
 })

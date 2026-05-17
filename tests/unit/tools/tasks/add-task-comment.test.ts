@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
   defineMcpTool: <T,>(spec: T) => spec,
 }))
 
-const callMethod = vi.fn()
+const fake = makeFakeBitrix24()
 
 vi.mock('~/server/utils/bitrix24', () => ({
-  useBitrix24: () => ({ callMethod }),
+  useBitrix24: () => fake.b24,
 }))
 
 interface ToolContent {
@@ -26,17 +27,17 @@ const tool = (await import('../../../../server/mcp/tools/tasks/add-task-comment'
 
 describe('bitrix24_add_task_comment', () => {
   beforeEach(() => {
-    callMethod.mockReset()
+    fake.v2Call.mockReset()
   })
 
-  it('posts to task.commentitem.add with TASKID and FIELDS.POST_MESSAGE', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: 3141 }) })
+  it('posts to task.commentitem.add (v2) with TASKID and FIELDS.POST_MESSAGE', async () => {
+    fake.v2Call.mockResolvedValue(fakeOk(3141))
 
     const result = await tool.handler({ taskId: 8017, text: 'smoke comment' })
 
-    expect(callMethod).toHaveBeenCalledWith('task.commentitem.add', {
-      TASKID: 8017,
-      FIELDS: { POST_MESSAGE: 'smoke comment' },
+    expect(fake.v2Call).toHaveBeenCalledWith({
+      method: 'task.commentitem.add',
+      params: { TASKID: 8017, FIELDS: { POST_MESSAGE: 'smoke comment' } },
     })
 
     const payload = JSON.parse(result.content[0]!.text)
@@ -44,22 +45,22 @@ describe('bitrix24_add_task_comment', () => {
   })
 
   it('passes AUTHOR_ID only when authorId is provided', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: 1 }) })
+    fake.v2Call.mockResolvedValue(fakeOk(1))
 
     await tool.handler({ taskId: 1, text: 'as someone else', authorId: 503 })
-    const args = callMethod.mock.calls[0]![1] as { FIELDS: Record<string, unknown> }
-    expect(args.FIELDS).toEqual({ POST_MESSAGE: 'as someone else', AUTHOR_ID: 503 })
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { FIELDS: Record<string, unknown> } }
+    expect(args.params.FIELDS).toEqual({ POST_MESSAGE: 'as someone else', AUTHOR_ID: 503 })
   })
 
   it('handles a missing comment id with a friendly message', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: undefined }) })
+    fake.v2Call.mockResolvedValue(fakeOk(undefined as unknown as number))
     const result = await tool.handler({ taskId: 5, text: 'x' })
     expect(result.content[0]!.text).toMatch(/no comment id/i)
     expect(result.content[0]!.text).toMatch(/task 5/)
   })
 
   it('wraps SDK errors and tags the task id in the fallback message', async () => {
-    callMethod.mockRejectedValue(new Error('insufficient permissions'))
+    fake.v2Call.mockRejectedValue(new Error('insufficient permissions'))
     await expect(tool.handler({ taskId: 42, text: 'denied' })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'insufficient permissions',

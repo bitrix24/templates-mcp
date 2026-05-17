@@ -16,7 +16,7 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
 ## Ground rules
 
 1. **One tool per file** in `server/mcp/tools/<group>/<name>.ts`. Discovery is automatic.
-2. **Never call Bitrix24 directly.** Always go through `useBitrix24()`. Fallback: `b24.callMethod('rest.method', params)`.
+2. **Never call Bitrix24 directly.** Always go through `useBitrix24()`, and from there through the typed helpers in `server/utils/sdk-helpers.ts`: `callV3<T>(b24, method, params, errorContext)` for v3 methods (`tasks.task.*`, `crm.*`, …), `callV2<T>(…)` for v2 (`user.*`, `task.commentitem.*`, …), and `batchV3<T>(b24, calls, errorContext)` for bulk operations. The helpers own the `isSuccess` / `getErrorMessages` / transport-error funnel — tool handlers stay short and uniform. Calling `b24.actions.*.{call,batch}.make` directly from a tool handler is forbidden (it duplicates that funnel and drifts over time); the deprecated `b24.callMethod` is doubly forbidden — it disappears in SDK 2.0. See [`adding-tools.md`](./adding-tools.md) for the canonical template.
 3. **Every tool must have a unit test** in `tests/unit/tools/<name>.test.ts` with the Bitrix24 client mocked.
 4. **Every Zod field must have `.describe()`** — the LLM reads it at runtime.
 5. **No secrets in code or tests.** Use `useRuntimeConfig()` and `.env`.
@@ -73,7 +73,7 @@ This MCP server exposes `bx24mcp_submit_feedback`. As an AI agent using or devel
 
 ## Commit and PR conventions
 
-Full details in `contributing.md` *(lands with MVP)* and root [`CONTRIBUTING.md`](../../CONTRIBUTING.md). Short version:
+Full details in the root [`CONTRIBUTING.md`](../../CONTRIBUTING.md). Short version:
 
 - [Conventional Commits](https://www.conventionalcommits.org/). Prefixes: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `ci`.
 - PR title MUST follow Conventional Commits — it is squashed as the commit message.
@@ -98,7 +98,7 @@ Patch updates auto-merge when CI is green. Minor (for 1.x+) and major updates re
 8. Run `pnpm lint && pnpm typecheck && pnpm test`.
 9. Commit: `feat(tools): add bitrix24_<name>`.
 
-Full template lands in `adding-tools.md`.
+Full template — including v3 `actions.call.make` usage, `AjaxError` handling, the `useLogger()` recipe, batch-tool conventions, and a copy-paste unit-test skeleton — lives in [`adding-tools.md`](./adding-tools.md).
 
 ## When asked to upgrade dependencies
 
@@ -111,7 +111,7 @@ Renovate handles routine updates. For manual upgrades:
 
 ## When asked to add a new Bitrix24 method
 
-If the SDK doesn't expose it, use `b24.callMethod('rest.method.name', params)`. Add a one-line comment linking to https://apidocs.bitrix24.com/.
+Use the typed helpers from `server/utils/sdk-helpers.ts`: `callV3<T>(b24, method, params, errorContext)` for v3 endpoints, `callV2<T>(…)` for v2, `batchV3<T>(…)` for bulk. Always include a typed generic on `<T>` matching the REST response shape (e.g. `SingleTaskEnvelope` from `server/types/bitrix24.ts`), and a one-line docstring comment linking to https://apidocs.bitrix24.com/. See [`adding-tools.md`](./adding-tools.md) for the full copy-pasteable template (which also covers the unit-test skeleton with `makeFakeBitrix24` and the persona-walk checklist). Calling `b24.actions.*.{call,batch}.make` directly from a tool handler is forbidden (use the helpers); the deprecated `b24.callMethod` is forbidden and disappears in SDK 2.0.
 
 ## Things you must NOT do without asking
 
@@ -131,9 +131,9 @@ If the SDK doesn't expose it, use `b24.callMethod('rest.method.name', params)`. 
 
 ## Where to read more
 
-- `contributing.md` — full commit and PR rules (lands soon)
-- `adding-tools.md` — tool template and examples (lands soon)
-- `testing.md` — running each test layer (lands soon)
-- `deployment.md` — `nginx-proxy`, `proxy-net`, health-check (lands soon)
-- `troubleshooting.md` — known issues (lands soon)
-- [`feedback.md`](./feedback.md) — agent feedback prompts and policy
+- Root [`CONTRIBUTING.md`](../../CONTRIBUTING.md) — full commit and PR rules.
+- [`adding-tools.md`](./adding-tools.md) — modern tool template (`callV3` / `callV2` / `batchV3` helpers, batch via `actions.v3.batch.make`, `AjaxError` handling, SDK logger, unit-test skeleton).
+- [`feedback.md`](./feedback.md) — agent feedback prompts and policy.
+- `docs/EVALS.md`, `docs/FEEDBACK.md`, `docs/MANUAL-TEST-PHRASES.md` at the project root — operator-facing guides.
+
+Operator deployment / testing / runbook docs (`docs/DEPLOYMENT.md`, `docs/TESTING.md`, `docs/RUNBOOK.md`, `docs/TROUBLESHOOTING.md`) are tracked in [`docs/README.md`](../../docs/README.md) — they're not yet authored. If a session needs one of them, open an issue rather than improvising local docs that drift from `PROJECT-BRIEF.md`.

@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
   defineMcpTool: <T,>(spec: T) => spec,
 }))
 
-const callMethod = vi.fn()
+const fake = makeFakeBitrix24()
 
 vi.mock('~/server/utils/bitrix24', () => ({
-  useBitrix24: () => ({ callMethod }),
+  useBitrix24: () => fake.b24,
 }))
 
 interface ToolContent {
@@ -27,21 +28,19 @@ const tool = (await import('../../../../server/mcp/tools/tasks/list-tasks')).def
 
 describe('bitrix24_list_tasks', () => {
   beforeEach(() => {
-    callMethod.mockReset()
+    fake.v3Call.mockReset()
   })
 
   it('passes UPPERCASE filter/order/select/start through unchanged (back-compat) and shapes the response', async () => {
-    callMethod.mockResolvedValue({
-      getData: () => ({
-        result: {
-          tasks: [
-            { id: '1', title: 'one', status: '2', deadline: null, responsibleId: '5' },
-            { id: '2', title: 'two', status: '3', deadline: '2026-06-01', responsibleId: '5' },
-          ],
-          total: 17,
-        },
+    fake.v3Call.mockResolvedValue(
+      fakeOk({
+        tasks: [
+          { id: '1', title: 'one', status: '2', deadline: null, responsibleId: '5' },
+          { id: '2', title: 'two', status: '3', deadline: '2026-06-01', responsibleId: '5' },
+        ],
+        total: 17,
       }),
-    })
+    )
 
     const result = await tool.handler({
       filter: { RESPONSIBLE_ID: 5, '!STATUS': 5 },
@@ -50,11 +49,14 @@ describe('bitrix24_list_tasks', () => {
       start: 0,
     })
 
-    expect(callMethod).toHaveBeenCalledWith('tasks.task.list', {
-      filter: { RESPONSIBLE_ID: 5, '!STATUS': 5 },
-      order: { DEADLINE: 'asc' },
-      select: ['ID', 'TITLE', 'STATUS', 'DEADLINE', 'RESPONSIBLE_ID'],
-      start: 0,
+    expect(fake.v3Call).toHaveBeenCalledWith({
+      method: 'tasks.task.list',
+      params: {
+        filter: { RESPONSIBLE_ID: 5, '!STATUS': 5 },
+        order: { DEADLINE: 'asc' },
+        select: ['ID', 'TITLE', 'STATUS', 'DEADLINE', 'RESPONSIBLE_ID'],
+        start: 0,
+      },
     })
 
     const payload = JSON.parse(result.content[0]!.text)
@@ -64,7 +66,7 @@ describe('bitrix24_list_tasks', () => {
   })
 
   it('translates camelCase filter/order/select keys to UPPER_SNAKE on the wire (v3-friendly input)', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: { tasks: [], total: 0 } }) })
+    fake.v3Call.mockResolvedValue(fakeOk({ tasks: [], total: 0 }))
 
     await tool.handler({
       filter: { responsibleId: 5, '!status': 5, '>=deadline': '2026-06-01T00:00:00+03:00', '%title': 'договор' },
@@ -73,77 +75,66 @@ describe('bitrix24_list_tasks', () => {
       start: 50,
     })
 
-    expect(callMethod).toHaveBeenCalledWith('tasks.task.list', {
-      filter: {
-        RESPONSIBLE_ID: 5,
-        '!STATUS': 5,
-        '>=DEADLINE': '2026-06-01T00:00:00+03:00',
-        '%TITLE': 'договор',
+    expect(fake.v3Call).toHaveBeenCalledWith({
+      method: 'tasks.task.list',
+      params: {
+        filter: {
+          RESPONSIBLE_ID: 5,
+          '!STATUS': 5,
+          '>=DEADLINE': '2026-06-01T00:00:00+03:00',
+          '%TITLE': 'договор',
+        },
+        order: { DEADLINE: 'asc' },
+        select: ['ID', 'TITLE', 'RESPONSIBLE_ID'],
+        start: 50,
       },
-      order: { DEADLINE: 'asc' },
-      select: ['ID', 'TITLE', 'RESPONSIBLE_ID'],
-      start: 50,
     })
   })
 
   it('accepts a mix of camelCase and UPPERCASE keys in the same filter', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: { tasks: [], total: 0 } }) })
+    fake.v3Call.mockResolvedValue(fakeOk({ tasks: [], total: 0 }))
 
-    await tool.handler({
-      filter: { responsibleId: 5, STATUS: 3, '%title': 'foo' },
-    })
+    await tool.handler({ filter: { responsibleId: 5, STATUS: 3, '%title': 'foo' } })
 
-    const args = callMethod.mock.calls[0]![1] as { filter: Record<string, unknown> }
-    expect(args.filter).toEqual({ RESPONSIBLE_ID: 5, STATUS: 3, '%TITLE': 'foo' })
+    const args = fake.v3Call.mock.calls[0]![0] as unknown as { params: { filter: Record<string, unknown> } }
+    expect(args.params.filter).toEqual({ RESPONSIBLE_ID: 5, STATUS: 3, '%TITLE': 'foo' })
   })
 
   it('applies sensible defaults when filter/order/select/start are omitted', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: { tasks: [], total: 0 } }) })
+    fake.v3Call.mockResolvedValue(fakeOk({ tasks: [], total: 0 }))
     await tool.handler({})
 
-    const args = callMethod.mock.calls[0]![1] as {
-      filter: object
-      order: object
-      select: string[]
-      start: number
+    const args = fake.v3Call.mock.calls[0]![0] as unknown as {
+      params: { filter: object; order: object; select: string[]; start: number }
     }
-    expect(args.filter).toEqual({})
-    expect(args.order).toEqual({ ID: 'desc' })
-    expect(args.select).toEqual(['ID', 'TITLE', 'STATUS', 'DEADLINE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'PRIORITY'])
-    expect(args.start).toBe(0)
+    expect(args.params.filter).toEqual({})
+    expect(args.params.order).toEqual({ ID: 'desc' })
+    expect(args.params.select).toEqual(['ID', 'TITLE', 'STATUS', 'DEADLINE', 'RESPONSIBLE_ID', 'CREATED_DATE', 'PRIORITY'])
+    expect(args.params.start).toBe(0)
   })
 
   it('drops malformed task entries silently', async () => {
-    callMethod.mockResolvedValue({
-      getData: () => ({
-        result: {
-          tasks: [
-            { id: 1, title: 'ok' },
-            { TITLE: 'no id' },
-            null,
-          ],
-          total: 3,
-        },
+    fake.v3Call.mockResolvedValue(
+      fakeOk({
+        tasks: [{ id: 1, title: 'ok' }, { TITLE: 'no id' }, null],
+        total: 3,
       }),
-    })
+    )
     const result = await tool.handler({})
     const payload = JSON.parse(result.content[0]!.text)
-    // total comes from server (3), returned reflects what we kept (1)
     expect(payload.total).toBe(3)
     expect(payload.returned).toBe(1)
   })
 
   it('reports total = 0 / tasks = [] on empty result', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: { tasks: [], total: 0 } }) })
+    fake.v3Call.mockResolvedValue(fakeOk({ tasks: [], total: 0 }))
     const result = await tool.handler({})
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload).toEqual({ total: 0, returned: 0, tasks: [] })
   })
 
   it('reports total = null when Bitrix24 omits the field (no silent lie about pagination)', async () => {
-    callMethod.mockResolvedValue({
-      getData: () => ({ result: { tasks: [{ id: 1, title: 'a' }] } }), // no `total`
-    })
+    fake.v3Call.mockResolvedValue(fakeOk({ tasks: [{ id: 1, title: 'a' }] }))
     const result = await tool.handler({})
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.total).toBeNull()
@@ -151,7 +142,7 @@ describe('bitrix24_list_tasks', () => {
   })
 
   it('wraps SDK errors into Bitrix24ToolError', async () => {
-    callMethod.mockRejectedValue(new Error('connection lost'))
+    fake.v3Call.mockRejectedValue(new Error('connection lost'))
     await expect(tool.handler({})).rejects.toMatchObject({ name: 'Bitrix24ToolError' })
   })
 })

@@ -17,20 +17,32 @@ Bitrix24 has two parallel REST API generations:
 - **v3** (modern, recommended) — methods under the `tasks.*` / `crm.*` namespaces. URL pattern `apidocs.bitrix24.com/api-reference/rest-v3/…`.
 - **v2** (legacy / deprecated for new development) — methods like `task.*` (without the `s.`), `task.item.*`. Still work, but docs flag them with "Метод устарел".
 
-**Always prefer v3.** Our coverage today:
+**Always prefer v3.** Our coverage today (19 Bitrix24 tools + 1 meta-tool):
 
 | Tool | Method | API |
 |---|---|---|
-| `bitrix24_current_user` | `user.current` | shared |
+| `bitrix24_current_user` | `user.current` | v2 (no v3 equivalent — user identity predates v3) |
+| `bitrix24_find_user` | `user.search` | v2 (same reason as above) |
 | `bitrix24_create_task` | `tasks.task.add` | **v3** ✓ |
-| `bitrix24_list_tasks` | `tasks.task.list` | **v3** ✓ |
+| `bitrix24_list_tasks` | `tasks.task.list` | **v3** ✓ (legacy UPPER_SNAKE filter shape; tool accepts both camelCase and UPPER) |
 | `bitrix24_update_task` | `tasks.task.update` | **v3** ✓ |
-| `bitrix24_add_task_comment` | `task.commentitem.add` | **v2 deprecated** — v3 replacement is `tasks.task.chat.message.send`. **Migration is queued; see roadmap.** |
+| `bitrix24_add_task_comment` | `task.commentitem.add` | **v2 deprecated** — v3 replacement is `tasks.task.chat.message.send`. Migration queued; no issue filed yet. |
+| `bitrix24_start_task` | `tasks.task.start` | **v3** ✓ |
+| `bitrix24_pause_task` | `tasks.task.pause` | **v3** ✓ |
+| `bitrix24_complete_task` | `tasks.task.complete` | **v3** ✓ |
+| `bitrix24_approve_task` | `tasks.task.approve` | **v3** ✓ |
+| `bitrix24_disapprove_task` | `tasks.task.disapprove` | **v3** ✓ |
+| `bitrix24_defer_task` | `tasks.task.defer` | **v3** ✓ |
+| `bitrix24_renew_task` | `tasks.task.renew` | **v3** ✓ |
+| `bitrix24_rate_task` | `tasks.task.update` (field `MARK`) | **v3** ✓ — no dedicated rate method; we write `MARK: "P" \| "N" \| null` |
 | `bitrix24_add_checklist_item` | `task.checklistitem.add` | **v2 only** — no v3 equivalent for task checklists (v3 `tasks.template.checklist.*` is for templates). |
 | `bitrix24_list_checklist_items` | `task.checklistitem.getlist` | **v2 only** — same reason. |
 | `bitrix24_complete_checklist_item` | `task.checklistitem.complete` | **v2 only** — same reason. |
 | `bitrix24_renew_checklist_item` | `task.checklistitem.renew` | **v2 only** — same reason. |
 | `bitrix24_delete_checklist_item` | `task.checklistitem.delete` | **v2 only** — same reason. |
+| `bx24mcp_submit_feedback` | _(no Bitrix24 call)_ | meta-tool — files a GitHub issue |
+
+All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through `actions.v3.batch.make` as one HTTP round-trip. The 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) accept `itemId: number[]` for batch mode too, but loop sequentially (the v2 `task.checklistitem.*` namespace isn't exposed to `actions.v3.batch.make`).
 
 When you see a Bitrix24 method name in a tool's source, sanity-check it has the `tasks.` (with `s`) prefix or lives under a documented v3 URL. The phrase pack below assumes v3 throughout.
 

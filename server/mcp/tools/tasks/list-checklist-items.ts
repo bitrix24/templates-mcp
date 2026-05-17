@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { callV2 } from '~/server/utils/sdk-helpers'
 import { toChecklistItemShort, type ChecklistItemShort } from '~/server/utils/checklist'
 
 /**
@@ -59,42 +59,37 @@ export default defineMcpTool({
       .describe('Sort order. Default is `{ field: "id", direction: "desc" }` — newest first.'),
   },
   handler: async ({ taskId, order }) => {
-    try {
-      const params: { TASKID: number; ORDER?: Record<string, string> } = { TASKID: taskId }
-      if (order) {
-        params.ORDER = { [CAMEL_TO_WIRE[order.field]]: order.direction.toUpperCase() }
-      }
+    const params: { TASKID: number; ORDER?: Record<string, string> } = { TASKID: taskId }
+    if (order) {
+      params.ORDER = { [CAMEL_TO_WIRE[order.field]]: order.direction.toUpperCase() }
+    }
 
-      const b24 = useBitrix24()
-      const response = await b24.callMethod('task.checklistitem.getlist', params)
+    // task.checklistitem.getlist returns `{ result: [...] }`. Despite the
+    // method name suggesting a "list" wrapper around items+meta, the actual
+    // payload is a bare array of items — confirmed against the response
+    // example on apidocs.bitrix24.ru. `callV2` unwraps the envelope.
+    const raw = await callV2<unknown[]>(
+      useBitrix24(),
+      'task.checklistitem.getlist',
+      params,
+      `Failed to list Bitrix24 checklist items for task ${taskId}`,
+    )
 
-      // task.checklistitem.getlist returns `{ result: [...] }`. Despite the
-      // method name suggesting a "list" wrapper around items+meta, the actual
-      // payload is a bare array of items — confirmed against the response
-      // example on apidocs.bitrix24.ru.
-      const raw = response.getData()?.result
-      const items: ChecklistItemShort[] = Array.isArray(raw)
-        ? raw.map(toChecklistItemShort).filter((i): i is ChecklistItemShort => i !== null)
-        : []
+    const items: ChecklistItemShort[] = Array.isArray(raw)
+      ? raw.map(toChecklistItemShort).filter((i): i is ChecklistItemShort => i !== null)
+      : []
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(
-              {
-                taskId,
-                returned: items.length,
-                items,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      }
-    } catch (err) {
-      throw toToolError(err, `Failed to list Bitrix24 checklist items for task ${taskId}`)
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            taskId,
+            returned: items.length,
+            items,
+          }),
+        },
+      ],
     }
   },
 })

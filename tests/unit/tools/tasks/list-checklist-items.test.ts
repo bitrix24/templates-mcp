@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
   defineMcpTool: <T,>(spec: T) => spec,
 }))
 
-const callMethod = vi.fn()
+const fake = makeFakeBitrix24()
 
 vi.mock('~/server/utils/bitrix24', () => ({
-  useBitrix24: () => ({ callMethod }),
+  useBitrix24: () => fake.b24,
 }))
 
 interface ToolContent {
@@ -37,42 +38,43 @@ const tool = (await import('../../../../server/mcp/tools/tasks/list-checklist-it
 
 describe('bitrix24_list_checklist_items', () => {
   beforeEach(() => {
-    callMethod.mockReset()
+    fake.v2Call.mockReset()
   })
 
-  it('calls task.checklistitem.getlist with just TASKID by default', async () => {
-    callMethod.mockResolvedValue({
-      getData: () => ({
-        result: [
-          {
-            ID: '431',
-            TASK_ID: '8017',
-            PARENT_ID: 0,
-            TITLE: 'Чек-лист 1',
-            SORT_INDEX: '0',
-            IS_COMPLETE: 'N',
-            IS_IMPORTANT: 'N',
-            TOGGLED_BY: null,
-            TOGGLED_DATE: '',
-          },
-          {
-            ID: '433',
-            TASK_ID: '8017',
-            PARENT_ID: '431',
-            TITLE: 'Найти все документы',
-            SORT_INDEX: '0',
-            IS_COMPLETE: 'Y',
-            IS_IMPORTANT: 'N',
-            TOGGLED_BY: '503',
-            TOGGLED_DATE: '2025-11-10T15:02:30+03:00',
-          },
-        ],
-      }),
-    })
+  it('calls task.checklistitem.getlist (v2) with just TASKID by default', async () => {
+    fake.v2Call.mockResolvedValue(
+      fakeOk([
+        {
+          ID: '431',
+          TASK_ID: '8017',
+          PARENT_ID: 0,
+          TITLE: 'Чек-лист 1',
+          SORT_INDEX: '0',
+          IS_COMPLETE: 'N',
+          IS_IMPORTANT: 'N',
+          TOGGLED_BY: null,
+          TOGGLED_DATE: '',
+        },
+        {
+          ID: '433',
+          TASK_ID: '8017',
+          PARENT_ID: '431',
+          TITLE: 'Найти все документы',
+          SORT_INDEX: '0',
+          IS_COMPLETE: 'Y',
+          IS_IMPORTANT: 'N',
+          TOGGLED_BY: '503',
+          TOGGLED_DATE: '2025-11-10T15:02:30+03:00',
+        },
+      ]),
+    )
 
     const result = await tool.handler({ taskId: 8017 })
 
-    expect(callMethod).toHaveBeenCalledWith('task.checklistitem.getlist', { TASKID: 8017 })
+    expect(fake.v2Call).toHaveBeenCalledWith({
+      method: 'task.checklistitem.getlist',
+      params: { TASKID: 8017 },
+    })
 
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.taskId).toBe(8017)
@@ -104,18 +106,18 @@ describe('bitrix24_list_checklist_items', () => {
   })
 
   it('forwards order with the field mapped to UPPER_SNAKE and direction upper-cased', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: [] }) })
+    fake.v2Call.mockResolvedValue(fakeOk([]))
 
     await tool.handler({ taskId: 1, order: { field: 'sortIndex', direction: 'asc' } })
 
-    expect(callMethod).toHaveBeenCalledWith('task.checklistitem.getlist', {
-      TASKID: 1,
-      ORDER: { SORT_INDEX: 'ASC' },
+    expect(fake.v2Call).toHaveBeenCalledWith({
+      method: 'task.checklistitem.getlist',
+      params: { TASKID: 1, ORDER: { SORT_INDEX: 'ASC' } },
     })
   })
 
   it('returns an empty list when Bitrix24 returns no result array', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: null }) })
+    fake.v2Call.mockResolvedValue(fakeOk(null as unknown as unknown[]))
 
     const result = await tool.handler({ taskId: 99 })
     const payload = JSON.parse(result.content[0]!.text)
@@ -123,7 +125,7 @@ describe('bitrix24_list_checklist_items', () => {
   })
 
   it('wraps SDK errors with the task id in the fallback', async () => {
-    callMethod.mockRejectedValue(new Error('access denied'))
+    fake.v2Call.mockRejectedValue(new Error('access denied'))
     await expect(tool.handler({ taskId: 7 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'access denied',

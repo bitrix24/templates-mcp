@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
+import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { callV3 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 
 /**
@@ -47,53 +48,50 @@ export default defineMcpTool({
       .describe('User ids of auditors / observers. Omit for none.'),
   },
   handler: async ({ title, responsibleId, description, deadline, groupId, priority, accomplices, auditors }) => {
-    try {
-      const fields: Record<string, unknown> = {
-        TITLE: title,
-        RESPONSIBLE_ID: responsibleId,
-      }
-      if (description !== undefined) fields.DESCRIPTION = description
-      if (deadline !== undefined) fields.DEADLINE = deadline
-      if (groupId !== undefined) fields.GROUP_ID = groupId
-      if (priority !== undefined) fields.PRIORITY = priority
-      if (accomplices?.length) fields.ACCOMPLICES = accomplices
-      if (auditors?.length) fields.AUDITORS = auditors
+    const fields: Record<string, unknown> = {
+      TITLE: title,
+      RESPONSIBLE_ID: responsibleId,
+    }
+    if (description !== undefined) fields.DESCRIPTION = description
+    if (deadline !== undefined) fields.DEADLINE = deadline
+    if (groupId !== undefined) fields.GROUP_ID = groupId
+    if (priority !== undefined) fields.PRIORITY = priority
+    if (accomplices?.length) fields.ACCOMPLICES = accomplices
+    if (auditors?.length) fields.AUDITORS = auditors
 
-      const b24 = useBitrix24()
-      const response = await b24.callMethod('tasks.task.add', { fields })
-      const [task] = extractTasks(response.getData()?.result)
+    const b24 = useBitrix24()
+    const result = await callV3<SingleTaskEnvelope>(
+      b24,
+      'tasks.task.add',
+      { fields },
+      'Failed to create Bitrix24 task',
+    )
+    const [task] = extractTasks(result)
 
-      if (!task) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'Bitrix24 accepted the create-task call but returned no task body. The task was likely created — list tasks by RESPONSIBLE_ID to find it.',
-            },
-          ],
-        }
-      }
-
+    if (!task) {
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify(
-              {
-                created: true,
-                id: task.id,
-                title: task.title,
-                responsibleId: task.responsibleId ?? null,
-                deadline: task.deadline ?? null,
-              },
-              null,
-              2,
-            ),
+            text: 'Bitrix24 accepted the create-task call but returned no task body. The task was likely created — list tasks by RESPONSIBLE_ID to find it.',
           },
         ],
       }
-    } catch (err) {
-      throw toToolError(err, 'Failed to create Bitrix24 task')
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            created: true,
+            id: task.id,
+            title: task.title,
+            responsibleId: task.responsibleId ?? null,
+            deadline: task.deadline ?? null,
+          }),
+        },
+      ],
     }
   },
 })

@@ -1,7 +1,20 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { callV2 } from '~/server/utils/sdk-helpers'
+
+/** Subset of the `user.search` row shape we surface back to the agent. */
+interface UserSearchRow {
+  ID?: string | number
+  NAME?: string
+  LAST_NAME?: string
+  SECOND_NAME?: string
+  EMAIL?: string
+  WORK_POSITION?: string
+  UF_DEPARTMENT?: number[]
+  ACTIVE?: boolean
+  IS_ONLINE?: string
+}
 
 /**
  * Find Bitrix24 users by name, surname, position, or free-text query.
@@ -98,61 +111,50 @@ export default defineMcpTool({
       }
     }
 
-    try {
-      const b24 = useBitrix24()
-      const response = await b24.callMethod('user.search', { FILTER: filter, sort: 'ID', order: 'ASC' })
-      const data = response.getData()?.result as
-        | Array<{
-            ID?: string | number
-            NAME?: string
-            LAST_NAME?: string
-            SECOND_NAME?: string
-            EMAIL?: string
-            WORK_POSITION?: string
-            UF_DEPARTMENT?: number[]
-            ACTIVE?: boolean
-            IS_ONLINE?: string
-          }>
-        | undefined
+    const b24 = useBitrix24()
+    // user.search is v2 and uses a non-standard params shape: `sort` and
+    // `order` are scalar strings (not the `Record<string, …>` that v3-shaped
+    // `TypeCallParams.order` documents). Cast keeps the wire payload honest
+    // while the type stays correct for the other 99 % of calls.
+    const all
+      = (await callV2<UserSearchRow[]>(
+          b24,
+          'user.search',
+          { FILTER: filter, sort: 'ID', order: 'ASC' } as unknown as Record<string, unknown>,
+          'Failed to search Bitrix24 users',
+        ))
+      ?? []
 
-      const cap = limit ?? 10
-      const all = data ?? []
-      const users = all.slice(0, cap).map((u) => ({
-        id: parseUserId(u.ID),
-        // `||` (not `??`) on all string fields: Bitrix24 sometimes returns an
-        // empty string for an unset name part / position / email; an empty
-        // string is semantically "absent", so we map it to null uniformly.
-        firstName: u.NAME || null,
-        lastName: u.LAST_NAME || null,
-        secondName: u.SECOND_NAME || null,
-        email: u.EMAIL || null,
-        position: u.WORK_POSITION || null,
-        departmentIds: u.UF_DEPARTMENT ?? [],
-        active: u.ACTIVE !== false,
-        isOnline: u.IS_ONLINE === 'Y',
-      }))
+    const cap = limit ?? 10
+    const users = all.slice(0, cap).map((u) => ({
+      id: parseUserId(u.ID),
+      // `||` (not `??`) on all string fields: Bitrix24 sometimes returns an
+      // empty string for an unset name part / position / email; an empty
+      // string is semantically "absent", so we map it to null uniformly.
+      firstName: u.NAME || null,
+      lastName: u.LAST_NAME || null,
+      secondName: u.SECOND_NAME || null,
+      email: u.EMAIL || null,
+      position: u.WORK_POSITION || null,
+      departmentIds: u.UF_DEPARTMENT ?? [],
+      active: u.ACTIVE !== false,
+      isOnline: u.IS_ONLINE === 'Y',
+    }))
 
-      const truncated = all.length > users.length
+    const truncated = all.length > users.length
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(
-              {
-                matches: users.length,
-                returnedByApi: all.length,
-                ...(truncated ? { truncatedAt: cap } : {}),
-                users,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      }
-    } catch (err) {
-      throw toToolError(err, 'Failed to search Bitrix24 users')
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            matches: users.length,
+            returnedByApi: all.length,
+            ...(truncated ? { truncatedAt: cap } : {}),
+            users,
+          }),
+        },
+      ],
     }
   },
 })

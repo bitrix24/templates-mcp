@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
+import { fakeOk, makeFakeBitrix24 } from '../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
   defineMcpTool: <T,>(spec: T) => spec,
 }))
 
-const callMethod = vi.fn()
+const fake = makeFakeBitrix24()
 
 vi.mock('~/server/utils/bitrix24', () => ({
-  useBitrix24: () => ({ callMethod }),
+  useBitrix24: () => fake.b24,
 }))
 
 interface ToolDef {
@@ -23,9 +24,27 @@ interface ToolDef {
 
 const { defineTaskLifecycleTool } = await import('../../../server/utils/task-lifecycle')
 
+/**
+ * Helper for tests that fan out across batch.make rows. Builds an
+ * AjaxResult-like row for an OK case carrying the given `task` payload.
+ */
+function okRow(task: { id: number; title: string; status?: string; responsibleId?: string }) {
+  return fakeOk({ task })
+}
+
+/** Builds a failure row for batch.make. */
+function errRow(message: string) {
+  return {
+    isSuccess: false,
+    getData: () => ({ result: undefined }),
+    getErrorMessages: () => [message],
+  }
+}
+
 describe('defineTaskLifecycleTool', () => {
   beforeEach(() => {
-    callMethod.mockReset()
+    fake.v3Call.mockReset()
+    fake.v3Batch.mockReset()
   })
 
   it('rejects non-positive, non-integer, and string taskIds at the schema layer', () => {
@@ -64,7 +83,7 @@ describe('defineTaskLifecycleTool', () => {
     expect(schema.safeParse({ taskId: [1, 2], force: true }).success).toBe(true)
   })
 
-  it('batch mode: returns a summary payload with per-id results', async () => {
+  it('batch mode: dispatches one actions.v3.batch.make and shapes per-id results', async () => {
     const tool = defineTaskLifecycleTool({
       name: 'bitrix24_pause_task',
       method: 'tasks.task.pause',
@@ -74,10 +93,15 @@ describe('defineTaskLifecycleTool', () => {
       taskIdHint: 'irrelevant',
     }) as unknown as ToolDef
 
-    callMethod
-      .mockResolvedValueOnce({ getData: () => ({ result: { task: { id: 1, title: 'a', status: '2' } } }) })
-      .mockRejectedValueOnce(new Error('action not allowed'))
-      .mockResolvedValueOnce({ getData: () => ({ result: { task: { id: 3, title: 'c', status: '2' } } }) })
+    fake.v3Batch.mockResolvedValue({
+      isSuccess: true,
+      getData: () => [
+        okRow({ id: 1, title: 'a', status: '2' }),
+        errRow('action not allowed'),
+        okRow({ id: 3, title: 'c', status: '2' }),
+      ],
+      getErrorMessages: () => [],
+    })
 
     const result = await tool.handler({ taskId: [1, 2, 3] })
     const payload = JSON.parse(result.content[0]!.text) as {
@@ -89,7 +113,14 @@ describe('defineTaskLifecycleTool', () => {
       results: { taskId: number; ok: boolean; status?: string | null; error?: string }[]
     }
 
-    expect(callMethod).toHaveBeenCalledTimes(3)
+    expect(fake.v3Batch).toHaveBeenCalledWith({
+      calls: [
+        ['tasks.task.pause', { taskId: 1 }],
+        ['tasks.task.pause', { taskId: 2 }],
+        ['tasks.task.pause', { taskId: 3 }],
+      ],
+      options: { isHaltOnError: false, returnAjaxResult: true },
+    })
     expect(payload.batch).toBe(true)
     expect(payload.verb).toBe('paused')
     expect(payload.total).toBe(3)
@@ -103,7 +134,7 @@ describe('defineTaskLifecycleTool', () => {
     expect(payload.results[1]!.error).toMatch(/action not allowed/)
   })
 
-  it('batch mode preserves input order even when calls resolve out of order', async () => {
+  it('batch mode preserves input order in the results[] array', async () => {
     const tool = defineTaskLifecycleTool({
       name: 'bitrix24_complete_task',
       method: 'tasks.task.complete',
@@ -113,9 +144,16 @@ describe('defineTaskLifecycleTool', () => {
       taskIdHint: 'irrelevant',
     }) as unknown as ToolDef
 
-    callMethod.mockImplementation(async (_method: string, params: { taskId: number }) => ({
-      getData: () => ({ result: { task: { id: params.taskId, title: `t${params.taskId}`, status: '5' } } }),
-    }))
+    fake.v3Batch.mockResolvedValue({
+      isSuccess: true,
+      getData: () => [
+        okRow({ id: 10, title: 't10', status: '5' }),
+        okRow({ id: 20, title: 't20', status: '5' }),
+        okRow({ id: 30, title: 't30', status: '5' }),
+        okRow({ id: 40, title: 't40', status: '5' }),
+      ],
+      getErrorMessages: () => [],
+    })
 
     const result = await tool.handler({ taskId: [10, 20, 30, 40] })
     const payload = JSON.parse(result.content[0]!.text) as { results: { taskId: number }[] }
@@ -138,15 +176,20 @@ describe('defineTaskLifecycleTool', () => {
       name: 'Bitrix24ToolError',
       code: 'BATCH_TOO_LARGE',
     })
+    expect(fake.v3Batch).not.toHaveBeenCalled()
 
-    callMethod.mockResolvedValue({ getData: () => ({ result: { task: { id: 1, title: 't', status: '3' } } }) })
+    fake.v3Batch.mockResolvedValue({
+      isSuccess: true,
+      getData: () => ids.map(() => okRow({ id: 1, title: 't', status: '3' })),
+      getErrorMessages: () => [],
+    })
     const result = await tool.handler({ taskId: ids, force: true })
     const payload = JSON.parse(result.content[0]!.text) as { total: number; ok: number }
     expect(payload.total).toBe(26)
     expect(payload.ok).toBe(26)
   })
 
-  it('passes the configured REST method to useBitrix24 and shapes the payload uniformly across the seven verbs', async () => {
+  it('passes the configured REST method to actions.v3.call.make and shapes the payload uniformly across the seven verbs', async () => {
     const tool = defineTaskLifecycleTool({
       name: 'bitrix24_defer_task',
       method: 'tasks.task.defer',
@@ -156,12 +199,10 @@ describe('defineTaskLifecycleTool', () => {
       taskIdHint: 'irrelevant',
     }) as unknown as ToolDef
 
-    callMethod.mockResolvedValue({
-      getData: () => ({ result: { task: { id: 1, title: 't', status: '6', responsibleId: '5' } } }),
-    })
+    fake.v3Call.mockResolvedValue(fakeOk({ task: { id: 1, title: 't', status: '6', responsibleId: '5' } }))
 
     const payload = JSON.parse((await tool.handler({ taskId: 1 })).content[0]!.text)
-    expect(callMethod).toHaveBeenCalledWith('tasks.task.defer', { taskId: 1 })
+    expect(fake.v3Call).toHaveBeenCalledWith({ method: 'tasks.task.defer', params: { taskId: 1 } })
     expect(payload).toEqual({ deferred: true, id: 1, title: 't', status: '6', responsibleId: '5' })
   })
 
@@ -175,7 +216,7 @@ describe('defineTaskLifecycleTool', () => {
       taskIdHint: 'irrelevant',
     }) as unknown as ToolDef
 
-    callMethod.mockRejectedValue(new Error(''))
+    fake.v3Call.mockRejectedValue(new Error(''))
     await expect(tool.handler({ taskId: 7 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'Failed to disapprove Bitrix24 task 7',

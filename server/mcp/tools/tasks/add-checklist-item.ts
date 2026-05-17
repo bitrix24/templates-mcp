@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { toToolError } from '~/server/utils/errors'
+import { callV2 } from '~/server/utils/sdk-helpers'
 
 /**
  * Adds a new item to a Bitrix24 task checklist.
@@ -50,57 +50,51 @@ export default defineMcpTool({
       .describe('Mark the item as important. Default false.'),
   },
   handler: async ({ taskId, title, parentId, sortIndex, isImportant }) => {
-    try {
-      // Pin PARENT_ID on the wire: the API docs only document behaviour when
-      // PARENT_ID is supplied (0 = new heading, >0 = nested). Omitting it is
-      // undefined behaviour. We default to 0 so "omit parentId" = "start a
-      // new checklist" matches the tool description's promise deterministically.
-      const fields: Record<string, unknown> = { TITLE: title, PARENT_ID: parentId ?? 0 }
-      if (sortIndex !== undefined) fields.SORT_INDEX = sortIndex
-      if (isImportant !== undefined) fields.IS_IMPORTANT = isImportant ? 'Y' : 'N'
+    // Pin PARENT_ID on the wire: the API docs only document behaviour when
+    // PARENT_ID is supplied (0 = new heading, >0 = nested). Omitting it is
+    // undefined behaviour. We default to 0 so "omit parentId" = "start a
+    // new checklist" matches the tool description's promise deterministically.
+    const fields: Record<string, unknown> = { TITLE: title, PARENT_ID: parentId ?? 0 }
+    if (sortIndex !== undefined) fields.SORT_INDEX = sortIndex
+    if (isImportant !== undefined) fields.IS_IMPORTANT = isImportant ? 'Y' : 'N'
 
-      const b24 = useBitrix24()
-      const response = await b24.callMethod('task.checklistitem.add', {
-        TASKID: taskId,
-        FIELDS: fields,
-      })
+    // task.checklistitem.add returns `{ result: <itemId int>, time: {...} }`.
+    // `callV2` unwraps the envelope; we receive the bare id (number or string
+    // depending on portal).
+    const rawId = await callV2<number | string>(
+      useBitrix24(),
+      'task.checklistitem.add',
+      { TASKID: taskId, FIELDS: fields },
+      `Failed to add checklist item to Bitrix24 task ${taskId}`,
+    )
 
-      // task.checklistitem.add returns `{ result: <itemId int>, time: {...} }`.
-      const rawId = response.getData()?.result
-      const itemId =
-        typeof rawId === 'number' ? rawId : typeof rawId === 'string' ? Number.parseInt(rawId, 10) : null
+    const itemId =
+      typeof rawId === 'number' ? rawId : typeof rawId === 'string' ? Number.parseInt(rawId, 10) : null
 
-      if (itemId === null || !Number.isFinite(itemId)) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Checklist item added to task ${taskId}, but Bitrix24 returned no item id. List checklist items to find it.`,
-            },
-          ],
-        }
-      }
-
+    if (itemId === null || !Number.isFinite(itemId)) {
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify(
-              {
-                added: true,
-                taskId,
-                itemId,
-                title,
-                parentId: parentId ?? 0,
-              },
-              null,
-              2,
-            ),
+            text: `Checklist item added to task ${taskId}, but Bitrix24 returned no item id. List checklist items to find it.`,
           },
         ],
       }
-    } catch (err) {
-      throw toToolError(err, `Failed to add checklist item to Bitrix24 task ${taskId}`)
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            added: true,
+            taskId,
+            itemId,
+            title,
+            parentId: parentId ?? 0,
+          }),
+        },
+      ],
     }
   },
 })

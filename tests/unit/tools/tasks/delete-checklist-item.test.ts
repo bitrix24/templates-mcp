@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
   defineMcpTool: <T,>(spec: T) => spec,
 }))
 
-const callMethod = vi.fn()
+const fake = makeFakeBitrix24()
 
 vi.mock('~/server/utils/bitrix24', () => ({
-  useBitrix24: () => ({ callMethod }),
+  useBitrix24: () => fake.b24,
 }))
 
 interface ToolContent {
@@ -20,20 +21,23 @@ const tool = (await import('../../../../server/mcp/tools/tasks/delete-checklist-
 
 describe('bitrix24_delete_checklist_item', () => {
   beforeEach(() => {
-    callMethod.mockReset()
+    fake.v2Call.mockReset()
   })
 
   it('calls task.checklistitem.delete with positional [taskId, itemId]', async () => {
-    callMethod.mockResolvedValue({ getData: () => ({ result: true }) })
+    fake.v2Call.mockResolvedValue(fakeOk(true))
 
     const result = await tool.handler({ taskId: 13, itemId: 475 })
 
-    expect(callMethod).toHaveBeenCalledWith('task.checklistitem.delete', [13, 475])
+    expect(fake.v2Call).toHaveBeenCalledWith({
+      method: 'task.checklistitem.delete',
+      params: [13, 475],
+    })
     expect(JSON.parse(result.content[0]!.text)).toEqual({ deleted: true, taskId: 13, itemId: 475 })
   })
 
   it('wraps SDK errors with task and item ids in the fallback', async () => {
-    callMethod.mockRejectedValue(new Error('action not allowed'))
+    fake.v2Call.mockRejectedValue(new Error('action not allowed'))
     await expect(tool.handler({ taskId: 13, itemId: 475 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'action not allowed',
@@ -41,9 +45,7 @@ describe('bitrix24_delete_checklist_item', () => {
   })
 
   it('batch mode reports per-id outcomes including failures', async () => {
-    callMethod
-      .mockResolvedValueOnce({ getData: () => ({ result: true }) })
-      .mockRejectedValueOnce(new Error('access denied'))
+    fake.v2Call.mockResolvedValueOnce(fakeOk(true)).mockRejectedValueOnce(new Error('access denied'))
 
     const result = await tool.handler({ taskId: 13, itemId: [475, 476] })
 
