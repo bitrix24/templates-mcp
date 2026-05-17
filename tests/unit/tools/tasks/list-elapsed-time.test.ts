@@ -201,7 +201,22 @@ describe('bitrix24_list_elapsed_time', () => {
     expect(args.params.FILTER).toEqual({ TASK_ID: 800 })
   })
 
-  it('schema rejects start values above the 100_000 DoS cap', () => {
+  it('operator-prefix guard covers ALL prefixes — not just `!`', async () => {
+    // The convenience-merge guard strips /^[!%<>=]+/ before comparing to
+    // taskId/TASK_ID. Pin the full operator vocabulary so a regex tweak
+    // can't silently drop a prefix from the closed set.
+    fake.v2Call.mockResolvedValue(fakeOk([]))
+    await tool.handler({ taskId: 100, filter: { '>=taskId': 50 } })
+    const call1 = fake.v2Call.mock.calls[0]![0] as unknown as { params: { FILTER: Record<string, unknown> } }
+    expect(call1.params.FILTER).toEqual({ '>=TASK_ID': 50 })
+
+    fake.v2Call.mockClear()
+    await tool.handler({ taskId: 100, filter: { '%taskId': '5' } })
+    const call2 = fake.v2Call.mock.calls[0]![0] as unknown as { params: { FILTER: Record<string, unknown> } }
+    expect(call2.params.FILTER).toEqual({ '%TASK_ID': '5' })
+  })
+
+  it('schema constrains start to [0, 100_000] (lower + upper bounds)', () => {
     // Reach into the handler input by parsing the schema directly via the
     // exported tool — the runtime would Zod-reject before the handler runs.
     // (The tool default export is a McpToolDefinition; the start schema
@@ -209,7 +224,12 @@ describe('bitrix24_list_elapsed_time', () => {
     const startSchema = (tool as unknown as { inputSchema: { start: { safeParse: (v: unknown) => { success: boolean } } } }).inputSchema.start
     expect(startSchema.safeParse(0).success).toBe(true)
     expect(startSchema.safeParse(100_000).success).toBe(true)
+    // Upper bound — DoS guard.
     expect(startSchema.safeParse(100_001).success).toBe(false)
+    // Lower bound — nonnegative() rejects negatives.
+    expect(startSchema.safeParse(-1).success).toBe(false)
+    // Non-integers.
+    expect(startSchema.safeParse(1.5).success).toBe(false)
   })
 
   it('wraps SDK errors into Bitrix24ToolError', async () => {

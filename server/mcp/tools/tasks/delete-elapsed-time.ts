@@ -27,7 +27,7 @@ import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
  * author-id comparison is planned per issue #24 — until then non-author
  * deletes surface as ACCESS_DENIED late in the round-trip.
  *
- * Universal `confirmDelete` gate per SKILL.md Ground Rule #10 — the tool
+ * Universal `confirmDelete` gate per SKILL.md Ground Rule #9 — the tool
  * refuses with DELETE_NEEDS_CONFIRM unless the agent set it explicitly.
  * Wiping a team's recorded time-log with one batch call is a serious
  * action; the confirm step is a cheap hold-back that catches LLM
@@ -57,7 +57,7 @@ interface DeleteElapsedTimeBatchRow {
 export default defineActionTool<DeleteElapsedTimeInput, DeleteElapsedTimeBatchRow>({
   name: 'bitrix24_delete_elapsed_time',
   description:
-    'Delete elapsed-time entries on a Bitrix24 task. Use for cleanup of duplicate / miss-clicked entries, or to remove a stopwatch session that ended up not counting. REQUIRES `confirmDelete: true` (SKILL.md Ground Rule #10 — every delete needs explicit operator agreement). Only the entry author (or someone with admin rights) can delete. To CORRECT an entry instead of removing it, use `bitrix24_update_elapsed_time`.',
+    'Delete elapsed-time entries on a Bitrix24 task. Use for cleanup of duplicate / miss-clicked entries, or to remove a stopwatch session that ended up not counting. REQUIRES `confirmDelete: true` (SKILL.md Ground Rule #9 — every delete needs explicit operator agreement). Only the entry author (or someone with admin rights) can delete. To CORRECT an entry instead of removing it, use `bitrix24_update_elapsed_time`.',
   usageNotes: USAGE_NOTES,
   pastTense: 'deleted',
   batchCap: DEFAULT_BATCH_CAP,
@@ -84,7 +84,7 @@ function assertConfirmed(taskId: number, itemId: number | number[], confirmed: b
     ? `${itemId.length} elapsed-time entries [${itemId.join(', ')}] on task ${taskId}`
     : `elapsed-time entry ${itemId} on task ${taskId}`
   throw new Bitrix24ToolError(
-    `Refusing to delete ${target} without confirmation. Re-call \`bitrix24_delete_elapsed_time\` with \`confirmDelete: true\` only after the operator has explicitly agreed to the deletion (SKILL.md Ground Rule #10).`,
+    `Refusing to delete ${target} without confirmation. Re-call \`bitrix24_delete_elapsed_time\` with \`confirmDelete: true\` only after the operator has explicitly agreed to the deletion (SKILL.md Ground Rule #9).`,
     'DELETE_NEEDS_CONFIRM',
   )
 }

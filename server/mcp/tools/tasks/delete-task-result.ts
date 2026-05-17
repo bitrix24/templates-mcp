@@ -16,7 +16,7 @@ import { callV3 } from '~/server/utils/sdk-helpers'
 export default defineMcpTool({
   name: 'bitrix24_delete_task_result',
   description:
-    'Delete a Bitrix24 task result. Destructive — there is no undo, but the task itself is not affected. Only the result author (or a portal admin) is allowed to delete it; other callers get ACCESSDENIEDEXCEPTION. The resultId comes from `bitrix24_list_task_results`.',
+    'Delete a Bitrix24 task result. Destructive — there is no undo, but the task itself is not affected. Only the result author (or a portal admin) is allowed to delete it; other callers get ACCESSDENIEDEXCEPTION. The resultId comes from `bitrix24_list_task_results`. **NOTE**: this tool pre-dates SKILL.md Ground Rule #9 (universal `confirmDelete` required for every delete); retrofit tracked in issue #29 — until that lands, treat operator-agreement as a HUMAN responsibility before calling.',
   inputSchema: {
     resultId: z
       .number()

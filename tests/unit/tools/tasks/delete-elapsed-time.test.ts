@@ -86,10 +86,13 @@ describe('bitrix24_delete_elapsed_time', () => {
     expect(payload.results[1]!.error).toMatch(/action not allowed/)
   })
 
-  it('refuses single delete without confirmDelete: true (Ground Rule #10)', async () => {
+  it('refuses single delete without confirmDelete: true and names the target in the message (Ground Rule #9)', async () => {
     await expect(tool.handler({ taskId: 1, itemId: 5 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: 'DELETE_NEEDS_CONFIRM',
+      // Single-mode message must name the target so the operator sees
+      // exactly which entry they're agreeing to delete.
+      message: expect.stringMatching(/elapsed-time entry 5 on task 1/) as unknown as string,
     })
     await expect(tool.handler({ taskId: 1, itemId: 5, confirmDelete: false })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
@@ -99,7 +102,7 @@ describe('bitrix24_delete_elapsed_time', () => {
     expect(fake.v2Call).not.toHaveBeenCalled()
   })
 
-  it('refuses batch delete without confirmDelete: true (Ground Rule #10)', async () => {
+  it('refuses batch delete without confirmDelete: true (Ground Rule #9)', async () => {
     await expect(tool.handler({ taskId: 1, itemId: [5, 7, 9] })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: 'DELETE_NEEDS_CONFIRM',
@@ -166,5 +169,35 @@ describe('bitrix24_delete_elapsed_time', () => {
       name: 'Bitrix24ToolError',
       message: 'timeout',
     })
+  })
+
+  it('confirm gate STILL fires when force=true bypasses BATCH_TOO_LARGE on >50 ids', async () => {
+    // Force overrides only the batch-cap (BATCH_TOO_LARGE), not the
+    // confirm gate. Confirm + cap are independent guards; the agent that
+    // passes force=true to bypass the cap still hits DELETE_NEEDS_CONFIRM
+    // if it didn't confirm. The current dispatch order surfaces
+    // BATCH_TOO_LARGE FIRST (factory-side, before runBatch is called),
+    // so confirm-without-force first hits BATCH_TOO_LARGE; agent retries
+    // with force=true and then hits DELETE_NEEDS_CONFIRM. This test pins
+    // that order. If the dispatch ever reorders (e.g. via a pre-dispatch
+    // confirm hook), this test should be updated to assert
+    // DELETE_NEEDS_CONFIRM is raised first.
+    const ids = Array.from({ length: 51 }, (_, i) => i + 1)
+
+    // Step 1: no force, no confirm → BATCH_TOO_LARGE (cap check runs first)
+    await expect(tool.handler({ taskId: 1, itemId: ids })).rejects.toMatchObject({
+      code: 'BATCH_TOO_LARGE',
+    })
+
+    // Step 2: force=true overrides cap, but confirm is still missing →
+    // gate fires. Agent learns about the gate only on this second attempt.
+    await expect(
+      tool.handler({ taskId: 1, itemId: ids, force: true }),
+    ).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+    })
+
+    expect(fake.v2Batch).not.toHaveBeenCalled()
   })
 })

@@ -13,7 +13,7 @@ import { Bitrix24ToolError } from '~/server/utils/errors'
  *     (`complete`, `renew`, `delete`), with optional heading-delete
  *     pre-flight
  *   - `server/mcp/tools/tasks/delete-elapsed-time.ts` — v2 delete with
- *     universal `confirmDelete` gate (Ground Rule #10)
+ *     universal `confirmDelete` gate (Ground Rule #9)
  *
  * All families share:
  *   1. The same input shape — a target id that's either a number
@@ -35,7 +35,7 @@ import { Bitrix24ToolError } from '~/server/utils/errors'
  */
 
 /**
- * Shared schema fragment for an "id-or-array-of-ids" input. Both factory
+ * Shared schema fragment for an "id-or-array-of-ids" input. All action-tool
  * families use exactly this — a positive int (single mode) OR a non-empty
  * array of positive ints (batch mode).
  */
@@ -82,7 +82,7 @@ export function forceFlagSchema(cap: number) {
 
 /**
  * Shared schema fragment for the universal `confirmDelete` gate, mandated
- * by SKILL.md Ground Rule #10 — every delete tool MUST require an explicit
+ * by SKILL.md Ground Rule #9 — every delete tool MUST require an explicit
  * confirmation before proceeding. Single or batch, cascade or not.
  *
  * The handler is responsible for the actual refusal — read
@@ -93,7 +93,7 @@ export function forceFlagSchema(cap: number) {
  * true" path instead of a generic Zod failure.
  *
  * Cascade-destructive deletes (e.g. checklist heading delete) layer a
- * second confirm field (e.g. `confirmDeleteHeading`) per Ground Rule #9 —
+ * second confirm field (e.g. `confirmDeleteHeading`) per Ground Rule #10 —
  * the agent must set BOTH to true.
  */
 export function confirmDeleteSchema() {
@@ -101,7 +101,7 @@ export function confirmDeleteSchema() {
     .boolean()
     .optional()
     .describe(
-      'REQUIRED for every delete operation (SKILL.md Ground Rule #10). Pass `true` only after the operator has explicitly agreed to the deletion ("да, удали", not "посмотри"). The tool refuses with DELETE_NEEDS_CONFIRM if absent or `false`. Applies to BOTH single and batch deletes — the confirm is per-call, not per-id, so confirming once authorises the whole batch (good for "удали записи 5, 7, 9 — да, точно"). For cascade-destructive deletes (e.g. checklist heading), a second `confirm<Cascade>` field stacks on top.',
+      'REQUIRED for every delete operation (SKILL.md Ground Rule #9). The agent MUST receive explicit operator agreement BEFORE setting this — "да, удали" is consent, "посмотри" / "проверь" / "найди" are NOT. Auto-confirming without operator agreement (e.g. setting `true` reflexively, or because the agent thinks it knows the operator intent) defeats the gate and counts as a Rule #9 violation. The tool refuses with DELETE_NEEDS_CONFIRM if absent or `false`. Applies to BOTH single and batch — the confirm is per-call, not per-id; for batches, the operator must have agreed to the WHOLE batch (e.g. "удали записи 5, 7, 9" — three ids named aloud and confirmed). For cascade-destructive deletes (e.g. checklist heading), a second `confirm<Cascade>` field stacks on top.',
     )
 }
 

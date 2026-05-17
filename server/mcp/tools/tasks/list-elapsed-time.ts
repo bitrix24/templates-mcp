@@ -107,6 +107,14 @@ export default defineMcpTool({
     // (offset) into `iNumPage` so the agent doesn't have to do math. Page
     // size is fixed at 50; sub-page offsets round down to the start of
     // their containing page (documented in the `start` field describe).
+    //
+    // TODO(live): the unit tests verify the iNumPage math via mocks — they
+    // do NOT verify that Bitrix24 actually honours `NAV_PARAMS.iNumPage` on
+    // this endpoint. The v2 `getlist` family is documented at
+    // apidocs.bitrix24.ru but the pagination contract varies subtly per
+    // endpoint. Re-verify against a real portal once Phase 2 pilot has live
+    // data with >50 elapsed-time entries on a single task, or via the
+    // integration tests once they grow a setup that generates that volume.
     const pageSize = 50
     const iNumPage = Math.floor((start ?? 0) / pageSize) + 1
     const data = await callV2<unknown[] | { result?: unknown[] }>(

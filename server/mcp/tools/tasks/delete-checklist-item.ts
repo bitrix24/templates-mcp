@@ -17,5 +17,5 @@ export default defineChecklistActionTool({
   verb: 'delete',
   pastTense: 'deleted',
   description:
-    'Delete one item from a Bitrix24 task checklist. Destructive — there is no undo. Deleting a checklist HEADING (the item that names the whole checklist) wipes every child item with it; the tool refuses such requests with HEADING_DELETE_NEEDS_CONFIRM unless you also pass `confirmDeleteHeading: true` after the operator has agreed. Regular item deletions need no confirmation.',
+    'Delete one item from a Bitrix24 task checklist. Destructive — there is no undo. Deleting a checklist HEADING (the item that names the whole checklist) wipes every child item with it; the tool refuses such requests with HEADING_DELETE_NEEDS_CONFIRM unless you also pass `confirmDeleteHeading: true` after the operator has agreed. **NOTE**: this tool pre-dates SKILL.md Ground Rule #9 (universal `confirmDelete` required for every delete). Retrofit to require `confirmDelete: true` for regular-item deletions is tracked in issue #29 — until that lands, treat operator-agreement as a HUMAN responsibility before calling this tool, even when no heading is involved.',
 })
