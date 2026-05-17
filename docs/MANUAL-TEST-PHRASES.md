@@ -17,7 +17,7 @@ Bitrix24 has two parallel REST API generations:
 - **v3** (modern, recommended) — methods under the `tasks.*` / `crm.*` namespaces. URL pattern `apidocs.bitrix24.com/api-reference/rest-v3/…`.
 - **v2** (legacy / deprecated for new development) — methods like `task.*` (without the `s.`), `task.item.*`. Still work, but docs flag them with "Метод устарел".
 
-**Always prefer v3.** Our coverage today (14 Bitrix24 tools + 1 meta-tool):
+**Always prefer v3.** Our coverage today (18 Bitrix24 tools + 1 meta-tool):
 
 | Tool | Method | API |
 |---|---|---|
@@ -35,6 +35,10 @@ Bitrix24 has two parallel REST API generations:
 | `bitrix24_defer_task` | `tasks.task.defer` | **v3** ✓ |
 | `bitrix24_renew_task` | `tasks.task.renew` | **v3** ✓ |
 | `bitrix24_rate_task` | `tasks.task.update` (field `MARK`) | **v3** ✓ — no dedicated rate method; we write `MARK: "P" \| "N" \| null` |
+| `bitrix24_add_task_result` | `tasks.task.result.add` | **v3** ✓ |
+| `bitrix24_list_task_results` | `tasks.task.result.list` | **v3** ✓ — taskId filter is required by the endpoint; we bake it into the schema. |
+| `bitrix24_update_task_result` | `tasks.task.result.update` | **v3** ✓ — author-only. |
+| `bitrix24_delete_task_result` | `tasks.task.result.delete` | **v3** ✓ — author-only; destructive. |
 | `bx24mcp_submit_feedback` | _(no Bitrix24 call)_ | meta-tool — files a GitHub issue |
 
 All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through `actions.v3.batch.make` as one HTTP round-trip.
@@ -273,6 +277,34 @@ These phrases are about how the LLM **uses** the tools. No new endpoints — pur
 | 12.7 | Покажи "застрявшие" задачи — без активности > 7 дней, статус «в работе». | `list_tasks { filter: { STATUS: 3, "<ACTIVITY_DATE": <today-7d> } }` |
 
 These composite queries are the **real test of the description quality** — the LLM has to figure out a multi-step plan without a tool named "describe-state".
+
+---
+
+## 12b. Task results ✅
+
+**Status:** four v3 tools shipped — `add_task_result`, `list_task_results`, `update_task_result`, `delete_task_result`. A Bitrix24 task **result** is free-form text capturing what was actually delivered, kept separately from comments and from the task body. Multiple results per task allowed.
+
+| # | Phrase | What we want to see |
+|---|---|---|
+| 12b.1 | Запиши результат к задаче 51: «работы выполнены, договор подписан». | `add_task_result { taskId: 51, text: "..." }` |
+| 12b.2 | Add a result to task 12: shipped to production at 18:00, all checks green. | `add_task_result { taskId: 12, text: "..." }` — EN phrasing, must NOT route to add_task_comment. |
+| 12b.3 | Покажи результаты задачи 51. | `list_task_results { taskId: 51 }` — default order newest-first. |
+| 12b.4 | Что записано как итог работы по задаче 51? | `list_task_results { taskId: 51 }` — RU synonym ("итог") for "result". |
+| 12b.5 | Покажи последний результат задачи 51. | `list_task_results { taskId: 51, limit: 1 }` — LLM should set limit. |
+| 12b.6 | Поправь результат 17 — там опечатка, замени на «договор согласован 30.04». | `update_task_result { resultId: 17, text: "..." }` — resultId, NOT taskId. |
+| 12b.7 | Удали результат 17 в задаче 51 — я ошибся, не должен был его записывать. | `delete_task_result { resultId: 17 }` |
+| 12b.8 | Сколько результатов записано по задаче 51? | `list_task_results { taskId: 51 }` → LLM counts items. |
+
+**Probe behaviour:**
+- 12b.9 — Перезапиши результат задачи 51. *(no resultId, only parent task)* → LLM should call `list_task_results { taskId: 51 }` first, pick the latest, then `update_task_result`.
+- 12b.10 — Сделай результат задачи 51 более кратким. *(needs the current text)* → list first, then update with rewritten text.
+- 12b.11 — Удали все результаты задачи 51. *(no batch tool)* → LLM should list + iterate `delete_task_result`. Single-call batch on these v3 endpoints is not exposed today (filed under "follow-up: batch on task-result delete" if a real use case appears).
+
+**Author-only ops:** `update_task_result` and `delete_task_result` are restricted to the result author (or a portal admin) by Bitrix24. Other operators hit `BITRIX_REST_V3_EXCEPTION_ACCESSDENIEDEXCEPTION`. The descriptions warn about this so the LLM doesn't waste a call.
+
+**Out of scope (filed as follow-up candidates if real demand):**
+- `tasks.task.result.addFromComment` / `.deleteFromComment` — promote a comment to a result. Depends on a comments-list tool that's queued separately (gap-analysis row 1).
+- `tasks.task.result.addfromchatmessage` — needs the chat-message-send tool's response shape (still on the `task.commentitem.add` → `tasks.task.chat.message.send` migration roadmap).
 
 ---
 

@@ -100,6 +100,14 @@ import renewTask from '~/server/mcp/tools/tasks/renew-task'
 // eslint-disable-next-line import/first
 import rateTask from '~/server/mcp/tools/tasks/rate-task'
 // eslint-disable-next-line import/first
+import addTaskResult from '~/server/mcp/tools/tasks/add-task-result'
+// eslint-disable-next-line import/first
+import listTaskResults from '~/server/mcp/tools/tasks/list-task-results'
+// eslint-disable-next-line import/first
+import updateTaskResult from '~/server/mcp/tools/tasks/update-task-result'
+// eslint-disable-next-line import/first
+import deleteTaskResult from '~/server/mcp/tools/tasks/delete-task-result'
+// eslint-disable-next-line import/first
 import submitFeedback from '~/server/mcp/tools/meta/submit-feedback'
 
 interface McpToolDef {
@@ -123,6 +131,10 @@ const ALL_TOOLS: McpToolDef[] = [
   deferTask as unknown as McpToolDef,
   renewTask as unknown as McpToolDef,
   rateTask as unknown as McpToolDef,
+  addTaskResult as unknown as McpToolDef,
+  listTaskResults as unknown as McpToolDef,
+  updateTaskResult as unknown as McpToolDef,
+  deleteTaskResult as unknown as McpToolDef,
   submitFeedback as unknown as McpToolDef,
 ]
 
@@ -378,6 +390,38 @@ const CASES: Case[] = [
     input: 'Сними оценку с задачи 57.',
     expected: 'bitrix24_rate_task',
     notes: 'Clear an existing rating — rating: none.',
+  },
+
+  // ── Task results (tasks.task.result.* — separate from comments / status) ───
+  {
+    input: 'Запиши результат к задаче 51: «работы выполнены, договор подписан».',
+    expected: 'bitrix24_add_task_result',
+    notes: 'Operator records a task RESULT (outcome) — distinct from a comment or completion.',
+  },
+  {
+    input: 'Add a result to task 12: shipped to production at 18:00, all checks green.',
+    expected: 'bitrix24_add_task_result',
+    notes: 'EN result entry — must NOT route to add_task_comment or update_task.',
+  },
+  {
+    input: 'Покажи результаты задачи 51.',
+    expected: 'bitrix24_list_task_results',
+    notes: 'Read results — distinct phrasing from "comments" or "status".',
+  },
+  {
+    input: 'Что записано как итог работы по задаче 51?',
+    expected: 'bitrix24_list_task_results',
+    notes: 'Synonym for "result" ("итог") — should still hit list_task_results.',
+  },
+  {
+    input: 'Поправь результат 17 — там опечатка, замени на «договор согласован 30.04».',
+    expected: 'bitrix24_update_task_result',
+    notes: 'Update result text — resultId explicit, not the parent taskId.',
+  },
+  {
+    input: 'Удали результат 17 в задаче 51 — я ошибся, не должен был его записывать.',
+    expected: 'bitrix24_delete_task_result',
+    notes: 'Destructive; resultId given explicitly.',
   },
 
   // ── Multilingual / non-Latin (i18n probe — ≥ 3 cases per language) ─────

@@ -1,0 +1,69 @@
+import { z } from 'zod'
+import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
+import type { TaskResultItemEnvelope } from '~/server/types/bitrix24'
+import { useBitrix24 } from '~/server/utils/bitrix24'
+import { callV3 } from '~/server/utils/sdk-helpers'
+import { toTaskResultShort } from '~/server/utils/task-results'
+
+/**
+ * Update the text of an existing Bitrix24 task result.
+ *
+ * Bitrix24 REST: tasks.task.result.update (v3)
+ *   https://apidocs.bitrix24.com/api-reference/rest-v3/tasks/result/tasks-task-result-update.html
+ *
+ * Only the author of the result (or a portal admin) is allowed to edit it.
+ * The endpoint accepts only `text`; status / authorship / timestamps are
+ * managed by Bitrix24.
+ */
+export default defineMcpTool({
+  name: 'bitrix24_update_task_result',
+  description:
+    'Rewrite the text of an existing Bitrix24 task result. Only the result author (or a portal admin) is permitted to edit; otherwise Bitrix24 returns ACCESSDENIEDEXCEPTION. The resultId comes from `bitrix24_add_task_result` or `bitrix24_list_task_results` — do NOT pass the parent taskId here.',
+  inputSchema: {
+    resultId: z
+      .number()
+      .int()
+      .positive()
+      .describe('Result id (NOT the parent taskId). Get from `bitrix24_list_task_results` or the response of `bitrix24_add_task_result`.'),
+    text: z
+      .string()
+      .min(1)
+      .describe('New result text. Replaces the previous text entirely; partial edits are not supported.'),
+  },
+  handler: async ({ resultId, text }) => {
+    const b24 = useBitrix24()
+    const result = await callV3<TaskResultItemEnvelope>(
+      b24,
+      'tasks.task.result.update',
+      { id: resultId, fields: { text } },
+      `Failed to update Bitrix24 task result ${resultId}`,
+    )
+
+    const short = toTaskResultShort(result?.item)
+    if (!short) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Task result ${resultId} updated, but Bitrix24 returned no result body. Re-list with bitrix24_list_task_results to verify the change landed.`,
+          },
+        ],
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            updated: true,
+            id: short.id,
+            taskId: short.taskId,
+            text: short.text,
+            updatedAt: short.updatedAt,
+          }),
+        },
+      ],
+    }
+  },
+})

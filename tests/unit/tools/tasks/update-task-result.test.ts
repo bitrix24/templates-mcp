@@ -1,0 +1,69 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeOk, fakeOkEmpty, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
+
+vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
+  defineMcpTool: <T,>(spec: T) => spec,
+}))
+
+const fake = makeFakeBitrix24()
+
+vi.mock('~/server/utils/bitrix24', () => ({
+  useBitrix24: () => fake.b24,
+}))
+
+interface ToolContent {
+  content: { type: 'text'; text: string }[]
+}
+
+const tool = (await import('../../../../server/mcp/tools/tasks/update-task-result')).default as unknown as {
+  handler: (input: { resultId: number; text: string }) => Promise<ToolContent>
+}
+
+describe('bitrix24_update_task_result', () => {
+  beforeEach(() => {
+    fake.v3Call.mockReset()
+  })
+
+  it('posts to tasks.task.result.update with id + fields.text', async () => {
+    fake.v3Call.mockResolvedValue(
+      fakeOk({
+        item: {
+          id: 17,
+          taskId: 51,
+          text: 'rewritten',
+          updatedAt: '2026-04-30T10:25:00+03:00',
+          status: 'open',
+        },
+      }),
+    )
+
+    const result = await tool.handler({ resultId: 17, text: 'rewritten' })
+
+    expect(fake.v3Call).toHaveBeenCalledWith({
+      method: 'tasks.task.result.update',
+      params: { id: 17, fields: { text: 'rewritten' } },
+    })
+    expect(JSON.parse(result.content[0]!.text)).toEqual({
+      updated: true,
+      id: 17,
+      taskId: 51,
+      text: 'rewritten',
+      updatedAt: '2026-04-30T10:25:00+03:00',
+    })
+  })
+
+  it('falls back to a friendly message when Bitrix24 returns no item body', async () => {
+    fake.v3Call.mockResolvedValue(fakeOkEmpty())
+    const result = await tool.handler({ resultId: 17, text: 'x' })
+    expect(result.content[0]!.text).toMatch(/result 17/i)
+    expect(result.content[0]!.text).toMatch(/Re-list/i)
+  })
+
+  it('wraps SDK errors with the resultId in the fallback', async () => {
+    fake.v3Call.mockRejectedValue(new Error('access denied'))
+    await expect(tool.handler({ resultId: 42, text: 'denied' })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      message: 'access denied',
+    })
+  })
+})

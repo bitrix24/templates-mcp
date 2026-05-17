@@ -60,9 +60,13 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `bitrix24_defer_task` | Move a task to Deferred (6) — postponed but not closed. |
 | `bitrix24_renew_task` | Reopen a Completed or Deferred task → Pending (2). |
 | `bitrix24_rate_task` | Set or clear the task rating (positive / negative / none — Bitrix24 `MARK` field). |
+| `bitrix24_add_task_result` | Record a free-form RESULT (outcome text) on a task — separate from comments and from the task body. |
+| `bitrix24_list_task_results` | List the results recorded on a task. Newest-first by default; pagination via limit/offset. |
+| `bitrix24_update_task_result` | Rewrite the text of an existing result. Author-only on most portals. |
+| `bitrix24_delete_task_result` | Delete a result by id. Author-only; the task itself is not affected. |
 | `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 
-14 Bitrix24 + 1 meta = **15 tools total**.
+18 Bitrix24 + 1 meta = **19 tools total**.
 
 The 8 mutation tools above (`start_task` / `pause_task` / `complete_task` / `approve_task` / `disapprove_task` / `defer_task` / `renew_task` / `rate_task`) accept either a single `taskId` **or** an array of ids for batch mode (up to 25; pass `force: true` to override). Rate limiting, retry, and adaptive back-pressure are provided by the [`@bitrix24/b24jssdk`](https://www.npmjs.com/package/@bitrix24/b24jssdk) `RestrictionManager` — initialised with `ParamsFactory.getDefault()` (standard tariff: burst 50, drain 2 req/sec, 3 retries on transient errors). Override at runtime via `client.setRestrictionManagerParams(ParamsFactory.getEnterprise())` etc.
 

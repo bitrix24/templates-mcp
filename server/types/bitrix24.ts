@@ -41,3 +41,30 @@ export interface TaskListEnvelope {
   tasks?: BitrixTaskRaw[]
   total?: number
 }
+
+/**
+ * Task-result wire shape — v3 `tasks.task.result.*`. A "result" is a piece
+ * of free-form text the operator records as the answer / outcome of a task,
+ * separately from the task body and comments. The full Bitrix24 response
+ * also carries `fileIds` / `rights` — we don't surface those today.
+ */
+export interface BitrixTaskResultRaw {
+  id?: number | string
+  taskId?: number | string
+  text?: string
+  authorId?: number | string
+  createdAt?: string | null
+  updatedAt?: string | null
+  status?: 'open' | 'closed' | string
+  messageId?: number | string | null
+}
+
+/** Envelope for single-result v3 endpoints (`tasks.task.result.add` / `.update`). */
+export interface TaskResultItemEnvelope {
+  item: BitrixTaskResultRaw
+}
+
+/** Envelope for the list endpoint (`tasks.task.result.list`). */
+export interface TaskResultListEnvelope {
+  items?: BitrixTaskResultRaw[]
+}
