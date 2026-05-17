@@ -76,6 +76,11 @@ describe('bitrix24_update_task_result', () => {
     expect(tool.inputSchema.resultId.safeParse(1.5).success).toBe(false)
   })
 
+  it('schema rejects updated text longer than 10000 chars (memory-DoS guard, matches add_task_result)', () => {
+    expect(tool.inputSchema.text.safeParse('a'.repeat(10_000)).success).toBe(true)
+    expect(tool.inputSchema.text.safeParse('a'.repeat(10_001)).success).toBe(false)
+  })
+
   it('propagates ACCESSDENIEDEXCEPTION codes (author-only endpoint)', async () => {
     fake.v3Call.mockRejectedValue(
       Object.assign(new Error('Access denied'), {

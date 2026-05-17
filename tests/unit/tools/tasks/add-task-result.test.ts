@@ -110,4 +110,12 @@ describe('bitrix24_add_task_result', () => {
     expect(tool.inputSchema.taskId.safeParse(0).success).toBe(false)
     expect(tool.inputSchema.taskId.safeParse(-1).success).toBe(false)
   })
+
+  it('schema rejects result text longer than 10000 chars (memory-DoS guard)', () => {
+    expect(tool.inputSchema.text.safeParse('a'.repeat(10_000)).success).toBe(true)
+    expect(tool.inputSchema.text.safeParse('a'.repeat(10_001)).success).toBe(false)
+    // Wildly oversized — protects against agents pasting log files or
+    // base64 blobs into a result.
+    expect(tool.inputSchema.text.safeParse('a'.repeat(10_000_000)).success).toBe(false)
+  })
 })

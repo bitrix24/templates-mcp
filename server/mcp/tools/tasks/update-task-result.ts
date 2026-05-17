@@ -28,7 +28,8 @@ export default defineMcpTool({
     text: z
       .string()
       .min(1)
-      .describe('New result text. Replaces the previous text entirely; partial edits are not supported.'),
+      .max(10000)
+      .describe('New result text. Max 10000 chars (matches `bitrix24_add_task_result`; oversized payloads are rejected at the schema layer). Replaces the previous text entirely; partial edits are not supported.'),
   },
   handler: async ({ resultId, text }) => {
     const b24 = useBitrix24()

@@ -25,8 +25,9 @@ export default defineMcpTool({
     text: z
       .string()
       .min(1)
+      .max(10000)
       .describe(
-        'Result text. Required. BBCode is rendered the same as in task descriptions and comments. Keep it concise — this is the headline outcome, not a chat log.',
+        'Result text. Required. Max 10000 chars (oversized payloads are rejected at the schema layer to protect the MCP from memory-DoS). BBCode is rendered the same as in task descriptions and comments. Keep it concise — this is the headline outcome, not a chat log.',
       ),
   },
   handler: async ({ taskId, text }) => {
