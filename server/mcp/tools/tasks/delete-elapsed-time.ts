@@ -2,13 +2,13 @@ import { z } from 'zod'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import {
   type ActionToolInput,
+  assertConfirmedDelete,
   confirmDeleteSchema,
   defineActionTool,
   forceFlagSchema,
   idOrIdArraySchema,
   mapBatchRows,
 } from '~/server/utils/define-action-tool'
-import { Bitrix24ToolError } from '~/server/utils/errors'
 import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
 
 /**
@@ -78,19 +78,14 @@ export default defineActionTool<DeleteElapsedTimeInput, DeleteElapsedTimeBatchRo
   batchSummaryExtras: (input) => ({ taskId: input.taskId }),
 })
 
-function assertConfirmedDelete(taskId: number, itemId: number | number[], confirmed: boolean): void {
-  if (confirmed) return
-  const target = Array.isArray(itemId)
+function describeTarget(taskId: number, itemId: number | number[]): string {
+  return Array.isArray(itemId)
     ? `${itemId.length} elapsed-time entries [${itemId.join(', ')}] on task ${taskId}`
     : `elapsed-time entry ${itemId} on task ${taskId}`
-  throw new Bitrix24ToolError(
-    `Refusing to delete ${target} without confirmation. Re-call \`bitrix24_delete_elapsed_time\` with \`confirmDelete: true\` only after the operator has explicitly agreed to the deletion (SKILL.md Ground Rule #9).`,
-    'DELETE_NEEDS_CONFIRM',
-  )
 }
 
 async function runOne(taskId: number, itemId: number, confirmDelete: boolean) {
-  assertConfirmedDelete(taskId, itemId, confirmDelete)
+  assertConfirmedDelete('bitrix24_delete_elapsed_time', describeTarget(taskId, itemId), confirmDelete)
   const b24 = useBitrix24()
   await callV2<null>(
     b24,
@@ -118,7 +113,7 @@ async function runBatch(
   itemIds: number[],
   confirmDelete: boolean,
 ): Promise<DeleteElapsedTimeBatchRow[]> {
-  assertConfirmedDelete(taskId, itemIds, confirmDelete)
+  assertConfirmedDelete('bitrix24_delete_elapsed_time', describeTarget(taskId, itemIds), confirmDelete)
   const b24 = useBitrix24()
   const rows = await batchV2<null>(
     b24,

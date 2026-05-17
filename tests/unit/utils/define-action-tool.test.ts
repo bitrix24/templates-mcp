@@ -12,7 +12,7 @@ vi.mock('~/server/utils/bitrix24', () => ({
   useBitrix24: () => ({}),
 }))
 
-const { defineActionTool, forceFlagSchema, idOrIdArraySchema, mapBatchRows } = await import(
+const { assertConfirmedDelete, defineActionTool, forceFlagSchema, idOrIdArraySchema, mapBatchRows } = await import(
   '../../../server/utils/define-action-tool'
 )
 
@@ -361,5 +361,56 @@ describe('mapBatchRows', () => {
       },
     )
     expect(out).toEqual([{ id: 9, ok: false, error: 'Fallback for 9' }])
+  })
+})
+
+describe('assertConfirmedDelete', () => {
+  it('returns silently when confirmed is true', () => {
+    expect(() =>
+      assertConfirmedDelete('bitrix24_delete_thing', 'thing 5 on parent 1', true),
+    ).not.toThrow()
+  })
+
+  it('throws DELETE_NEEDS_CONFIRM when confirmed is false', () => {
+    expect(() =>
+      assertConfirmedDelete('bitrix24_delete_thing', 'thing 5 on parent 1', false),
+    ).toThrow(
+      expect.objectContaining({
+        name: 'Bitrix24ToolError',
+        code: 'DELETE_NEEDS_CONFIRM',
+      }) as unknown as Error,
+    )
+  })
+
+  it('throws DELETE_NEEDS_CONFIRM when confirmed is undefined (the schema default)', () => {
+    expect(() =>
+      assertConfirmedDelete('bitrix24_delete_thing', 'thing 5 on parent 1', undefined),
+    ).toThrow(
+      expect.objectContaining({
+        name: 'Bitrix24ToolError',
+        code: 'DELETE_NEEDS_CONFIRM',
+      }) as unknown as Error,
+    )
+  })
+
+  it('interpolates both the target description AND the tool name into the message', () => {
+    // The message wording is part of the public contract — consumer-tool
+    // tests assert against the target-description substring; this test
+    // additionally pins the `Re-call \`<toolName>\`` instruction so the
+    // agent sees which exact tool to call back with `confirmDelete: true`.
+    expect(() =>
+      assertConfirmedDelete('bitrix24_delete_widget', '3 widgets [5, 7, 9] on board 12', false),
+    ).toThrow(
+      expect.objectContaining({
+        message: expect.stringContaining('Refusing to delete 3 widgets [5, 7, 9] on board 12'),
+      }) as unknown as Error,
+    )
+    expect(() =>
+      assertConfirmedDelete('bitrix24_delete_widget', '3 widgets [5, 7, 9] on board 12', false),
+    ).toThrow(
+      expect.objectContaining({
+        message: expect.stringContaining('Re-call `bitrix24_delete_widget` with `confirmDelete: true`'),
+      }) as unknown as Error,
+    )
   })
 })

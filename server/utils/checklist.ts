@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import {
   type ActionToolInput,
+  assertConfirmedDelete,
   confirmDeleteSchema,
   defineActionTool,
   forceFlagSchema,
@@ -86,9 +87,10 @@ export function toChecklistItemShort(raw: unknown): ChecklistItemShort | null {
  *     `true` too. Heading deletes need BOTH flags; regular-item deletes
  *     only need `confirmDelete: true`.
  *
- * See `assertConfirmedDelete` / `assertNotHeading` / `assertBatchNoHeadings`
- * below for the enforcement helpers, and `runOne` / `runBatch` for the
- * dispatch order.
+ * See `define-action-tool.ts::assertConfirmedDelete` for the shared Rule
+ * #9 gate, and `assertNotHeading` / `assertBatchNoHeadings` below for the
+ * checklist-specific Rule #10 cascade enforcement. `runOne` / `runBatch`
+ * own the dispatch order (Rule #9 first, then Rule #10 pre-flight).
  */
 export type ChecklistActionMethod =
   | 'task.checklistitem.complete'
@@ -186,7 +188,7 @@ async function runOne(
     // operator-agreed, regardless of heading status. Then cascade gate
     // (Rule #10) — pre-flight catches heading targets if confirmDeleteHeading
     // wasn't set.
-    assertConfirmedDelete(taskId, itemId, confirmDelete)
+    assertConfirmedDelete('bitrix24_delete_checklist_item', describeChecklistTarget(taskId, itemId), confirmDelete)
     if (!confirmDeleteHeading) {
       await assertNotHeading(b24, taskId, itemId)
     }
@@ -225,7 +227,7 @@ async function runBatch(
   if (spec.method === 'task.checklistitem.delete') {
     // Universal gate first (Rule #9). Then cascade gate (Rule #10) — one
     // pre-flight getlist covers the whole batch.
-    assertConfirmedDelete(taskId, itemIds, confirmDelete)
+    assertConfirmedDelete('bitrix24_delete_checklist_item', describeChecklistTarget(taskId, itemIds), confirmDelete)
     if (!confirmDeleteHeading) {
       await assertBatchNoHeadings(b24, taskId, itemIds)
     }
@@ -250,28 +252,17 @@ async function runBatch(
 }
 
 /**
- * Universal delete gate per SKILL.md Ground Rule #9 — refuse any checklist
- * delete that wasn't explicitly confirmed by the operator. Single or batch.
- * Must be called BEFORE the cascade gate (`assertNotHeading` /
- * `assertBatchNoHeadings`) — Rule #9 has priority so any unconfirmed
- * delete short-circuits without the pre-flight `getlist` round-trip.
- *
- * Duplicated as a module-local function in `delete-elapsed-time.ts` (same
- * name, identical shape — only the tool name and entity description in
- * the error message differ). Consolidation into a shared
- * `define-action-tool.ts` helper is tracked in issue #32; planned for the
- * PR-C window so the helper lands alongside its third consumer. The
- * shared `confirmDeleteSchema()` already lives in `define-action-tool.ts`.
+ * Format the human-readable target description for the Rule #9 gate.
+ * Shape matches the historic local copy so existing test assertions
+ * (`/checklist item 475 on task 13/`,
+ * `/2 checklist item\(s\) \[475, 433\] on task 13/`) keep pinning the
+ * wording. Behaviour now lives in
+ * `define-action-tool.ts::assertConfirmedDelete` (closes #32).
  */
-function assertConfirmedDelete(taskId: number, itemId: number | number[], confirmed: boolean): void {
-  if (confirmed) return
-  const target = Array.isArray(itemId)
+function describeChecklistTarget(taskId: number, itemId: number | number[]): string {
+  return Array.isArray(itemId)
     ? `${itemId.length} checklist item(s) [${itemId.join(', ')}] on task ${taskId}`
     : `checklist item ${itemId} on task ${taskId}`
-  throw new Bitrix24ToolError(
-    `Refusing to delete ${target} without confirmation. Re-call \`bitrix24_delete_checklist_item\` with \`confirmDelete: true\` only after the operator has explicitly agreed to the deletion (SKILL.md Ground Rule #9).`,
-    'DELETE_NEEDS_CONFIRM',
-  )
 }
 
 /**

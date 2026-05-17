@@ -1,8 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { confirmDeleteSchema } from '~/server/utils/define-action-tool'
-import { Bitrix24ToolError } from '~/server/utils/errors'
+import { assertConfirmedDelete, confirmDeleteSchema } from '~/server/utils/define-action-tool'
 import { callV3 } from '~/server/utils/sdk-helpers'
 
 /**
@@ -15,11 +14,13 @@ import { callV3 } from '~/server/utils/sdk-helpers'
  * Destructive — there is no undo. The task itself is untouched; only the
  * result entry disappears.
  *
- * SKILL.md Rule #9: requires `confirmDelete: true` from the agent. The
- * standalone handler (no factory dispatch) checks the flag inline and
- * throws `Bitrix24ToolError` code `DELETE_NEEDS_CONFIRM` if absent or
- * `false`. The shared `confirmDeleteSchema()` keeps the LLM-facing
- * wording uniform across delete tools.
+ * SKILL.md Rule #9: requires `confirmDelete: true` from the agent.
+ * Standalone handler (no factory dispatch), so it calls the shared
+ * `assertConfirmedDelete` gate directly. Refuses with `Bitrix24ToolError`
+ * code `DELETE_NEEDS_CONFIRM` if the flag is absent or `false`. Both the
+ * shared schema (`confirmDeleteSchema()`) and the shared gate live at
+ * `server/utils/define-action-tool.ts` so wording stays uniform across
+ * every `bitrix24_delete_*` tool.
  */
 export default defineMcpTool({
   name: 'bitrix24_delete_task_result',
@@ -34,12 +35,7 @@ export default defineMcpTool({
     confirmDelete: confirmDeleteSchema(),
   },
   handler: async ({ resultId, confirmDelete }) => {
-    if (!confirmDelete) {
-      throw new Bitrix24ToolError(
-        `Refusing to delete task result ${resultId} without confirmation. Re-call \`bitrix24_delete_task_result\` with \`confirmDelete: true\` only after the operator has explicitly agreed to the deletion (SKILL.md Ground Rule #9).`,
-        'DELETE_NEEDS_CONFIRM',
-      )
-    }
+    assertConfirmedDelete('bitrix24_delete_task_result', `task result ${resultId}`, confirmDelete)
     const b24 = useBitrix24()
     // The endpoint's success envelope is `{ result: true }` — we don't need
     // the body, only that `callV3` didn't throw.

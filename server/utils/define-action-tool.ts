@@ -106,6 +106,43 @@ export function confirmDeleteSchema() {
 }
 
 /**
+ * Universal Rule #9 gate — refuse a delete that wasn't explicitly confirmed.
+ *
+ * Single shared implementation for every `bitrix24_delete_*` tool. Each
+ * callsite formats its own `targetDescription` (e.g. `"elapsed-time entry 5
+ * on task 1"` or `"3 checklist item(s) [475, 433] on task 13"`) so the LLM
+ * sees a domain-specific message naming exactly what would be wiped. The
+ * `toolName` interpolates into the `Re-call \`...\`` instruction.
+ *
+ * Behaviour pinned by existing tests across consumers — the message shape
+ * is `Refusing to delete <target> without confirmation. Re-call \`<toolName>\`
+ * with \`confirmDelete: true\` only after the operator has explicitly agreed
+ * to the deletion (SKILL.md Ground Rule #9).`. Code is always
+ * `DELETE_NEEDS_CONFIRM`.
+ *
+ * Consumers must call this BEFORE any pre-flight round-trip (e.g. the
+ * checklist heading-detection `getlist`) so an unconfirmed call
+ * short-circuits without spending a wire call.
+ *
+ * Closes #32 — previously duplicated as module-local functions in
+ * `delete-elapsed-time.ts` + `checklist.ts`, and inline in
+ * `delete-task-result.ts`. The 3rd factory consumer (PR-C task.dependence.*)
+ * lands on this helper, so the consolidation lives here rather than
+ * proliferating a fourth copy.
+ */
+export function assertConfirmedDelete(
+  toolName: string,
+  targetDescription: string,
+  confirmed: boolean | undefined,
+): void {
+  if (confirmed) return
+  throw new Bitrix24ToolError(
+    `Refusing to delete ${targetDescription} without confirmation. Re-call \`${toolName}\` with \`confirmDelete: true\` only after the operator has explicitly agreed to the deletion (SKILL.md Ground Rule #9).`,
+    'DELETE_NEEDS_CONFIRM',
+  )
+}
+
+/**
  * Shape every {@link defineActionTool} caller must satisfy on its input
  * type. Two constraints:
  *
