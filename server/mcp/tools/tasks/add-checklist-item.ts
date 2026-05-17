@@ -27,8 +27,9 @@ export default defineMcpTool({
     title: z
       .string()
       .min(1)
+      .max(255)
       .describe(
-        'Item text. If `parentId` is omitted or 0, this is the checklist NAME (heading), not an item under it.',
+        'Item text — max 255 chars (matches the `create_task.title` cap; oversized strings are rejected at the schema layer to protect the MCP from memory-DoS via unbounded payload). If `parentId` is omitted or 0, this is the checklist NAME (heading), not an item under it.',
       ),
     parentId: z
       .number()

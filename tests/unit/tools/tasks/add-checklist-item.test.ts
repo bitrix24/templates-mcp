@@ -107,6 +107,14 @@ describe('bitrix24_add_checklist_item', () => {
     expect(parsed.success).toBe(false)
   })
 
+  it('schema rejects titles longer than 255 chars (memory-DoS guard)', () => {
+    expect(tool.inputSchema.title.safeParse('a'.repeat(255)).success).toBe(true)
+    expect(tool.inputSchema.title.safeParse('a'.repeat(256)).success).toBe(false)
+    // A wildly oversized payload — the kind of blob that protects against
+    // memory exhaustion if an agent passes raw HTML / log files / base64 data.
+    expect(tool.inputSchema.title.safeParse('a'.repeat(10_000_000)).success).toBe(false)
+  })
+
   it('schema rejects non-positive taskId at the Zod layer', () => {
     expect(tool.inputSchema.taskId.safeParse(0).success).toBe(false)
     expect(tool.inputSchema.taskId.safeParse(-1).success).toBe(false)

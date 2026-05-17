@@ -137,6 +137,20 @@ Checklist for new destructive tools:
 5. Skip pre-flight when confirm is `true` — the agent committed.
 6. For batch mode, run ONE shared pre-flight, not N per-id checks.
 
+#### Known Bitrix24 cascades (extend as you add destructive tools)
+
+Use this table to decide whether a `delete_*` / `move_*` tool needs a confirm flag. "Pre-flight method" is the cheapest call that surfaces the cascade indicator for a single id; row "Confirm field" suggests the canonical schema field name to keep families consistent.
+
+| Destructive op | Cascade target | Cascade indicator | Pre-flight method | Confirm field | Reference |
+|---|---|---|---|---|---|
+| `task.checklistitem.delete` on a heading | every child checklist item under the heading | `PARENT_ID === 0` on the target | `task.checklistitem.getlist { TASKID }` (one call gates both single + batch) | `confirmDeleteHeading` | `server/utils/checklist.ts` ✅ shipped in PR #17 |
+| `sonet_group.delete` *(future)* | every task / file / discussion in the workgroup | the workgroup id itself | `sonet_group.get { ID }` + `tasks.task.list { GROUP_ID }` | `confirmDeleteWorkgroup` | not implemented |
+| `tasks.task.delete` *(future)* | every comment / checklist item / time entry / result / dependency on the task | the task id itself | `tasks.task.get` (cheap) | `confirmDeleteTask` | not implemented; consider deferring — Bitrix24 UI hides hard-delete behind a per-portal toggle |
+| `crm.deal.delete` *(post-pilot)* | every activity / quote / invoice linked to the deal | the deal id itself | `crm.activity.list { OWNER_TYPE_ID, OWNER_ID }` | `confirmDeleteDeal` | post-pilot |
+| `disk.folder.deletetree` *(future)* | every file / sub-folder under the disk folder | folder type vs file type | `disk.folder.get { id }` | `confirmDeleteFolder` | not implemented |
+
+If your tool isn't in this table and you find yourself adding a `confirm*` flag, add a row to keep the registry useful. If your tool feels destructive but doesn't cascade beyond a single record (e.g. `delete_task_result` removes one result; the parent task is untouched), no confirm flag is required — the Bitrix24 server-side author-only check is the right gate.
+
 ## When you need a batch
 
 If the tool acts on a collection (10–50 ids), use **`batchV3`** (for v3 methods) or **`batchV2`** (for v2 methods) — one HTTP round-trip with up to 50 sub-calls. Don't loop `callV3` / `callV2` sequentially; that pattern existed briefly and was replaced (it lost the SDK's transactional report shape and ran ~25× slower).
