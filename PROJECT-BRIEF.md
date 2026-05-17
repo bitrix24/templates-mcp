@@ -8,7 +8,7 @@ Build a Model Context Protocol (MCP) server that gives AI assistants (Claude and
 
 ## Project coordinates
 
-- **Repository**: https://github.com/bitrix24/templates-dashboard
+- **Repository**: https://github.com/bitrix24/templates-mcp
 - **Production domain**: `prod.example.com`
 - **Eval LLM**: DeepSeek (OpenAI-compatible API)
 - **Production posture**: server is self-sufficient, GitHub Actions deploys on `v*` tag, `nginx-proxy` + `acme-companion` are already running on the host and serve the `proxy-net` network
@@ -17,7 +17,7 @@ Build a Model Context Protocol (MCP) server that gives AI assistants (Claude and
 
 | Layer | Choice | Rationale |
 |---|---|---|
-| Runtime | Node.js 20+ | Stable LTS, native `fetch`, ESM |
+| Runtime | Node.js 22+ | LTS, native `fetch`, ESM. CI / Docker / `package.json#engines` all align on 22. |
 | Language | TypeScript 5.x (strict) | Type safety, IDE support |
 | Framework | Nuxt 3.x (Nitro) | Base for `@nuxtjs/mcp-toolkit`, h3 as HTTP layer, auto-imports |
 | MCP toolkit | `@nuxtjs/mcp-toolkit` ^0.15 | File-based discovery, Inspector, Evalite, Agent Skills, Code Mode |
@@ -544,17 +544,43 @@ export default defineNuxtConfig({
 ## Bitrix24 client (`server/utils/bitrix24.ts`)
 
 ```typescript
-import { B24Hook } from '@bitrix24/b24jssdk';
+import { B24Hook } from '@bitrix24/b24jssdk'
+import { useLogger } from '~/server/utils/logger'
 
-let client: B24Hook | null = null;
+let client: B24Hook | null = null
 
 export function useBitrix24(): B24Hook {
-  if (client) return client;
-  const config = useRuntimeConfig();
-  client = new B24Hook(config.bitrix24WebhookUrl);
-  return client;
+  if (client) return client
+
+  const { bitrix24WebhookUrl } = useRuntimeConfig()
+  if (!bitrix24WebhookUrl) {
+    throw new Error('NUXT_BITRIX24_WEBHOOK_URL is not configured')
+  }
+
+  // SDK 1.1+ exposes a static factory that parses portal host / user id /
+  // secret out of the full webhook URL. The raw constructor (`new B24Hook(url)`)
+  // was removed in SDK 1.1.
+  try {
+    client = B24Hook.fromWebhookUrl(bitrix24WebhookUrl)
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    throw new Error(
+      `NUXT_BITRIX24_WEBHOOK_URL is not a valid Bitrix24 webhook URL: ${reason}`,
+    )
+  }
+
+  // Wire the SDK's internal events (retry, rate-limit, errors) into our
+  // structured logger. One sink for app + SDK events.
+  client.setLogger(useLogger())
+  return client
 }
 ```
+
+Tool handlers do not call `client.actions.*.make` directly — they go through
+`callV3<T>` / `callV2<T>` / `batchV3<T>` from `server/utils/sdk-helpers.ts`,
+which own the `isSuccess` / `getErrorMessages` / transport-error funnel
+once for the whole project. The deprecated `b24.callMethod` is forbidden
+(removed in SDK 2.0).
 
 In Phase 3, `useBitrix24OAuth()` joins it.
 
@@ -613,7 +639,7 @@ Evalite UI at `http://localhost:3006`.
 ## Docker
 
 ```dockerfile
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
@@ -621,7 +647,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/.output ./.output
@@ -674,7 +700,7 @@ networks:
 
 `.github/workflows/deploy.yml`, triggered by `v*` tag push:
 
-1. pnpm + Node 20
+1. pnpm + Node 22
 2. `pnpm install --frozen-lockfile`
 3. `pnpm lint && pnpm typecheck && pnpm test`
 4. Docker image build
@@ -945,7 +971,7 @@ Already drafted in the brief; final version stays terse and rule-oriented:
 
 ## Resolved open questions
 
-1. **Repository**: https://github.com/bitrix24/templates-dashboard
+1. **Repository**: https://github.com/bitrix24/templates-mcp
 2. **Production domain**: `prod.example.com`
 3. **Test Bitrix24 portal**: webhook → `NUXT_BITRIX24_TEST_WEBHOOK_URL`
 4. **Phase 2 starts immediately** after MVP, no waiting for feedback

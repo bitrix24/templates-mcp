@@ -91,7 +91,7 @@ Every code-bearing PR adds or updates tests. Three layers:
 | Integration | `pnpm test:integration` | When you change network behavior, requires `NUXT_BITRIX24_TEST_WEBHOOK_URL` (point at an isolated test portal — see Secrets) |
 | Evals | `pnpm test:evals` | When you add or change a tool description, requires `DEEPSEEK_API_KEY` |
 
-See `docs/TESTING.md` for details *(lands with MVP)*.
+See [`docs/EVALS.md`](./docs/EVALS.md) for the eval layer; the unit and integration layers are documented inline in their test files (`tests/unit/**`, `tests/integration/**`).
 
 ## Adding a new MCP tool
 
@@ -107,7 +107,7 @@ Short version:
 8. Optionally add an eval case in `tests/evals/tool-selection.eval.ts`.
 9. Commit: `feat(tools): add bitrix24_<name>`.
 
-Full guide lands in `docs/ADDING-TOOLS.md` *(lands with MVP)*.
+Full template — including the `callV3` / `callV2` / `batchV3` helpers, `AjaxError` handling, persona-walk checklist, and unit-test skeleton with `makeFakeBitrix24` — lives in [`skills/manage-bx24-template-mcp/adding-tools.md`](./skills/manage-bx24-template-mcp/adding-tools.md).
 
 ## Secrets
 

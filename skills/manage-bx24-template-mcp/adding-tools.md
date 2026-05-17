@@ -175,7 +175,7 @@ describe('bitrix24_get_task', () => {
     fake.v3Call.mockReset()
   })
 
-  it('calls actions.v3.call.make on tasks.task.get and shapes the response', async () => {
+  it('routes the call through callV3 on tasks.task.get and shapes the response', async () => {
     fake.v3Call.mockResolvedValue(fakeOk({ task: { id: 1, title: 'demo', status: '3' } }))
 
     const result = await tool.handler({ taskId: 1 })
@@ -233,7 +233,7 @@ Apply SKILL.md "Persona walk" to your tool's description and eval cases. Specifi
 ## Checklist before the PR
 
 - [ ] One file under `server/mcp/tools/<group>/<kebab>.ts`.
-- [ ] Uses `b24.actions.v3.call.make` or `b24.actions.v2.call.make`. Zero `callMethod` references.
+- [ ] Uses `callV3` / `callV2` / `batchV3` from `server/utils/sdk-helpers.ts`. Zero direct `actions.*.{call,batch}.make` references in the handler; zero `callMethod` references anywhere.
 - [ ] All Zod fields have `.describe()`.
 - [ ] `isSuccess` is checked before reading `getData()`.
 - [ ] Errors funnel through `toToolError()`; no `console.error`.

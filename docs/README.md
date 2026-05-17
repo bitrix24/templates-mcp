@@ -7,29 +7,33 @@ Welcome. Pick the door for your role.
 Start here if you are about to change code.
 
 1. [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — commits, PR rules, CI gates.
-2. `ADDING-TOOLS.md` — how to add a new MCP tool *(lands with MVP)*.
-3. `TESTING.md` — three test layers *(lands with MVP)*.
-4. [`EVALS.md`](./EVALS.md) — automated tool-selection eval (Evalite + DeepSeek); how to run, how to add cases.
-5. `ARCHITECTURE.md` — system design *(lands with MVP)*.
+2. [`../skills/manage-bx24-template-mcp/adding-tools.md`](../skills/manage-bx24-template-mcp/adding-tools.md) — how to add a new MCP tool (modern template: `callV3` / `callV2` / `batchV3` helpers, error funnel, unit-test skeleton, persona walk).
+3. [`EVALS.md`](./EVALS.md) — automated tool-selection eval (Evalite + DeepSeek); how to run, how to add cases.
+4. [`../PROJECT-BRIEF.md`](../PROJECT-BRIEF.md) — system design and roadmap, source of truth for everything that hasn't earned its own doc yet.
 
 ## Operator
 
 Start here if you are running the service.
 
-1. `DEPLOYMENT.md` — release process, nginx-proxy, secrets *(lands with MVP)*.
-2. `RUNBOOK.md` — on-call playbook *(lands with MVP)*.
-3. `SECURITY.md` — threat model, secret rotation *(lands with MVP)*.
-4. [`FEEDBACK.md`](./FEEDBACK.md) — agent-feedback channel (`bx24mcp_submit_feedback`) and its GitHub integration.
-5. [`MANUAL-TEST-PHRASES.md`](./MANUAL-TEST-PHRASES.md) — natural-language test pack for verifying tool descriptions and LLM behaviour against a real portal.
+1. [`FEEDBACK.md`](./FEEDBACK.md) — agent-feedback channel (`bx24mcp_submit_feedback`) and its GitHub integration.
+2. [`MANUAL-TEST-PHRASES.md`](./MANUAL-TEST-PHRASES.md) — natural-language test pack for verifying tool descriptions and LLM behaviour against a real portal.
 
 ## AI agent
 
 Start here if you are an AI assistant working with this MCP.
 
 1. [`AGENT.md`](./AGENT.md) — short pointer to the skill set.
-2. [`../skills/manage-bx24-template-mcp/SKILL.md`](../skills/manage-bx24-template-mcp/SKILL.md) — ground rules.
-3. [`../skills/manage-bx24-template-mcp/feedback.md`](../skills/manage-bx24-template-mcp/feedback.md) — when and how to call `bx24mcp_submit_feedback`.
+2. [`../skills/manage-bx24-template-mcp/SKILL.md`](../skills/manage-bx24-template-mcp/SKILL.md) — ground rules, persona walk, scope discipline.
+3. [`../skills/manage-bx24-template-mcp/adding-tools.md`](../skills/manage-bx24-template-mcp/adding-tools.md) — concrete template for writing new tools.
+4. [`../skills/manage-bx24-template-mcp/feedback.md`](../skills/manage-bx24-template-mcp/feedback.md) — when and how to call `bx24mcp_submit_feedback`.
 
-## Current state
+## Not yet authored
 
-This project is in MVP development. The files marked *(lands with MVP)* above are placeholders or partial stubs and will be filled in alongside the corresponding code. The contract for what each one contains is fixed in [`../PROJECT-BRIEF.md`](../PROJECT-BRIEF.md) under the "Documentation" section.
+The following operator / contributor docs are referenced in `PROJECT-BRIEF.md` but not yet written. **Don't improvise local stubs** — open a GitHub issue and link the work, so the doc lands once authoritatively rather than drifting in parallel:
+
+- `DEPLOYMENT.md` — release process, nginx-proxy + acme-companion, secrets management
+- `RUNBOOK.md` — on-call playbook for prod incidents
+- `SECURITY.md` — threat model, secret rotation, sanitisation rationale
+- `TESTING.md` — running unit / integration / eval layers locally
+- `TROUBLESHOOTING.md` — known issues and recovery procedures
+- `ARCHITECTURE.md` — system design (today this lives inside `PROJECT-BRIEF.md`; eventual split when the brief gets trimmed)
