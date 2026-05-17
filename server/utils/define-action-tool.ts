@@ -4,11 +4,18 @@ import type { AjaxResult } from '@bitrix24/b24jssdk'
 import { Bitrix24ToolError } from '~/server/utils/errors'
 
 /**
- * Generic single-or-batch action factory shared by the `tasks.task.*`
- * lifecycle wrappers (`start`, `pause`, …) and the `task.checklistitem.*`
- * action wrappers (`complete`, `renew`, `delete`).
+ * Generic single-or-batch action factory used by every action-tool family.
  *
- * Both families share:
+ * Current consumers:
+ *   - `server/utils/task-lifecycle.ts` — 7 v3 lifecycle wrappers (`start`,
+ *     `pause`, `complete`, `approve`, `disapprove`, `defer`, `renew`)
+ *   - `server/utils/checklist.ts` — 3 v2 checklist action wrappers
+ *     (`complete`, `renew`, `delete`), with optional heading-delete
+ *     pre-flight
+ *   - `server/mcp/tools/tasks/delete-elapsed-time.ts` — v2 delete with
+ *     universal `confirmDelete` gate (Ground Rule #10)
+ *
+ * All families share:
  *   1. The same input shape — a target id that's either a number
  *      (single-mode) or an array of ids (batch-mode), plus a `force` flag
  *      to override the batch cap.
@@ -18,12 +25,12 @@ import { Bitrix24ToolError } from '~/server/utils/errors'
  *   3. The same `BATCH_TOO_LARGE` error semantics.
  *
  * What differs per family lives in the spec callbacks (REST version, wire
- * params shape, response projection, optional pre-flight). Each wrapper
- * factory stays small and domain-focused while this file owns the
+ * params shape, response projection, optional pre-flight, confirm gates).
+ * Each wrapper stays small and domain-focused while this file owns the
  * single-vs-batch dispatch + summary projection that used to drift
- * between them.
+ * between families.
  *
- * Adding a new action-tool family (e.g. `crm.deal.action.*` in Phase 2)
+ * Adding a new action-tool family (e.g. `task.dependence.*` in Phase 2)
  * means writing the runOne / runBatch callbacks — the scaffold stays here.
  */
 

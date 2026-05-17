@@ -154,7 +154,7 @@ Tooling depth on tasks (concrete gap analysis lives in [`docs/MANUAL-TEST-PHRASE
 - **Checklists**: `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` — flat tree with `PARENT_ID` nesting, v2 namespace `task.checklistitem.*` (no v3 equivalent). ✅ **Shipped in PR #17** (includes single-RTT v2 batching via `actions.v2.batch.make` and `confirmDeleteHeading` safety gate on heading deletion).
 - **Comments — read**: `list_task_comments` over the new `tasks.task.chat.message.list`. Default filter strips service messages ("user X changed Y"). Also migrate the existing write tool from the deprecated `task.commentitem.add` to `tasks.task.chat.message.send`.
 - **Subtasks**: extend `bitrix24_create_task` schema with optional `parentId`. No new tool; `list_tasks` already supports `PARENT_ID` filter via the generic filter object.
-- **Time tracking**: `add_elapsed_time`, `list_elapsed_time` over `task.elapseditem.*`.
+- **Time tracking**: `add_elapsed_time`, `list_elapsed_time`, `update_elapsed_time`, `delete_elapsed_time` over `task.elapseditem.*` (full CRUD — operators correct mis-clicked durations and clean up duplicate entries; PR-B).
 - **Task dependencies**: `add_task_dependency`, `remove_task_dependency`, `list_task_dependencies` over `tasks.task.dependence.*`.
 
 Infrastructure:

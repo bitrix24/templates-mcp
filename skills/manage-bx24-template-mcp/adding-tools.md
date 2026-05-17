@@ -124,12 +124,13 @@ The scaffold owns:
 - the `BATCH_TOO_LARGE` error throw
 - the batch summary envelope `{ batch, verb, total, ok, failed, results }`
 
-Each wrapper factory supplies only the v2/v3-specific parts (REST namespace, params shape, response projection, optional pre-flight) via `runOne` / `runBatch` callbacks. Two precedents:
+Each wrapper factory supplies only the v2/v3-specific parts (REST namespace, params shape, response projection, optional pre-flight) via `runOne` / `runBatch` callbacks. Three precedents in the codebase:
 
-- `server/utils/task-lifecycle.ts` — wraps the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}` v3 methods.
-- `server/utils/checklist.ts` — wraps the three `task.checklistitem.{complete,renew,delete}` v2 methods, with optional pre-flight for heading-delete confirmation.
+- `server/utils/task-lifecycle.ts` — wraps the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}` v3 methods. Thin per-tool files (~10 LOC) because the runOne / runBatch callbacks live in the shared factory.
+- `server/utils/checklist.ts` — wraps the three `task.checklistitem.{complete,renew,delete}` v2 methods with positional `[taskId, itemId]` params and optional heading-delete pre-flight.
+- `server/mcp/tools/tasks/delete-elapsed-time.ts` — single-tool consumer demonstrating object-form `{TASKID, ITEMID}` params and the universal `confirmDelete` gate (SKILL.md Ground Rule #10). Callbacks live inline (no shared factory file) — that's the right shape when you have one delete tool per REST family, not a fan-out like lifecycle / checklist.
 
-A new action-tool family (e.g. `task.elapseditem.*`, `task.dependence.*`) lands as ~30 LOC of callbacks plus per-tool spec files of ~10 LOC each.
+Sizing: thin per-tool files when callbacks live in a shared factory (~10 LOC per tool, plus ~80 LOC for the factory itself); inline-callback files run ~80-100 LOC when there's a single consumer for the family. A new action-tool family is worth extracting into a shared factory once you have ≥2 verbs against the same REST namespace.
 
 #### `mapBatchRows` — the row-projection helper
 
@@ -142,20 +143,25 @@ Skip the manual `rows.map` + `taskId === undefined` defensive throw — it's exa
 
 A factory pays for itself when (a) three or more tools share the call shape and (b) the per-tool difference is description text + method name. Otherwise repeat the four lines.
 
-### Destructive cascade ops — require a confirm flag
+### Destructive ops — universal confirm + cascade-specific confirm
 
-Ground Rule #9 in `SKILL.md`: when a Bitrix24 method silently destroys more than the agent meant to, gate the call behind a `confirm<Action>: boolean` field in the schema and a typed `*_NEEDS_CONFIRM` error code.
+**Two stacking rules** from `SKILL.md`:
 
-Reference implementation: `server/mcp/tools/tasks/delete-checklist-item.ts` + `server/utils/checklist.ts` (`assertNotHeading`, `assertBatchNoHeadings`). The factory adds `confirmDeleteHeading` to the Zod schema only for the delete tool (siblings `complete` / `renew` omit it). Pre-flight `callV2('task.checklistitem.getlist', { TASKID })` runs once for the whole batch — one extra round-trip, gates both single and batch flows.
+- **Ground Rule #10 (universal)** — EVERY `bitrix24_delete_*` tool requires `confirmDelete: true` from the agent, regardless of cascade. Refuses with `DELETE_NEEDS_CONFIRM` otherwise. Implemented via the shared `confirmDeleteSchema()` from `server/utils/define-action-tool.ts` — wire it once into the tool's `inputSchema`, then in the handler throw `Bitrix24ToolError('… Re-call with confirmDelete: true …', 'DELETE_NEEDS_CONFIRM')` if not set. The error message MUST name the target(s) so the agent shows the operator what they're agreeing to.
 
-Checklist for new destructive tools:
+- **Ground Rule #9 (cascade)** — STACKS on top when the delete silently destroys more than the named target (e.g. a heading wipes child items). Adds a SECOND `confirm<CascadeName>: boolean` flag to the same schema. Both flags must be `true` for the delete to proceed.
 
-1. Identify the cascade: which Bitrix24 entities does the call silently remove besides the target?
-2. Add `confirm<CascadeName>: boolean.optional()` to the Zod schema. Describe in plain language what gets wiped.
-3. Pre-flight via the cheapest list/get method that returns the cascade indicator (`parentId`, `groupId`, …).
-4. Throw `Bitrix24ToolError(message, '<CASCADE>_NEEDS_CONFIRM')`. Message MUST name the target and tell the agent how to re-call.
-5. Skip pre-flight when confirm is `true` — the agent committed.
-6. For batch mode, run ONE shared pre-flight, not N per-id checks.
+**Reference implementations**:
+
+- `server/mcp/tools/tasks/delete-elapsed-time.ts` — universal `confirmDelete` only (no cascade). The cleanest pattern for line-item deletes.
+- `server/mcp/tools/tasks/delete-checklist-item.ts` + `server/utils/checklist.ts` (`assertNotHeading`, `assertBatchNoHeadings`) — both `confirmDelete` (universal, when retrofit lands) AND `confirmDeleteHeading` (cascade-specific). Pre-flight `callV2('task.checklistitem.getlist', { TASKID })` runs once for the whole batch — one extra round-trip, gates both flows.
+
+**Checklist for new delete tools**:
+
+1. **Always**: add `confirmDelete: confirmDeleteSchema()` to the Zod schema. Handler throws `DELETE_NEEDS_CONFIRM` if not `true`.
+2. **If cascade-destructive**: also add `confirm<CascadeName>: boolean.optional()`. Pre-flight the cascade indicator (`parentId`, `groupId`, …) via the cheapest list/get method. Throw `<CASCADE>_NEEDS_CONFIRM` separately. Skip pre-flight when cascade-confirm is `true` — the agent committed.
+3. For batch mode, run ONE shared pre-flight, not N per-id checks.
+4. Error messages MUST name the target(s) and tell the agent how to re-call.
 
 #### Known Bitrix24 cascades (extend as you add destructive tools)
 
@@ -163,13 +169,14 @@ Use this table to decide whether a `delete_*` / `move_*` tool needs a confirm fl
 
 | Destructive op | Cascade target | Cascade indicator | Pre-flight method | Confirm field | Reference |
 |---|---|---|---|---|---|
-| `task.checklistitem.delete` on a heading | every child checklist item under the heading | `PARENT_ID === 0` on the target | `task.checklistitem.getlist { TASKID }` (one call gates both single + batch) | `confirmDeleteHeading` | `server/utils/checklist.ts` ✅ shipped in PR #17 |
+| `task.checklistitem.delete` on a heading | every child checklist item under the heading | `PARENT_ID === 0` on the target | `task.checklistitem.getlist { TASKID }` (one call gates both single + batch) | `confirmDeleteHeading` (stacks with `confirmDelete`) | `server/utils/checklist.ts` ✅ shipped in PR #17; universal `confirmDelete` retrofit pending |
+| `task.elapseditem.delete` (single or batch) | none — line-item delete only | — | — | universal `confirmDelete` only (Ground Rule #10) | `server/mcp/tools/tasks/delete-elapsed-time.ts` ✅ shipped in PR-B |
 | `sonet_group.delete` *(future)* | every task / file / discussion in the workgroup | the workgroup id itself | `sonet_group.get { ID }` + `tasks.task.list { GROUP_ID }` | `confirmDeleteWorkgroup` | not implemented |
 | `tasks.task.delete` *(future)* | every comment / checklist item / time entry / result / dependency on the task | the task id itself | `tasks.task.get` (cheap) | `confirmDeleteTask` | not implemented; consider deferring — Bitrix24 UI hides hard-delete behind a per-portal toggle |
 | `crm.deal.delete` *(post-pilot)* | every activity / quote / invoice linked to the deal | the deal id itself | `crm.activity.list { OWNER_TYPE_ID, OWNER_ID }` | `confirmDeleteDeal` | post-pilot |
 | `disk.folder.deletetree` *(future)* | every file / sub-folder under the disk folder | folder type vs file type | `disk.folder.get { id }` | `confirmDeleteFolder` | not implemented |
 
-If your tool isn't in this table and you find yourself adding a `confirm*` flag, add a row to keep the registry useful. If your tool feels destructive but doesn't cascade beyond a single record (e.g. `delete_task_result` removes one result; the parent task is untouched), no confirm flag is required — the Bitrix24 server-side author-only check is the right gate.
+If your tool isn't in this table and you find yourself adding a `confirm<Cascade>` flag for a NEW cascade pattern, add a row to keep the registry useful. NB: every delete tool needs `confirmDelete: true` per Ground Rule #10 — the table above is specifically for CASCADE flags that stack on top of that universal gate.
 
 ## When you need a batch
 
