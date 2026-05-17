@@ -26,6 +26,13 @@ export default {
         'lint',
         'types',
         'test',
+        // server/utils/* — shared helpers (sdk-helpers, wire-coerce,
+        // v3-filter, define-action-tool, task-lifecycle, checklist, …)
+        // get their own scope. Submodule-level scopes (sdk-helpers etc.)
+        // are intentionally NOT separate entries — keeping a single
+        // `utils` scope matches the broad-scope convention used by the
+        // rest of the enum (tools/client/auth/…).
+        'utils',
       ],
     ],
     'header-max-length': [2, 'always', 120],
