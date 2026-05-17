@@ -207,6 +207,15 @@ describe('bitrix24_remove_task_dependency', () => {
     })
   })
 
+  it('schema accepts a positive int taskIdTo and rejects 0 / negatives / floats', () => {
+    // Mirrors the schema-pin on confirmDelete — guards against silent
+    // constraint drift that would let bad ids through to the wire.
+    expect(tool.inputSchema.taskIdTo.safeParse(100).success).toBe(true)
+    expect(tool.inputSchema.taskIdTo.safeParse(0).success).toBe(false)
+    expect(tool.inputSchema.taskIdTo.safeParse(-1).success).toBe(false)
+    expect(tool.inputSchema.taskIdTo.safeParse(1.5).success).toBe(false)
+  })
+
   it('schema accepts confirmDelete as optional boolean, rejects coerced string/number forms', () => {
     // Mirrors the schema-pin block on delete-task-result / delete-checklist-item.
     // Pins the wire-side contract of `confirmDeleteSchema()` for this tool —

@@ -177,6 +177,43 @@ describe('bitrix24_add_task_dependency', () => {
     })
   })
 
+  it('refuses single self-loop (taskIdFrom === taskIdTo) before any wire call (INVALID_INPUT)', async () => {
+    // Bitrix24 server-side rejects with ACTION_NOT_ALLOWED, but that
+    // code is shared with cycle detection and rights failures — the
+    // client-side refusal gives the LLM a precise reason and saves a
+    // wasted round-trip.
+    await expect(
+      tool.handler({ taskIdTo: 100, taskIdFrom: 100, linkType: 2 }),
+    ).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'INVALID_INPUT',
+      message: expect.stringMatching(/self-loop on task 100/) as unknown as string,
+    })
+    expect(fake.v2Call).not.toHaveBeenCalled()
+  })
+
+  it('refuses batch self-loops and names the offending taskIdFrom values', async () => {
+    await expect(
+      tool.handler({ taskIdTo: 100, taskIdFrom: [5, 100, 9, 100], linkType: 2 }),
+    ).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'INVALID_INPUT',
+      // Offenders listed so the operator knows which ids to drop without
+      // having to reason from a generic ACTION_NOT_ALLOWED.
+      message: expect.stringMatching(/Offending taskIdFrom values: 100, 100/) as unknown as string,
+    })
+    expect(fake.v2Batch).not.toHaveBeenCalled()
+  })
+
+  it('schema accepts a positive int taskIdTo and rejects 0 / negatives / floats', () => {
+    // Mirrors the schema-pin on linkType — guards against silent
+    // constraint drift that would let bad ids through to the wire.
+    expect(tool.inputSchema.taskIdTo.safeParse(100).success).toBe(true)
+    expect(tool.inputSchema.taskIdTo.safeParse(0).success).toBe(false)
+    expect(tool.inputSchema.taskIdTo.safeParse(-1).success).toBe(false)
+    expect(tool.inputSchema.taskIdTo.safeParse(1.5).success).toBe(false)
+  })
+
   it('schema accepts every valid linkType (0..3) and rejects out-of-range / non-integer values', () => {
     // Pins the `z.number().int().min(0).max(3)` contract. If someone
     // widens the range or relaxes the integer constraint, the tool

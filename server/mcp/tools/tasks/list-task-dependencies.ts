@@ -43,10 +43,22 @@ import { toNumber } from '~/server/utils/wire-coerce'
  * Phase 2 pilot-ready.
  */
 
+/**
+ * Operator-facing warning attached to every response. The endpoint is
+ * deprecated upstream and we have no error signal if Bitrix24 silently
+ * decommissions the route (the defensive fallback would just produce
+ * `dependsOn: []`). Shipping the warning in-band means an agent / pilot
+ * operator sees the risk on every call — even if the live-smoke gate
+ * (#33) eventually slips. Removed (along with the deprecated dependency)
+ * once Bitrix24 ships a v3 `tasks.task.dependence.*` read endpoint.
+ */
+const DEPRECATED_ENDPOINT_WARNING =
+  'task.item.getdependson is deprecated upstream; if `dependsOn` is unexpectedly empty for a task you know has predecessors, verify in the Bitrix24 UI and check issue #33.'
+
 export default defineMcpTool({
   name: 'bitrix24_list_task_dependencies',
   description:
-    'List the predecessor tasks ("Предыдущие задачи") that a Bitrix24 task depends on. Returns an array of task IDs — the ids of tasks that must complete (or start) before the given task can proceed. Does NOT return the per-link `linkType` (SS/SF/FS/FF): the current read endpoint (`task.item.getdependson`) only exposes predecessor ids, and as of 2026-05 no REST method documents a way to read the link types back. Operators wanting that view should use the Bitrix24 UI. Returns an empty array when the task has no predecessors. To MODIFY links, use `bitrix24_add_task_dependency` / `bitrix24_remove_task_dependency`.',
+    'List the predecessor tasks ("Предыдущие задачи") that a Bitrix24 task depends on. Returns an array of predecessor task IDs. Does NOT return the per-link `linkType` (SS/SF/FS/FF): the current read endpoint (`task.item.getdependson`) only exposes predecessor ids, and as of 2026-05 no REST method documents a way to read the link types back. Operators wanting that view should use the Bitrix24 UI. Returns an empty array when the task has no predecessors — the response also carries a `_warning` field flagging the deprecated upstream endpoint, so an unexpectedly-empty result deserves a UI cross-check. To MODIFY links, use `bitrix24_add_task_dependency` / `bitrix24_remove_task_dependency`.',
   inputSchema: {
     taskId: z
       .number()
@@ -56,10 +68,10 @@ export default defineMcpTool({
   },
   handler: async ({ taskId }) => {
     const b24 = useBitrix24()
-    // The endpoint accepts the v2 positional shape `[TASKID]` per its
-    // legacy contract. Bitrix24 v2 deprecated methods sometimes ignore
-    // the named `{ TASKID }` form; the SDK serializer handles both, but
-    // the documented happy path is the named shape, so we use it.
+    // The endpoint is documented with both positional `[TASKID]` (JS
+    // examples) and named `{ TASKID }` (PHP examples). We use the named
+    // form — explicit, works with the SDK serialiser, and matches the
+    // HTTP-payload shape shown in the apidocs Response Handling block.
     const data = await callV2<unknown>(
       b24,
       'task.item.getdependson',
@@ -67,16 +79,18 @@ export default defineMcpTool({
       `Failed to list Bitrix24 task ${taskId} dependencies`,
     )
 
-    // The endpoint returns either a flat `number[]` / `string[]` of
-    // predecessor ids, or sometimes nests them inside `{ result: [...] }`
-    // depending on portal version. Normalise both shapes and coerce to
-    // numbers via `toNumber` (Bitrix24 occasionally ships ids as
-    // numeric-strings on legacy v2 endpoints — same defensive coerce
-    // pattern as `list_elapsed_time`).
+    // The endpoint usually returns a flat `number[]` / `string[]` of
+    // predecessor ids. We additionally accept a `{ result: [...] }`
+    // envelope as a defensive mirror of `list_elapsed_time`'s pattern
+    // (no documented evidence this shape ships from getdependson, but
+    // the cost of the extra branch is zero and it makes the tool
+    // resilient to portal-version drift). `toNumber` coerces
+    // numeric-strings — Bitrix24 occasionally ships ids that way on
+    // legacy v2 endpoints.
     const rawIds: unknown[] = Array.isArray(data)
       ? data
       : Array.isArray((data as { result?: unknown[] })?.result)
-        ? ((data as { result?: unknown[] }).result ?? [])
+        ? (data as { result: unknown[] }).result
         : []
 
     const dependsOn = rawIds
@@ -97,6 +111,7 @@ export default defineMcpTool({
             // list in one shot regardless of size.
             returned: dependsOn.length,
             dependsOn,
+            _warning: DEPRECATED_ENDPOINT_WARNING,
           }),
         },
       ],

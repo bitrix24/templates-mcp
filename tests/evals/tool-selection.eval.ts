@@ -550,6 +550,36 @@ const CASES: Case[] = [
     expected: 'bitrix24_remove_task_dependency',
     notes: 'Batch remove — array of predecessors. Destructive; must NOT route to delete_task_result.',
   },
+  {
+    input: 'Поставь задачи 10 и 20 стартовать одновременно (одна не может начаться без другой).',
+    expected: 'bitrix24_add_task_dependency',
+    notes: 'SS linkType=0 (start-start). Verifies the model routes to add for non-FS phrasings — "одновременно" / "одна не может начаться без другой" maps to linkType:0, not the default FS.',
+  },
+  {
+    input: 'Сделай чтобы задачи 50 и 51 завершались вместе — пока обе не готовы, ни одна не закрыта.',
+    expected: 'bitrix24_add_task_dependency',
+    notes: 'FF linkType=3 (finish-finish). Another non-FS phrasing — "завершались вместе" maps to linkType:3.',
+  },
+  {
+    input: 'Make task 100 wait for tasks 5, 7, 9 to finish before it can start.',
+    expected: 'bitrix24_add_task_dependency',
+    notes: 'EN batch add, finish-start. Covers the most common dependency operator path in English so dependency family is not RU-only in the eval coverage.',
+  },
+  {
+    input: 'Show me which tasks task 100 depends on.',
+    expected: 'bitrix24_list_task_dependencies',
+    notes: 'EN read. Must NOT route to list_tasks. Pins that the description steers correctly in English too.',
+  },
+  {
+    input: 'Entferne die Abhängigkeit von Aufgabe 100 zu Aufgabe 50 — sie wird nicht mehr gebraucht.',
+    expected: 'bitrix24_remove_task_dependency',
+    notes: 'DE single remove. Destructive — requires confirmDelete; pins German routing for dependency-removal vocabulary.',
+  },
+  {
+    input: 'Faire en sorte que la tâche 100 démarre après les tâches 5, 7 et 9.',
+    expected: 'bitrix24_add_task_dependency',
+    notes: 'FR batch add, finish-start. "démarre après" → FS. Pins French routing for the dependency family.',
+  },
 
   // ── Multilingual / non-Latin (i18n probe — ≥ 3 cases per language) ─────
   // Chinese (zh-CN)

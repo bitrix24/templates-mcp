@@ -124,11 +124,13 @@ The scaffold owns:
 - the `BATCH_TOO_LARGE` error throw
 - the batch summary envelope `{ batch, verb, total, ok, failed, results }`
 
-Each wrapper factory supplies only the v2/v3-specific parts (REST namespace, params shape, response projection, optional pre-flight) via `runOne` / `runBatch` callbacks. Three precedents in the codebase:
+Each wrapper factory supplies only the v2/v3-specific parts (REST namespace, params shape, response projection, optional pre-flight) via `runOne` / `runBatch` callbacks. Five precedents in the codebase:
 
 - `server/utils/task-lifecycle.ts` — wraps the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}` v3 methods. Thin per-tool files (~10 LOC) because the runOne / runBatch callbacks live in the shared factory.
 - `server/utils/checklist.ts` — wraps the three `task.checklistitem.{complete,renew,delete}` v2 methods with positional `[taskId, itemId]` params and optional heading-delete pre-flight.
 - `server/mcp/tools/tasks/delete-elapsed-time.ts` — single-tool consumer demonstrating object-form `{TASKID, ITEMID}` params and the universal `confirmDelete` gate (SKILL.md Ground Rule #9). Callbacks live inline (no shared factory file) — that's the right shape when you have one delete tool per REST family, not a fan-out like lifecycle / checklist.
+- `server/mcp/tools/tasks/add-task-dependency.ts` — single-tool consumer where the dispatched id-or-array (`taskIdFrom`) is paired with TWO fixed-per-call inputs (`taskIdTo`, `linkType`) that ride along on `input`. Shows that the factory shape extends naturally beyond "one fixed parent id" — any number of constants can bleed in via closure over `input`.
+- `server/mcp/tools/tasks/remove-task-dependency.ts` — mirror of add (same shape, plus the universal `confirmDelete` gate). Demonstrates that `assertConfirmedDelete` from `server/utils/define-action-tool.ts` is the right Rule #9 entry-point for new delete tools.
 
 Sizing: thin per-tool files when callbacks live in a shared factory (~10 LOC per tool, plus ~80 LOC for the factory itself); inline-callback files run ~80-100 LOC when there's a single consumer for the family. A new action-tool family is worth extracting into a shared factory once you have ≥2 verbs against the same REST namespace.
 
@@ -147,21 +149,26 @@ A factory pays for itself when (a) three or more tools share the call shape and 
 
 **Two stacking rules** from `SKILL.md`:
 
-- **Ground Rule #9 (universal)** — EVERY `bitrix24_delete_*` tool requires `confirmDelete: true` from the agent, regardless of cascade. Refuses with `DELETE_NEEDS_CONFIRM` otherwise. Implemented via the shared `confirmDeleteSchema()` from `server/utils/define-action-tool.ts` — wire it once into the tool's `inputSchema`, then in the handler throw `Bitrix24ToolError('… Re-call with confirmDelete: true …', 'DELETE_NEEDS_CONFIRM')` if not set. The error message MUST name the target(s) so the agent shows the operator what they're agreeing to.
+- **Ground Rule #9 (universal)** — EVERY `bitrix24_delete_*` or `bitrix24_remove_*` tool requires `confirmDelete: true` from the agent, regardless of cascade. Refuses with `DELETE_NEEDS_CONFIRM` otherwise. Implementation:
+  1. Wire `confirmDelete: confirmDeleteSchema()` into the tool's Zod `inputSchema` — shared schema fragment from `server/utils/define-action-tool.ts` keeps wording uniform.
+  2. In the handler, call `assertConfirmedDelete(toolName, targetDescription, confirmDelete)` from the same file. It owns the `Bitrix24ToolError` throw and the `DELETE_NEEDS_CONFIRM` code — do NOT re-implement.
+  3. Format `targetDescription` per-callsite so the LLM sees a domain-specific message (e.g. `"elapsed-time entry 5 on task 1"`, `"dependency link 50 → task 100"`). The error message must name the target(s) so the agent shows the operator what they're agreeing to.
 
 - **Ground Rule #10 (cascade)** — STACKS on top when the delete silently destroys more than the named target (e.g. a heading wipes child items). Adds a SECOND `confirm<CascadeName>: boolean` flag to the same schema. Both flags must be `true` for the delete to proceed.
 
 **Reference implementations**:
 
-- `server/mcp/tools/tasks/delete-elapsed-time.ts` — universal `confirmDelete` only (no cascade). The cleanest pattern for line-item deletes.
-- `server/mcp/tools/tasks/delete-checklist-item.ts` + `server/utils/checklist.ts` (`assertConfirmedDelete`, `assertNotHeading`, `assertBatchNoHeadings`) — both `confirmDelete` (universal, Rule #9) AND `confirmDeleteHeading` (cascade-specific, Rule #10). Universal gate fires FIRST; cascade pre-flight `callV2('task.checklistitem.getlist', { TASKID })` runs once for the whole batch only when the universal gate passes — one extra round-trip, gates both flows.
+- `server/mcp/tools/tasks/delete-elapsed-time.ts` — universal `confirmDelete` only (no cascade). The cleanest pattern for line-item deletes; uses the shared `assertConfirmedDelete` helper with a per-callsite `describeTarget`.
+- `server/mcp/tools/tasks/remove-task-dependency.ts` — also universal-only, with a pair-shaped target (`taskIdFrom → taskIdTo`). Demonstrates that the helper extends naturally to non-id targets.
+- `server/mcp/tools/tasks/delete-task-result.ts` — standalone (no factory) consumer of `assertConfirmedDelete`. Shows the helper works equally well outside the factory dispatch path.
+- `server/mcp/tools/tasks/delete-checklist-item.ts` + `server/utils/checklist.ts` (`assertNotHeading`, `assertBatchNoHeadings`) — both `confirmDelete` (universal, Rule #9, via shared helper) AND `confirmDeleteHeading` (cascade-specific, Rule #10). Universal gate fires FIRST; cascade pre-flight `callV2('task.checklistitem.getlist', { TASKID })` runs once for the whole batch only when the universal gate passes — one extra round-trip, gates both flows.
 
 **Checklist for new delete tools**:
 
-1. **Always**: add `confirmDelete: confirmDeleteSchema()` to the Zod schema. Handler throws `DELETE_NEEDS_CONFIRM` if not `true`.
+1. **Always**: add `confirmDelete: confirmDeleteSchema()` to the Zod schema, then call `assertConfirmedDelete(toolName, describeTarget(...), confirmDelete)` from the handler. Do NOT re-implement the refusal — the shared helper owns the throw + code + message format.
 2. **If cascade-destructive**: also add `confirm<CascadeName>: z.boolean().optional().describe(…)`. Pre-flight the cascade indicator (`parentId`, `groupId`, …) via the cheapest list/get method. Throw `<CASCADE>_NEEDS_CONFIRM` separately. Skip pre-flight when cascade-confirm is `true` — the agent committed.
-3. For batch mode, run ONE shared pre-flight, not N per-id checks.
-4. Error messages MUST name the target(s) and tell the agent how to re-call.
+3. For batch mode, run ONE shared pre-flight, not N per-id checks. The universal Rule #9 gate must fire BEFORE the cascade pre-flight so an unconfirmed call short-circuits without spending a wire round-trip.
+4. Error messages MUST name the target(s) and tell the agent how to re-call. The shared helper takes care of this if you give it a good `targetDescription`.
 
 #### Delete tools registry — universal `confirmDelete` + cascade gates
 
@@ -172,6 +179,7 @@ Every delete tool needs the universal `confirmDelete` flag (Rule #9). Some addit
 | `task.checklistitem.delete` on a heading | every child checklist item under the heading | `PARENT_ID === 0` on the target | `task.checklistitem.getlist { TASKID }` (one call gates both single + batch) | `confirmDelete` (Rule #9) + `confirmDeleteHeading` (Rule #10, cascade) | `server/utils/checklist.ts` ✅ shipped — universal gate retrofit landed in PR #31 |
 | `task.elapseditem.delete` (single or batch) | none — line-item delete only | — | — | universal `confirmDelete` only (Ground Rule #9) | `server/mcp/tools/tasks/delete-elapsed-time.ts` ✅ shipped in PR #28 |
 | `tasks.task.result.delete` (single) | none — single result, parent task untouched | — | — | universal `confirmDelete` only (Ground Rule #9) | `server/mcp/tools/tasks/delete-task-result.ts` ✅ shipped — universal gate retrofit landed in PR #31 |
+| `task.dependence.delete` (single or batch) | none — removes one predecessor edge only | — | — | universal `confirmDelete` only (Ground Rule #9) | `server/mcp/tools/tasks/remove-task-dependency.ts` ✅ shipped in PR-C |
 | `sonet_group.delete` *(future)* | every task / file / discussion in the workgroup | the workgroup id itself | `sonet_group.get { ID }` + `tasks.task.list { GROUP_ID }` | `confirmDeleteWorkgroup` | not implemented |
 | `tasks.task.delete` *(future)* | every comment / checklist item / time entry / result / dependency on the task | the task id itself | `tasks.task.get` (cheap) | `confirmDeleteTask` | not implemented; consider deferring — Bitrix24 UI hides hard-delete behind a per-portal toggle |
 | `crm.deal.delete` *(post-pilot)* | every activity / quote / invoice linked to the deal | the deal id itself | `crm.activity.list { OWNER_TYPE_ID, OWNER_ID }` | `confirmDeleteDeal` | post-pilot |

@@ -7,6 +7,7 @@ import {
   idOrIdArraySchema,
   mapBatchRows,
 } from '~/server/utils/define-action-tool'
+import { Bitrix24ToolError } from '~/server/utils/errors'
 import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
 
 /**
@@ -43,7 +44,7 @@ import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
  * fixed parent id (`taskIdTo`) plus an id-or-array varying field
  * (`taskIdFrom`). One `linkType` per batch is sufficient for the common
  * pattern; heterogeneous batches (varying `linkType` per pair) would
- * need a different shape and are out of scope for the pilot.
+ * need a different shape and are tracked as #36 (post-pilot revisit).
  *
  * Built atop `defineActionTool` — single-vs-batch dispatch, batch-cap
  * check, and summary projection live in the shared scaffold.
@@ -102,7 +103,33 @@ export default defineActionTool<AddTaskDependencyInput, AddTaskDependencyBatchRo
   batchSummaryExtras: (input) => ({ taskIdTo: input.taskIdTo, linkType: input.linkType }),
 })
 
+/**
+ * Refuse self-loops (`taskIdFrom === taskIdTo`) before reaching the wire.
+ * Bitrix24 server-side rejects with `ACTION_NOT_ALLOWED`, but that error
+ * code is shared with cycle detection and rights failures — an opaque
+ * signal the agent might mis-attribute. Surfacing the refusal here gives
+ * the LLM a precise reason and avoids the wasted round-trip.
+ *
+ * For batch mode the offenders are listed so the operator can re-batch
+ * without the bad pairs.
+ */
+function assertNoSelfLoop(taskIdTo: number, taskIdFrom: number | number[]): void {
+  const offenders = Array.isArray(taskIdFrom)
+    ? taskIdFrom.filter((id) => id === taskIdTo)
+    : taskIdFrom === taskIdTo
+      ? [taskIdFrom]
+      : []
+  if (offenders.length === 0) return
+  throw new Bitrix24ToolError(
+    `Refusing to create a self-loop on task ${taskIdTo} — a task cannot be its own predecessor. `
+      + `Offending taskIdFrom ${offenders.length === 1 ? 'value' : 'values'}: ${offenders.join(', ')}. `
+      + `Drop the offending id(s) and re-call.`,
+    'INVALID_INPUT',
+  )
+}
+
 async function runOne(taskIdTo: number, taskIdFrom: number, linkType: number) {
+  assertNoSelfLoop(taskIdTo, taskIdFrom)
   const b24 = useBitrix24()
   await callV2<unknown>(
     b24,
@@ -131,6 +158,7 @@ async function runBatch(
   taskIdFroms: number[],
   linkType: number,
 ): Promise<AddTaskDependencyBatchRow[]> {
+  assertNoSelfLoop(taskIdTo, taskIdFroms)
   const b24 = useBitrix24()
   const rows = await batchV2<unknown>(
     b24,
