@@ -1,7 +1,5 @@
-import { z } from 'zod'
-import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError } from '~/server/utils/errors'
+import { defineActionTool, forceFlagSchema, idOrIdArraySchema, mapBatchRows } from '~/server/utils/define-action-tool'
 import { batchV3, callV3 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
@@ -16,6 +14,10 @@ import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
  * Lives in its own file (not `tasks.ts`) so that the pure helpers
  * `extractTasks` / `toTaskShort` stay importable from unit tests without
  * dragging in Nitro / mcp-toolkit at evaluation time.
+ *
+ * Built atop `defineActionTool` — the single-vs-batch dispatch, batch-cap
+ * check, and summary projection live in that scaffold so the checklist
+ * factory can share them.
  */
 /** The seven REST methods this factory is allowed to wrap. Listed explicitly
  *  (not as `tasks.task.${string}`) so a typo would fail typecheck. */
@@ -71,11 +73,12 @@ const LIFECYCLE_USAGE_NOTES =
 
 const DEFAULT_BATCH_CAP = 25
 
-const taskIdSchema = z
-  .union([z.number().int().positive(), z.array(z.number().int().positive()).min(1)])
+interface LifecycleInput extends Record<string, unknown> {
+  taskId: number | number[]
+  force?: boolean
+}
 
-/** Result shape for a single task in a batch run. */
-interface BatchEntryResult {
+interface LifecycleBatchRow {
   taskId: number
   ok: boolean
   status?: string | null
@@ -84,28 +87,22 @@ interface BatchEntryResult {
 }
 
 export function defineTaskLifecycleTool(spec: LifecycleToolSpec) {
-  return defineMcpTool({
+  return defineActionTool<LifecycleInput, LifecycleBatchRow>({
     name: spec.name,
-    description: spec.description + LIFECYCLE_USAGE_NOTES,
+    description: spec.description,
+    usageNotes: LIFECYCLE_USAGE_NOTES,
+    pastTense: spec.pastTense,
+    batchCap: DEFAULT_BATCH_CAP,
     inputSchema: {
-      taskId: taskIdSchema.describe(
+      taskId: idOrIdArraySchema.describe(
         spec.taskIdHint
           + ' Pass a number for single-task semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
       ),
-      force: z
-        .boolean()
-        .optional()
-        .describe(
-          `Set true to allow batches larger than ${DEFAULT_BATCH_CAP}. Use sparingly — MCP clients may time out on long-running tool calls. Ignored for single-task input.`,
-        ),
+      force: forceFlagSchema(DEFAULT_BATCH_CAP),
     },
-    handler: async (input: { taskId: number | number[]; force?: boolean }) => {
-      const { taskId, force } = input
-      if (typeof taskId === 'number') {
-        return runOne(spec, taskId)
-      }
-      return runBatch(spec, taskId, force ?? false)
-    },
+    extractIds: (input) => input.taskId,
+    runOne: (_input, taskId) => runOne(spec, taskId),
+    runBatch: (_input, ids) => runBatch(spec, ids),
   })
 }
 
@@ -150,14 +147,7 @@ async function runOne(spec: LifecycleToolSpec, taskId: number) {
   }
 }
 
-async function runBatch(spec: LifecycleToolSpec, taskIds: number[], force: boolean) {
-  if (taskIds.length > DEFAULT_BATCH_CAP && !force) {
-    throw new Bitrix24ToolError(
-      `Batch of ${taskIds.length} exceeds the default cap of ${DEFAULT_BATCH_CAP}. Pass force=true to override, or split into multiple calls.`,
-      'BATCH_TOO_LARGE',
-    )
-  }
-
+async function runBatch(spec: LifecycleToolSpec, taskIds: number[]): Promise<LifecycleBatchRow[]> {
   const b24 = useBitrix24()
   const rows = await batchV3<SingleTaskEnvelope>(
     b24,
@@ -165,46 +155,20 @@ async function runBatch(spec: LifecycleToolSpec, taskIds: number[], force: boole
     `Failed to ${spec.verb} a batch of ${taskIds.length} task(s)`,
   )
 
-  const results: BatchEntryResult[] = rows.map((row, index) => {
-    const taskId = taskIds[index]
-    if (taskId === undefined) {
-      // Defensive: SDK contract guarantees rows.length === taskIds.length when
-      // returnAjaxResult is true. If that ever drifts, fail loud rather than
-      // silently producing an entry with `taskId: undefined`.
-      throw new Bitrix24ToolError(
-        `Batch row index ${index} has no corresponding taskId; SDK rows/input length mismatch.`,
-      )
-    }
-    if (!row.isSuccess) {
+  return mapBatchRows(rows, taskIds, 'taskId', ({ id, ok, envelope, errorMessages }) => {
+    if (!ok) {
       return {
-        taskId,
+        taskId: id,
         ok: false,
-        error: row.getErrorMessages().join('; ') || `Failed to ${spec.verb} Bitrix24 task ${taskId}`,
+        error: errorMessages.join('; ') || `Failed to ${spec.verb} Bitrix24 task ${id}`,
       }
     }
-    const [task] = extractTasks(row.getData()?.result)
+    const [task] = extractTasks(envelope)
     return {
-      taskId,
+      taskId: id,
       ok: true,
       status: task?.status ?? null,
       responsibleId: task?.responsibleId ?? null,
     }
   })
-
-  const ok = results.filter((r) => r.ok).length
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify({
-          batch: true,
-          verb: spec.pastTense,
-          total: results.length,
-          ok,
-          failed: results.length - ok,
-          results,
-        }),
-      },
-    ],
-  }
 }

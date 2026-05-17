@@ -1,6 +1,11 @@
 import { z } from 'zod'
-import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
+import {
+  defineActionTool,
+  forceFlagSchema,
+  idOrIdArraySchema,
+  mapBatchRows,
+} from '~/server/utils/define-action-tool'
 import { Bitrix24ToolError } from '~/server/utils/errors'
 import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
 import { pick, toBool, toNumber } from '~/server/utils/wire-coerce'
@@ -13,6 +18,10 @@ import type { BitrixChecklistItemRaw } from '~/server/types/bitrix24'
  * but no equivalent for tasks themselves. The five apidocs pages
  * (apidocs.bitrix24.ru/api-reference/tasks/checklist-item/*) are documented
  * and not flagged as deprecated.
+ *
+ * Built atop `defineActionTool` — the single-vs-batch dispatch, batch-cap
+ * check, and summary projection live in that scaffold so the lifecycle
+ * factory can share them.
  */
 
 /** Subset of checklist-item fields surfaced to the agent. Mirrors what
@@ -89,7 +98,14 @@ const DEFAULT_BATCH_CAP = 50
 const CHECKLIST_ACTION_USAGE_NOTES =
   ` Accepts a single item id OR an array of ids (batch mode, up to ${DEFAULT_BATCH_CAP} — pass \`force: true\` to override). Batch mode goes through one HTTP round-trip and returns a \`{ batch, total, ok, failed, results }\` summary; per-id errors do not abort the batch. If the operator names the item in free text instead of an id, list the checklist first via \`bitrix24_list_checklist_items\` and match by title.`
 
-interface BatchEntryResult {
+interface ChecklistInput extends Record<string, unknown> {
+  taskId: number
+  itemId: number | number[]
+  force?: boolean
+  confirmDeleteHeading?: boolean
+}
+
+interface ChecklistBatchRow {
   itemId: number
   ok: boolean
   error?: string
@@ -103,22 +119,18 @@ function positional(taskId: number, itemId: number): unknown[] {
 
 export function defineChecklistActionTool(spec: ChecklistActionToolSpec) {
   const isDelete = spec.method === 'task.checklistitem.delete'
-  return defineMcpTool({
+  return defineActionTool<ChecklistInput, ChecklistBatchRow>({
     name: spec.name,
-    description: spec.description + CHECKLIST_ACTION_USAGE_NOTES,
+    description: spec.description,
+    usageNotes: CHECKLIST_ACTION_USAGE_NOTES,
+    pastTense: spec.pastTense,
+    batchCap: DEFAULT_BATCH_CAP,
     inputSchema: {
       taskId: z.number().int().positive().describe('Task id the checklist item belongs to.'),
-      itemId: z
-        .union([z.number().int().positive(), z.array(z.number().int().positive()).min(1)])
-        .describe(
-          'Checklist item id (from `bitrix24_list_checklist_items`), or an array of item ids for batch mode. Pass a number for single-item semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
-        ),
-      force: z
-        .boolean()
-        .optional()
-        .describe(
-          `Set true to allow batches larger than ${DEFAULT_BATCH_CAP}. Use sparingly — MCP clients may time out on long-running tool calls. Ignored for single-item input.`,
-        ),
+      itemId: idOrIdArraySchema.describe(
+        'Checklist item id (from `bitrix24_list_checklist_items`), or an array of item ids for batch mode. Pass a number for single-item semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
+      ),
+      force: forceFlagSchema(DEFAULT_BATCH_CAP),
       // Only the delete tool surfaces this gate. Other action tools omit it
       // from the schema entirely so the LLM doesn't see an irrelevant field.
       ...(isDelete
@@ -132,19 +144,12 @@ export function defineChecklistActionTool(spec: ChecklistActionToolSpec) {
           }
         : {}),
     },
-    handler: async (input: {
-      taskId: number
-      itemId: number | number[]
-      force?: boolean
-      confirmDeleteHeading?: boolean
-    }) => {
-      const { taskId, itemId, force, confirmDeleteHeading } = input
-      const confirm = confirmDeleteHeading ?? false
-      if (typeof itemId === 'number') {
-        return runOne(spec, taskId, itemId, confirm)
-      }
-      return runBatch(spec, taskId, itemId, force ?? false, confirm)
-    },
+    extractIds: (input) => input.itemId,
+    runOne: (input, itemId) => runOne(spec, input.taskId, itemId, input.confirmDeleteHeading ?? false),
+    runBatch: (input, ids) => runBatch(spec, input.taskId, ids, input.confirmDeleteHeading ?? false),
+    // Carry `taskId` into the batch summary so the agent can tell at a
+    // glance which task the result rows belong to.
+    batchSummaryExtras: (input) => ({ taskId: input.taskId }),
   })
 }
 
@@ -180,16 +185,8 @@ async function runBatch(
   spec: ChecklistActionToolSpec,
   taskId: number,
   itemIds: number[],
-  force: boolean,
   confirmDeleteHeading: boolean,
-) {
-  if (itemIds.length > DEFAULT_BATCH_CAP && !force) {
-    throw new Bitrix24ToolError(
-      `Batch of ${itemIds.length} exceeds the default cap of ${DEFAULT_BATCH_CAP}. Pass force=true to override, or split into multiple calls.`,
-      'BATCH_TOO_LARGE',
-    )
-  }
-
+): Promise<ChecklistBatchRow[]> {
   const b24 = useBitrix24()
 
   if (spec.method === 'task.checklistitem.delete' && !confirmDeleteHeading) {
@@ -205,42 +202,16 @@ async function runBatch(
     `Failed to ${spec.verb} a batch of ${itemIds.length} checklist item(s) on task ${taskId}`,
   )
 
-  const results: BatchEntryResult[] = rows.map((row, index) => {
-    const id = itemIds[index]
-    if (id === undefined) {
-      // Defensive: SDK contract guarantees rows.length === itemIds.length when
-      // returnAjaxResult is true. Fail loud rather than emitting itemId:undefined.
-      throw new Bitrix24ToolError(
-        `Batch row index ${index} has no corresponding itemId; SDK rows/input length mismatch.`,
-      )
-    }
-    if (!row.isSuccess) {
+  return mapBatchRows(rows, itemIds, 'itemId', ({ id, ok, errorMessages }) => {
+    if (!ok) {
       return {
         itemId: id,
         ok: false,
-        error: row.getErrorMessages().join('; ') || `Failed to ${spec.verb} Bitrix24 checklist item ${id} on task ${taskId}`,
+        error: errorMessages.join('; ') || `Failed to ${spec.verb} Bitrix24 checklist item ${id} on task ${taskId}`,
       }
     }
     return { itemId: id, ok: true }
   })
-
-  const ok = results.filter((r) => r.ok).length
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify({
-          batch: true,
-          verb: spec.pastTense,
-          taskId,
-          total: results.length,
-          ok,
-          failed: results.length - ok,
-          results,
-        }),
-      },
-    ],
-  }
 }
 
 /**
