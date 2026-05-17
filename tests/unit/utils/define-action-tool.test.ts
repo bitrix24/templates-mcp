@@ -167,6 +167,88 @@ describe('defineActionTool', () => {
     const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>
     expect(payload).toMatchObject({ batch: true, contextKey: 'task-7', total: 2, ok: 2 })
   })
+
+  it('passes the resolved id array to batchSummaryExtras (count etc. is derivable)', async () => {
+    const extras = vi.fn((_input: unknown, ids: number[]) => ({ requestedCount: ids.length }))
+    const tool = defineActionTool<{ id: number | number[] }, { id: number; ok: boolean }>({
+      name: 'fake',
+      description: 'desc',
+      usageNotes: '',
+      pastTense: 'done',
+      inputSchema: { id: idOrIdArraySchema },
+      batchCap: 25,
+      extractIds: (input) => input.id,
+      runOne: vi.fn(),
+      runBatch: async (_input, ids) => ids.map((id) => ({ id, ok: true })),
+      batchSummaryExtras: extras,
+    }) as unknown as ToolDef<{ id: number | number[] }>
+
+    const result = await tool.handler({ id: [10, 20, 30] })
+    const payload = JSON.parse(result.content[0]!.text) as { requestedCount: number; total: number }
+    expect(extras).toHaveBeenCalledWith({ id: [10, 20, 30] }, [10, 20, 30])
+    expect(payload.requestedCount).toBe(3)
+    expect(payload.total).toBe(3)
+  })
+
+  it('propagates errors thrown by runOne (does not swallow them into the envelope)', async () => {
+    const tool = defineActionTool<{ id: number | number[] }, { id: number; ok: boolean }>({
+      name: 'fake',
+      description: 'desc',
+      usageNotes: '',
+      pastTense: 'done',
+      inputSchema: { id: idOrIdArraySchema },
+      batchCap: 25,
+      extractIds: (input) => input.id,
+      runOne: async () => {
+        throw new Error('upstream API down')
+      },
+      runBatch: vi.fn(),
+    }) as unknown as ToolDef<{ id: number | number[] }>
+
+    await expect(tool.handler({ id: 7 })).rejects.toThrow('upstream API down')
+  })
+
+  it('propagates errors thrown by runBatch (does not swallow them into the envelope)', async () => {
+    const tool = defineActionTool<{ id: number | number[] }, { id: number; ok: boolean }>({
+      name: 'fake',
+      description: 'desc',
+      usageNotes: '',
+      pastTense: 'done',
+      inputSchema: { id: idOrIdArraySchema, force: forceFlagSchema(25) },
+      batchCap: 25,
+      extractIds: (input) => input.id,
+      runOne: vi.fn(),
+      runBatch: async () => {
+        throw new Error('batch transport failed')
+      },
+    }) as unknown as ToolDef<{ id: number | number[]; force?: boolean }>
+
+    await expect(tool.handler({ id: [1, 2, 3] })).rejects.toThrow('batch transport failed')
+  })
+
+  it('enters batch mode for a one-element array (does NOT short-circuit to runOne)', async () => {
+    // A 1-element array is the explicit batch-mode opt-in per the schema's
+    // contract — useful when the caller wants the batch summary envelope.
+    const runOne = vi.fn()
+    const runBatch = vi.fn(async (_input: unknown, ids: number[]) => ids.map((id) => ({ id, ok: true })))
+    const tool = defineActionTool<{ id: number | number[] }, { id: number; ok: boolean }>({
+      name: 'fake',
+      description: 'desc',
+      usageNotes: '',
+      pastTense: 'done',
+      inputSchema: { id: idOrIdArraySchema },
+      batchCap: 25,
+      extractIds: (input) => input.id,
+      runOne,
+      runBatch,
+    }) as unknown as ToolDef<{ id: number | number[] }>
+
+    const result = await tool.handler({ id: [42] })
+    expect(runOne).not.toHaveBeenCalled()
+    expect(runBatch).toHaveBeenCalledWith({ id: [42] }, [42])
+    const payload = JSON.parse(result.content[0]!.text)
+    expect(payload).toMatchObject({ batch: true, total: 1 })
+  })
 })
 
 describe('mapBatchRows', () => {
@@ -210,17 +292,33 @@ describe('mapBatchRows', () => {
     ])
   })
 
-  it('throws if rows and ids drift in length (defensive guard)', () => {
+  it('throws when rows are LONGER than ids (extra-rows drift)', () => {
     const rows = [okRow({ value: 'a' }), okRow({ value: 'b' }), okRow({ value: 'c' })]
     expect(() =>
       mapBatchRows<{ value: string }, { id: number; ok: boolean }>(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         rows as any,
-        [1, 2], // shorter than rows — defensive throw at index 2
+        [1, 2], // shorter than rows — upfront length check rejects
         'id',
         ({ id, ok }) => ({ id, ok }),
       ),
-    ).toThrow(/Batch row index 2 has no corresponding id/)
+    ).toThrow(/SDK rows\/input length mismatch: 3 rows for 2 id entries/)
+  })
+
+  it('throws when rows are SHORTER than ids (missing-rows drift)', () => {
+    // The original `id === undefined` per-row check only caught extra
+    // rows; missing rows would silently truncate the output. The upfront
+    // length assert now catches both directions.
+    const rows = [okRow({ value: 'a' })]
+    expect(() =>
+      mapBatchRows<{ value: string }, { id: number; ok: boolean }>(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        rows as any,
+        [1, 2, 3], // longer than rows — would silently drop ids without the assert
+        'id',
+        ({ id, ok }) => ({ id, ok }),
+      ),
+    ).toThrow(/SDK rows\/input length mismatch: 1 rows for 3 id entries/)
   })
 
   it('uses the errorFallback when SDK returns no error messages', () => {

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import {
+  type ActionToolInput,
   defineActionTool,
   forceFlagSchema,
   idOrIdArraySchema,
@@ -98,10 +99,9 @@ const DEFAULT_BATCH_CAP = 50
 const CHECKLIST_ACTION_USAGE_NOTES =
   ` Accepts a single item id OR an array of ids (batch mode, up to ${DEFAULT_BATCH_CAP} — pass \`force: true\` to override). Batch mode goes through one HTTP round-trip and returns a \`{ batch, total, ok, failed, results }\` summary; per-id errors do not abort the batch. If the operator names the item in free text instead of an id, list the checklist first via \`bitrix24_list_checklist_items\` and match by title.`
 
-interface ChecklistInput extends Record<string, unknown> {
+interface ChecklistInput extends ActionToolInput {
   taskId: number
   itemId: number | number[]
-  force?: boolean
   confirmDeleteHeading?: boolean
 }
 

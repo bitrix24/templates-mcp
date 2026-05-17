@@ -1,5 +1,11 @@
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { defineActionTool, forceFlagSchema, idOrIdArraySchema, mapBatchRows } from '~/server/utils/define-action-tool'
+import {
+  type ActionToolInput,
+  defineActionTool,
+  forceFlagSchema,
+  idOrIdArraySchema,
+  mapBatchRows,
+} from '~/server/utils/define-action-tool'
 import { batchV3, callV3 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
@@ -73,9 +79,8 @@ const LIFECYCLE_USAGE_NOTES =
 
 const DEFAULT_BATCH_CAP = 25
 
-interface LifecycleInput extends Record<string, unknown> {
+interface LifecycleInput extends ActionToolInput {
   taskId: number | number[]
-  force?: boolean
 }
 
 interface LifecycleBatchRow {

@@ -23,7 +23,7 @@ import { Bitrix24ToolError } from '~/server/utils/errors'
  * single-vs-batch dispatch + summary projection that used to drift
  * between them.
  *
- * Adding a new action-tool family (e.g. `task.dependence.*` in Phase 2)
+ * Adding a new action-tool family (e.g. `crm.deal.action.*` in Phase 2)
  * means writing the runOne / runBatch callbacks — the scaffold stays here.
  */
 
@@ -37,19 +37,32 @@ export const idOrIdArraySchema = z.union([
   z.array(z.number().int().positive()).min(1),
 ])
 
-/** Generic per-row result shape returned by `runBatch`. Domain-specific
- *  fields (`taskId`, `itemId`, `status`, …) live in the rest of the
- *  object; `ok` discriminates success vs failure, and `error` is the SDK
- *  joined message on failure. */
+/**
+ * Generic per-row result shape returned by `runBatch`.
+ *
+ * Domain-specific fields (`taskId`, `itemId`, `status`, …) live in the rest
+ * of the object — `TBatchRow` widens this with whatever the caller needs.
+ * `ok` discriminates success vs failure; `error` carries the SDK's joined
+ * message on failure (omitted on success).
+ *
+ * Callers are not required to declare `extends BatchRow` literally — TS
+ * structural compatibility is enough as long as the projection callback
+ * produces `{ ok: boolean, error?: string, ... }`. The factory only reads
+ * `ok` to count `total/ok/failed` for the batch summary envelope.
+ */
 export interface BatchRow {
   ok: boolean
   error?: string
 }
 
 /**
- * Build the standard `force` flag schema. Lives here so the description
- * stays identical across both factories — drift in the LLM-facing copy
- * would dilute the contract.
+ * Standard `force` flag schema for batch-cap overrides. Both factory
+ * families (lifecycle, checklist) wire this verbatim — keeping the LLM-
+ * facing copy in one place prevents drift between tools.
+ *
+ * @param cap — the batch cap the description should mention, so the LLM
+ *   sees the family-specific number (25 for v3 lifecycle, 50 for v2
+ *   checklist) rather than a generic blurb.
  */
 export function forceFlagSchema(cap: number) {
   return z
@@ -61,15 +74,30 @@ export function forceFlagSchema(cap: number) {
 }
 
 /**
+ * Shape every {@link defineActionTool} caller must satisfy on its input
+ * type. `force` is read by the factory itself (batch-cap override), so
+ * the type system carries the obligation that every caller's input
+ * includes the flag, even if Zod-schema authors forget to declare it.
+ *
+ * Adding a new family without `force` would be a regression — Bitrix24
+ * batch caps could not be overridden by the agent, and the type error
+ * here surfaces that immediately instead of at runtime.
+ */
+export interface ActionToolInput extends Record<string, unknown> {
+  force?: boolean
+}
+
+/**
  * Spec consumed by {@link defineActionTool}.
  *
  * @template TInput — full handler input shape, narrowed by the caller's
- *   Zod schema. The factory does not inspect specific fields beyond
- *   reading `force` from `(input as { force?: boolean })`.
+ *   Zod schema. Must include `force?: boolean` (enforced by extending
+ *   {@link ActionToolInput}) so the factory's batch-cap override stays
+ *   wired across every family.
  * @template TBatchRow — per-id row shape returned by `runBatch`. Must
  *   extend {@link BatchRow} so the summary can count `ok` / `failed`.
  */
-export interface ActionToolSpec<TInput extends Record<string, unknown>, TBatchRow extends BatchRow> {
+export interface ActionToolSpec<TInput extends ActionToolInput, TBatchRow extends BatchRow> {
   name: string
   /** Human-readable tool description for the LLM. `usageNotes` are appended automatically. */
   description: string
@@ -102,7 +130,7 @@ export interface ActionToolSpec<TInput extends Record<string, unknown>, TBatchRo
   batchSummaryExtras?: (input: TInput, ids: number[]) => Record<string, unknown>
 }
 
-export function defineActionTool<TInput extends Record<string, unknown>, TBatchRow extends BatchRow>(
+export function defineActionTool<TInput extends ActionToolInput, TBatchRow extends BatchRow>(
   spec: ActionToolSpec<TInput, TBatchRow>,
 ) {
   return defineMcpTool({
@@ -113,19 +141,18 @@ export function defineActionTool<TInput extends Record<string, unknown>, TBatchR
     // ShapeOutput. Because the schema reaches us through a generic
     // `ZodRawShape`, that inference widens to `Record<string, unknown>` —
     // the typed `TInput` shape is lost at this boundary. We cast once,
-    // localised, after Zod has already validated the wire shape against
-    // `spec.inputSchema`.
+    // localised; Zod has already validated the wire shape against
+    // `spec.inputSchema` upstream in mcp-toolkit before reaching `handler`.
     handler: async (rawInput) => {
       const input = rawInput as unknown as TInput
       const target = spec.extractIds(input)
       if (typeof target === 'number') {
         return spec.runOne(input, target)
       }
-      // Read `force` defensively — every caller follows this convention but
-      // the factory doesn't enforce it in the schema (each family declares
-      // its own `force` so the description can mention the family-specific
-      // cap).
-      const force = Boolean((input as { force?: boolean }).force)
+      // `force` typed on `ActionToolInput` so every TInput carries it —
+      // no defensive cast needed. Zod will reject non-boolean values at
+      // the wire boundary.
+      const force = Boolean(input.force)
       if (target.length > spec.batchCap && !force) {
         throw new Bitrix24ToolError(
           `Batch of ${target.length} exceeds the default cap of ${spec.batchCap}. Pass force=true to override, or split into multiple calls.`,
@@ -158,11 +185,12 @@ export function defineActionTool<TInput extends Record<string, unknown>, TBatchR
  * Walk SDK batch rows in lockstep with the input ids, building one
  * `BatchRow` per row via the caller's projection.
  *
- * The defensive `id === undefined` throw guards against an SDK contract
- * drift where `rows.length !== ids.length`. `returnAjaxResult: true`
- * currently guarantees alignment but a future SDK release could change
- * this — failing loud is preferable to silently emitting entries with
- * `taskId: undefined`.
+ * Two-sided length guard: the SDK's `returnAjaxResult: true` contract
+ * promises `rows.length === ids.length`. If the SDK ever drifts in either
+ * direction — extra rows OR missing rows — we'd silently emit malformed
+ * results (the per-row defensive `id === undefined` throw only catches
+ * extra rows; missing rows would just truncate the output). An explicit
+ * upfront length assert catches both at the seam and fails loud.
  *
  * Both factory families used to inline this loop with subtle drift. One
  * helper means one place to audit the alignment contract.
@@ -173,7 +201,16 @@ export function mapBatchRows<TEnvelope, TRow extends BatchRow>(
   defensiveLabel: string,
   build: (ctx: { id: number; ok: boolean; envelope: TEnvelope | undefined; errorMessages: string[] }) => TRow,
 ): TRow[] {
+  if (rows.length !== ids.length) {
+    throw new Bitrix24ToolError(
+      `SDK rows/input length mismatch: ${rows.length} rows for ${ids.length} ${defensiveLabel} entries. `
+        + `The SDK's returnAjaxResult contract guarantees alignment — this indicates a contract drift.`,
+    )
+  }
   return rows.map((row, index) => {
+    // After the upfront length check, `ids[index]` is provably defined,
+    // but TS's `noUncheckedIndexedAccess` widens the type. The fallback
+    // throw is for the type system; the runtime path is unreachable.
     const id = ids[index]
     if (id === undefined) {
       throw new Bitrix24ToolError(
