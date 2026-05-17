@@ -17,6 +17,13 @@ describe('pick', () => {
   it('returns null when camelCase is undefined and UPPERCASE is absent', () => {
     expect(pick({ id: undefined }, 'id', 'ID')).toBeNull()
   })
+
+  it('falls through to UPPERCASE when camelCase is explicitly null (asymmetry from `??`)', () => {
+    // `null ?? upper` returns `upper`. This matches Bitrix24's pattern of
+    // shipping `null` for fields it has no v3 data for, while the legacy
+    // UPPERCASE field carries the meaningful payload.
+    expect(pick({ id: null, ID: 9 }, 'id', 'ID')).toBe(9)
+  })
 })
 
 describe('toNumber', () => {
@@ -38,6 +45,19 @@ describe('toNumber', () => {
     // NaN would round-trip through JSON.stringify as `null` and conflate
     // "missing" with "malformed" downstream.
     expect(toNumber('not-a-number')).toBeNull()
+  })
+
+  it('truncates float strings via parseInt (intentional — wire fields are ids)', () => {
+    // Documented behaviour: integer-only contract. A float string is
+    // unexpected drift from Bitrix24; truncating beats dropping the value
+    // entirely.
+    expect(toNumber('3.7')).toBe(3)
+  })
+
+  it('passes a numeric float through unchanged', () => {
+    // Asymmetry vs the string path: parseInt only runs on strings; numbers
+    // are checked by isFinite and returned as-is.
+    expect(toNumber(3.7)).toBe(3.7)
   })
 })
 

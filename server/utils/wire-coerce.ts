@@ -10,9 +10,20 @@
 
 /**
  * Picks a field that may be in either camelCase or UPPERCASE on the wire.
- * Returns `null` if neither key is present, so the caller decides whether to
- * fall back or omit. Order is `lower` (camelCase) first, then `upper`
- * (UPPER_SNAKE) — v3 responses are camelCase and we prefer them.
+ * Returns `null` when:
+ *   - neither key is present
+ *   - the camelCase value is explicitly `null` or `undefined` AND the
+ *     UPPERCASE value is absent (the `??` falls through, then the final
+ *     `v === undefined` check normalises absent to `null`)
+ *
+ * Note the asymmetry from `??` semantics: `pick({id: null, ID: 5}, 'id', 'ID')`
+ * returns `5`, not `null` — an explicit nullish camelCase value falls
+ * through to UPPERCASE. This matches the intent (Bitrix24 sometimes ships
+ * `null` for fields it has no data for, and the legacy UPPERCASE value
+ * is the meaningful payload).
+ *
+ * Order is `lower` (camelCase) first, then `upper` (UPPER_SNAKE) — v3
+ * responses are camelCase and we prefer them.
  */
 export function pick<T>(obj: Record<string, unknown>, lower: string, upper: string): T | null {
   const v = obj[lower] ?? obj[upper]
@@ -24,6 +35,13 @@ export function pick<T>(obj: Record<string, unknown>, lower: string, upper: stri
  * number, returning `null` for absent / malformed inputs rather than NaN.
  * `JSON.stringify` quietly turns NaN into `null`, which would conflate
  * "missing" with "malformed" downstream.
+ *
+ * Designed for integer wire fields (Bitrix24 ids are always integers in the
+ * REST contract). Float strings like `"3.7"` are silently truncated to `3`
+ * via `parseInt`; numeric inputs pass through unchanged (so `toNumber(3.7)`
+ * returns `3.7`). This is intentional — every documented use of this
+ * helper is for an id field, and surfacing a partial parse as `null` would
+ * lose data when Bitrix24 ships an unexpected decimal.
  */
 export function toNumber(raw: unknown): number | null {
   if (raw === null || raw === undefined || raw === '') return null

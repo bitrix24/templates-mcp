@@ -22,8 +22,8 @@ import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
  * dragging in Nitro / mcp-toolkit at evaluation time.
  *
  * Built atop `defineActionTool` — the single-vs-batch dispatch, batch-cap
- * check, and summary projection live in that scaffold so the checklist
- * factory can share them.
+ * check, and summary projection are shared across both action-tool
+ * families (lifecycle + checklist) via that scaffold.
  */
 /** The seven REST methods this factory is allowed to wrap. Listed explicitly
  *  (not as `tasks.task.${string}`) so a typo would fail typecheck. */

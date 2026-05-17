@@ -104,8 +104,9 @@ export async function callV2<T>(
 }
 
 /**
- * One v3 batch call shape: a tuple of REST method name + params object.
- * Matches the array form of `BatchCommandsArrayUniversal` from the SDK.
+ * One batch call shape — used by both {@link batchV2} and {@link batchV3}:
+ * a tuple of REST method name + params. Matches the array form of
+ * `BatchCommandsArrayUniversal` from the SDK.
  *
  * Bitrix24's batch transport accepts both an object-shaped params and a
  * positional array (`[a, b]`) — some v2 endpoints, notably
@@ -114,7 +115,18 @@ export async function callV2<T>(
  * tuple's second element to `TypeCallParams | unknown[]` so callers can
  * pass either without casting at the call site.
  */
-export type BatchV3Call = [method: string, params: TypeCallParams | unknown[]]
+export type BatchCall = [method: string, params: TypeCallParams | unknown[]]
+
+/**
+ * Cast applied to `response.getData()` return on both {@link batchV3} and
+ * {@link batchV2}. With `returnAjaxResult: true` and a tuple-array `calls`
+ * shape, the SDK returns `Result<AjaxResult<T>[]>`. The union return type
+ * of `CallBatchResult<T>` covers two other shapes too (named-commands
+ * map, bare-payload) which we don't trigger here — the cast localises
+ * that single type-system gap. Runtime shape covered by every batch test
+ * in `tests/unit/utils/task-lifecycle.test.ts` and
+ * `tests/unit/tools/tasks/*checklist*.test.ts`.
+ */
 
 /**
  * Run multiple v3 calls in a single HTTP batch. Returns an array of
@@ -131,7 +143,7 @@ export type BatchV3Call = [method: string, params: TypeCallParams | unknown[]]
  */
 export async function batchV3<T>(
   b24: B24Hook,
-  calls: BatchV3Call[],
+  calls: BatchCall[],
   errorContext: string,
 ): Promise<Array<AjaxResult<T>>> {
   let response: CallBatchResult<T>
@@ -146,12 +158,6 @@ export async function batchV3<T>(
   if (!response.isSuccess) {
     throw new Bitrix24ToolError(response.getErrorMessages().join('; ') || errorContext)
   }
-  // With `returnAjaxResult: true` and a tuple-array `calls` shape, the SDK
-  // returns `Result<AjaxResult<T>[]>`. The union return type of
-  // `CallBatchResult<T>` covers two other shapes too (named-commands map,
-  // bare-payload) which we don't trigger here — the cast localises that
-  // single type-system gap. Verified runtime shape covered by every batch
-  // test in tests/unit/utils/task-lifecycle.test.ts.
   return response.getData() as Array<AjaxResult<T>>
 }
 
@@ -165,7 +171,7 @@ export async function batchV3<T>(
  */
 export async function batchV2<T>(
   b24: B24Hook,
-  calls: BatchV3Call[],
+  calls: BatchCall[],
   errorContext: string,
 ): Promise<Array<AjaxResult<T>>> {
   let response: CallBatchResult<T>

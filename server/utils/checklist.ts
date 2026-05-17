@@ -21,8 +21,8 @@ import type { BitrixChecklistItemRaw } from '~/server/types/bitrix24'
  * and not flagged as deprecated.
  *
  * Built atop `defineActionTool` — the single-vs-batch dispatch, batch-cap
- * check, and summary projection live in that scaffold so the lifecycle
- * factory can share them.
+ * check, and summary projection are shared across both action-tool
+ * families (lifecycle + checklist) via that scaffold.
  */
 
 /** Subset of checklist-item fields surfaced to the agent. Mirrors what

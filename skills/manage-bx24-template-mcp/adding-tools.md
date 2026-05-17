@@ -111,14 +111,34 @@ await callV2<unknown>(
 )
 ```
 
-`user.search` has a non-standard params shape (scalar `sort` / `order`); see `server/mcp/tools/users/find-user.ts` for the documented `as unknown as Record<string, unknown>` cast. Rarely needed elsewhere.
+`user.search` has a non-standard params shape (scalar `sort` / `order`, not the `Record<string, ...>` documented by `TypeCallParams.order`); see `server/mcp/tools/users/find-user.ts` for the documented `as unknown as TypeCallParams` cast. Rarely needed elsewhere.
 
-### Shared factory pattern (multiple thin wrappers over one verb shape)
+### Shared factory pattern (single-or-batch action tools)
 
-When a group of tools shares the wire signature — same params, same response — keep the boilerplate in a single factory file rather than copy-pasting `defineMcpTool` N times. Two precedents:
+When a group of tools shares the wire signature — same params, same response, same single-or-batch contract — build it on top of **`defineActionTool`** from `server/utils/define-action-tool.ts` rather than re-implementing the dispatch scaffold.
 
-- `server/utils/task-lifecycle.ts` — wraps the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}` v3 methods. Each tool file is a four-line `defineTaskLifecycleTool({...})` call.
-- `server/utils/checklist.ts` — wraps the three `task.checklistitem.{complete,renew,delete}` v2 methods. Same shape but uses `callV2` / `batchV2` and positional `[taskId, itemId]` params.
+The scaffold owns:
+- the `idOrIdArraySchema` (positive int OR non-empty array of positive ints)
+- the `forceFlagSchema(cap)` flag for batch-cap overrides
+- the single-vs-batch dispatch on `typeof targetId`
+- the `BATCH_TOO_LARGE` error throw
+- the batch summary envelope `{ batch, verb, total, ok, failed, results }`
+
+Each wrapper factory supplies only the v2/v3-specific parts (REST namespace, params shape, response projection, optional pre-flight) via `runOne` / `runBatch` callbacks. Two precedents:
+
+- `server/utils/task-lifecycle.ts` — wraps the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}` v3 methods.
+- `server/utils/checklist.ts` — wraps the three `task.checklistitem.{complete,renew,delete}` v2 methods, with optional pre-flight for heading-delete confirmation.
+
+A new action-tool family (e.g. `task.elapseditem.*`, `task.dependence.*`) lands as ~30 LOC of callbacks plus per-tool spec files of ~10 LOC each.
+
+#### `mapBatchRows` — the row-projection helper
+
+Inside a factory's `runBatch`, use **`mapBatchRows(rows, ids, label, build)`** from `define-action-tool.ts` to walk SDK batch rows in lockstep with the input ids. It enforces:
+- two-sided length assert (`rows.length === ids.length`) — catches SDK contract drift in either direction
+- per-row `ok` / `error` propagation via the `build` callback
+- a consistent error-message shape on length mismatch (`BATCH_TOO_LARGE`-grade loud)
+
+Skip the manual `rows.map` + `taskId === undefined` defensive throw — it's exactly the pattern `mapBatchRows` exists to deduplicate.
 
 A factory pays for itself when (a) three or more tools share the call shape and (b) the per-tool difference is description text + method name. Otherwise repeat the four lines.
 
@@ -155,6 +175,8 @@ If your tool isn't in this table and you find yourself adding a `confirm*` flag,
 
 If the tool acts on a collection (10–50 ids), use **`batchV3`** (for v3 methods) or **`batchV2`** (for v2 methods) — one HTTP round-trip with up to 50 sub-calls. Don't loop `callV3` / `callV2` sequentially; that pattern existed briefly and was replaced (it lost the SDK's transactional report shape and ran ~25× slower).
 
+**Inside a factory built on `defineActionTool`**, project the rows via `mapBatchRows` (see "Shared factory pattern" above) — never re-implement the row loop. The example below is for **standalone** batch tools (e.g. `rate-task.ts`) where the factory abstraction doesn't fit.
+
 ```ts
 import { batchV3 } from '~/server/utils/sdk-helpers'
 
@@ -179,7 +201,7 @@ const results = rows.map((row, index) => {
 })
 ```
 
-Reference implementations: `server/utils/task-lifecycle.ts:runBatch`, `server/mcp/tools/tasks/rate-task.ts:runBatch`.
+Reference implementations: `server/utils/task-lifecycle.ts` (factory-style, uses `mapBatchRows`), `server/mcp/tools/tasks/rate-task.ts:runBatch` (standalone, hand-rolled loop).
 
 ## Errors and logging
 
