@@ -33,8 +33,27 @@ import { vi } from 'vitest'
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
   defineMcpTool: <T,>(spec: T) => spec,
 }))
-vi.mock('~/server/utils/bitrix24', () => ({
-  useBitrix24: () => ({ callMethod: async () => ({ getData: () => ({}) }) }),
+vi.mock('~/server/utils/bitrix24', () => {
+  // Tools are registered in this eval with `execute` omitted, so handlers are
+  // never invoked — Evalite only measures tool-selection. The mock still needs
+  // to expose the actions tree (matching the SDK surface) so static imports
+  // line up if anything is ever inspected at module load time.
+  const noop = async () => ({
+    isSuccess: true,
+    getData: () => ({ result: {} }),
+    getErrorMessages: () => [],
+  })
+  return {
+    useBitrix24: () => ({
+      actions: {
+        v3: { call: { make: noop }, batch: { make: noop } },
+        v2: { call: { make: noop } },
+      },
+    }),
+  }
+})
+vi.mock('~/server/utils/logger', () => ({
+  useLogger: () => ({ debug: () => {}, info: () => {}, warning: () => {}, error: () => {} }),
 }))
 vi.mock('~/server/utils/github-feedback', () => ({
   createGithubIssue: async () => ({ url: '', number: 0 }),

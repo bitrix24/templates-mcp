@@ -16,7 +16,7 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
 ## Ground rules
 
 1. **One tool per file** in `server/mcp/tools/<group>/<name>.ts`. Discovery is automatic.
-2. **Never call Bitrix24 directly.** Always go through `useBitrix24()`. Fallback: `b24.callMethod('rest.method', params)`.
+2. **Never call Bitrix24 directly.** Always go through `useBitrix24()`. Use `b24.actions.v3.call.make({ method, params })` for v3 methods (`tasks.task.*`, `crm.*`, …) and `b24.actions.v2.call.make({ … })` for v2 (`user.*`, `task.commentitem.*`, …). For batches, use `b24.actions.v3.batch.make`. The deprecated `b24.callMethod` is **forbidden** — it disappears in SDK 2.0.
 3. **Every tool must have a unit test** in `tests/unit/tools/<name>.test.ts` with the Bitrix24 client mocked.
 4. **Every Zod field must have `.describe()`** — the LLM reads it at runtime.
 5. **No secrets in code or tests.** Use `useRuntimeConfig()` and `.env`.
@@ -111,7 +111,7 @@ Renovate handles routine updates. For manual upgrades:
 
 ## When asked to add a new Bitrix24 method
 
-If the SDK doesn't expose it, use `b24.callMethod('rest.method.name', params)`. Add a one-line comment linking to https://apidocs.bitrix24.com/.
+Use `b24.actions.v3.call.make<T>({ method, params })` for v3 endpoints, `b24.actions.v2.call.make<T>({ method, params })` for v2. Always include a typed generic on `<T>` matching the REST response shape, and a one-line docstring comment linking to https://apidocs.bitrix24.com/. See [`adding-tools.md`](./adding-tools.md) for the full template (with `isSuccess` checks, `AjaxError` handling, batch via `actions.v3.batch.make`, and the unit-test skeleton). Do NOT use the deprecated `b24.callMethod` — it is scheduled for removal in SDK 2.0.
 
 ## Things you must NOT do without asking
 

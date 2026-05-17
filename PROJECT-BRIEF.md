@@ -143,7 +143,7 @@ bx24-template-mcp/
   5. `bitrix24_current_user`
 - **Meta-tool `bx24mcp_submit_feedback`** — lets the AI agent submit feedback (positive/issue/suggestion). Each call creates a GitHub issue in `bitrix24/templates-mcp` with label `agent-feedback` (see "Agent Feedback" section).
 - Inspector in Nuxt DevTools for tool debugging during development.
-- Structured logging (`consola` pretty in dev, JSON in prod).
+- Structured logging via the SDK's own `Logger` system (`@bitrix24/b24jssdk`'s `Logger` + `ConsoleHandler`), wired into `useBitrix24()` via `client.setLogger(useLogger())` so SDK retry / rate-limit / 503 events flow through the same channel as app logs. See `server/utils/logger.ts`.
 - `/api/health` endpoint, no auth.
 
 ### Phase 2 (starts immediately after MVP, no waiting for feedback)
@@ -789,7 +789,7 @@ Sections:
    - Why pnpm
 5. **State and persistence** — none in MVP, what changes in Phase 2 (cache for resources)
 6. **Concurrency model** — Node event loop, no shared state between requests, singleton client
-7. **Logging and observability** — `consola`, request IDs via h3 context, what gets logged where
+7. **Logging and observability** — SDK `Logger` (one channel for app + SDK events), request IDs via h3 context, what gets logged where
 8. **Failure modes** — Bitrix24 down, GitHub API down, exhausted rate limit, expired webhook
 9. **Open questions** — list of things explicitly deferred
 
@@ -804,7 +804,7 @@ Sections:
 3. **Skeleton** — full code template with `defineMcpTool`, Zod schema, handler
 4. **Naming conventions** — verbs, plurality, meta-tool prefix
 5. **Zod schemas** — every field gets `.describe()`, narrow types, use enums where possible
-6. **Calling Bitrix24** — `useBitrix24()`, prefer typed SDK methods, fall back to `b24.callMethod('rest.method', params)` with a comment linking to apidocs
+6. **Calling Bitrix24** — `useBitrix24()`, then `b24.actions.v3.call.make<T>({ method, params })` for v3 (`tasks.task.*`, `crm.*`) and `b24.actions.v2.call.make<T>({ method, params })` for v2 (`user.*`, `task.commentitem.*`). Use `b24.actions.v3.batch.make` for bulk operations (`isHaltOnError: false, returnAjaxResult: true`). Always check `response.isSuccess` and read via `response.getData()?.result`. The deprecated `b24.callMethod` is forbidden (removed in SDK 2.0). One-line `// REST: …` comment linking to apidocs above the call.
 7. **Error handling** — let SDK errors bubble; rely on `server/utils/errors.ts` to map them
 8. **Unit test** — template for `tests/unit/tools/<name>.test.ts`, what to mock
 9. **Eval case** — when to add an entry in `tests/evals/tool-selection.eval.ts`
