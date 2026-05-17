@@ -22,14 +22,16 @@ One tool per file, `kebab-name.ts`. File-based discovery picks them up automatic
 
 ## The reference template
 
-This is what a single-call tool looks like end-to-end. Two key invariants: the SDK call uses **`b24.actions.v3.call.make`** (never the deprecated `callMethod`), and the result handling uses **`isSuccess` / `getData()?.result` / `getErrorMessages()`** — not `try`/`catch` exclusively.
+This is what a single-call tool looks like end-to-end. Two key invariants:
+1. The SDK call goes through the **typed `callV3` / `callV2` helpers** from `server/utils/sdk-helpers.ts`. Never call `b24.actions.v3.call.make` directly from a tool — the helpers own the `isSuccess` / `getErrorMessages` boilerplate and the transport-error wrap. The deprecated `b24.callMethod` is forbidden.
+2. Compact `JSON.stringify(payload)` (no `null, 2` pretty-print) — every newline / space costs tokens in the LLM tool response.
 
 ```ts
 // server/mcp/tools/tasks/get-task.ts
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
+import { callV3 } from '~/server/utils/sdk-helpers'
 
 /**
  * One-line summary of what this tool does.
@@ -51,84 +53,79 @@ export default defineMcpTool({
     taskId: z.number().int().positive().describe('Task id from `bitrix24_list_tasks` or `bitrix24_create_task`.'),
   },
   handler: async ({ taskId }) => {
-    try {
-      const b24 = useBitrix24()
+    const b24 = useBitrix24()
+    // ✅ callV3 wraps the SDK boundary:
+    //    - transport throws → Bitrix24ToolError via toToolError
+    //    - !isSuccess → Bitrix24ToolError with joined SDK error messages
+    //    - returns the unwrapped `result` payload (or undefined for empty body)
+    const result = await callV3<TaskGetResponse>(
+      b24,
+      'tasks.task.get',
+      { taskId },
+      `Failed to fetch Bitrix24 task ${taskId}`,
+    )
 
-      // ✅ The right way: actions.v3.call.make with a typed generic.
-      //    callMethod() is deprecated and disappears in SDK 2.0.
-      const response = await b24.actions.v3.call.make<TaskGetResponse>({
-        method: 'tasks.task.get',
-        params: { taskId },
-      })
-
-      // ✅ Check isSuccess explicitly. Throwing a Bitrix24ToolError here keeps
-      //    the LLM-visible error consistent across the whole project.
-      if (!response.isSuccess) {
-        throw new Bitrix24ToolError(
-          response.getErrorMessages().join('; ') || `Failed to fetch Bitrix24 task ${taskId}`,
-        )
-      }
-
-      // ✅ `.getData()` is typed `SuccessPayload<T> | undefined` — keep `?.`
-      //    on the chain even after isSuccess passes, the type narrowing
-      //    doesn't survive method calls.
-      const task = response.getData()?.result?.task
-
-      if (!task) {
-        return {
-          content: [{ type: 'text' as const, text: `Task ${taskId} not found.` }],
-        }
-      }
-
+    if (!result?.task) {
       return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify({ id: task.id, title: task.title, status: task.status ?? null }, null, 2) },
-        ],
+        content: [{ type: 'text' as const, text: `Task ${taskId} not found.` }],
       }
-    } catch (err) {
-      // ✅ toToolError handles AjaxError / SdkError / plain Error uniformly.
-      //    Don't catch with `: any` — let it propagate as Bitrix24ToolError.
-      throw toToolError(err, `Failed to fetch Bitrix24 task ${taskId}`)
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          // ✅ Compact JSON. Pretty-print costs ~30 % more tokens per response.
+          text: JSON.stringify({
+            id: result.task.id,
+            title: result.task.title,
+            status: result.task.status ?? null,
+          }),
+        },
+      ],
     }
   },
 })
 ```
 
+Note the absence of `try`/`catch` in this template: `callV3` already throws `Bitrix24ToolError` instances on every failure path. Add an outer `try`/`catch` only if you have post-SDK code that can fail (e.g. local I/O), and even then prefer rewrapping with `toToolError`.
+
 ## When the REST method is v2
 
-`user.*`, `task.commentitem.*`, `task.elapseditem.*`, and other legacy methods live under v2. Use `b24.actions.v2.call.make` instead. Everything else stays the same.
+`user.*`, `task.commentitem.*`, `task.elapseditem.*`, and other legacy methods live under v2. Use `callV2` instead of `callV3` — same signature, same return contract.
 
 ```ts
-const response = await b24.actions.v2.call.make<UserSearchRow[]>({
-  method: 'user.search',
-  params: { FILTER: filter, sort: 'ID', order: 'ASC' } as unknown as Record<string, unknown>,
-  // ^ user.search uses non-standard `sort` / `order` scalar shape;
-  //   the cast keeps the wire payload honest. Rarely needed elsewhere.
-})
+const user = await callV2<UserCurrentResponse>(
+  b24,
+  'user.current',
+  {},
+  'Failed to fetch current Bitrix24 user',
+)
 ```
+
+`user.search` has a non-standard params shape (scalar `sort` / `order`); see `server/mcp/tools/users/find-user.ts` for the documented `as unknown as Record<string, unknown>` cast. Rarely needed elsewhere.
 
 ## When you need a batch
 
-If the tool acts on a collection (10–25 ids), use **`b24.actions.v3.batch.make`** — one HTTP round-trip with up to 50 sub-calls. Don't loop `actions.v3.call.make` sequentially; that pattern existed briefly during PR #12 and was replaced for good reason (it lost the SDK's transactional report shape and ran ~25× slower).
+If the tool acts on a collection (10–25 ids), use **`batchV3`** — one HTTP round-trip with up to 50 sub-calls. Don't loop `callV3` sequentially; that pattern existed briefly during PR #12 and was replaced (it lost the SDK's transactional report shape and ran ~25× slower).
 
 ```ts
-import type { AjaxResult } from '@bitrix24/b24jssdk'
+import { batchV3 } from '~/server/utils/sdk-helpers'
 
-const response = await b24.actions.v3.batch.make<{ task: TaskItem }>({
-  calls: taskIds.map((id) => ['tasks.task.start', { taskId: id }]),
-  options: { isHaltOnError: false, returnAjaxResult: true },
-})
+const rows = await batchV3<{ task: TaskItem }>(
+  b24,
+  taskIds.map((id) => ['tasks.task.start', { taskId: id }]),
+  `Failed to start a batch of ${taskIds.length} task(s)`,
+)
 
-if (!response.isSuccess) {
-  throw new Bitrix24ToolError(response.getErrorMessages().join('; '))
-}
-
-// With `returnAjaxResult: true` each row is an AjaxResult<T>, not a bare payload.
-// The cast is documented in the SDK's batch.make example.
-const rows = response.getData() as unknown as Array<AjaxResult<{ task: TaskItem }>>
-
+// rows is Array<AjaxResult<{ task: TaskItem }>> aligned with taskIds[].
+// `isHaltOnError: false` + `returnAjaxResult: true` are applied by batchV3
+// for you — per-call failures land in rows[i] with isSuccess === false.
 const results = rows.map((row, index) => {
-  const taskId = taskIds[index]!
+  const taskId = taskIds[index]
+  if (taskId === undefined) {
+    throw new Bitrix24ToolError(`Batch row index ${index} has no taskId; SDK rows/input length mismatch.`)
+  }
   if (!row.isSuccess) {
     return { taskId, ok: false, error: row.getErrorMessages().join('; ') }
   }

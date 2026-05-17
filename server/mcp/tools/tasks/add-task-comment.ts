@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
+import { toToolError } from '~/server/utils/errors'
+import { callV2 } from '~/server/utils/sdk-helpers'
 
 /**
  * Adds a comment to a Bitrix24 task.
@@ -40,18 +41,14 @@ export default defineMcpTool({
       const b24 = useBitrix24()
       // task.commentitem.add is a v2 method (the v3 replacement
       // tasks.task.chat.message.send is queued for a separate migration PR).
-      const response = await b24.actions.v2.call.make<number | string>({
-        method: 'task.commentitem.add',
-        params: { TASKID: taskId, FIELDS: fields },
-      })
-      if (!response.isSuccess) {
-        throw new Bitrix24ToolError(
-          response.getErrorMessages().join('; ') || `Failed to comment on Bitrix24 task ${taskId}`,
-        )
-      }
+      // The result payload is a bare commentId — number or string per portal.
+      const commentId = await callV2<number | string>(
+        b24,
+        'task.commentitem.add',
+        { TASKID: taskId, FIELDS: fields },
+        `Failed to comment on Bitrix24 task ${taskId}`,
+      )
 
-      // task.commentitem.add returns { result: <commentId int>, time: {...} }
-      const commentId = response.getData()?.result
       if (typeof commentId !== 'number' && typeof commentId !== 'string') {
         return {
           content: [
@@ -67,7 +64,7 @@ export default defineMcpTool({
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({ posted: true, taskId, commentId }, null, 2),
+            text: JSON.stringify({ posted: true, taskId, commentId }),
           },
         ],
       }

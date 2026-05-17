@@ -1,8 +1,8 @@
-import { Logger, ConsoleHandler, LogLevel } from '@bitrix24/b24jssdk'
+import { ConsoleHandler, Logger, LogLevel, type LoggerInterface } from '@bitrix24/b24jssdk'
 
 /**
  * Process-singleton structured logger built from the Bitrix24 SDK's own
- * Logger system.
+ * `Logger` system.
  *
  * Why the SDK logger and not consola / pino: `B24Hook.setLogger(logger)`
  * accepts the SDK's `LoggerInterface`, so the SDK's own retry, rate-limit,
@@ -10,15 +10,23 @@ import { Logger, ConsoleHandler, LogLevel } from '@bitrix24/b24jssdk'
  * as application logs. One sink, no double bookkeeping.
  *
  * Handler stack:
- *   - ConsoleHandler at INFO in production (NUXT_ENV !== 'development'),
- *     DEBUG in development. Coloured output where the terminal supports it.
+ *   - `ConsoleHandler` at `INFO` when `NODE_ENV !== 'development'`,
+ *     `DEBUG` in development. Coloured output where the terminal supports it.
+ *
+ * Return type is `LoggerInterface` (not the concrete `Logger`) so callers
+ * stay decoupled from the SDK class. If we ever swap loggers (pino, custom
+ * adapter, …), tool code reading `useLogger().info(…)` keeps working. The
+ * concrete `Logger` is still used internally to call `pushHandler` at
+ * bootstrap.
  *
  * To plug in more handlers (file rotation, telegram, etc.), call
- * `logger.pushHandler(new StreamHandler({...}))` etc. once at startup.
+ * `pushHandler(new StreamHandler({…}))` etc. once at startup before the
+ * first `useLogger()` invocation, or cast to `Logger` if you need to do it
+ * lazily.
  */
 let loggerInstance: Logger | null = null
 
-export function useLogger(): Logger {
+export function useLogger(): LoggerInterface {
   if (loggerInstance) return loggerInstance
 
   const isDev = process.env.NODE_ENV === 'development'

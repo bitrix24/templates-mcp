@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
+import type { TaskListEnvelope } from '~/server/types/bitrix24'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
+import { toToolError } from '~/server/utils/errors'
+import { callV3 } from '~/server/utils/sdk-helpers'
 import {
   normalizeBitrix24Filter,
   normalizeBitrix24Order,
@@ -62,21 +64,17 @@ export default defineMcpTool({
   handler: async ({ filter, order, select, start }) => {
     try {
       const b24 = useBitrix24()
-      const response = await b24.actions.v3.call.make<{ tasks?: unknown[]; total?: number }>({
-        method: 'tasks.task.list',
-        params: {
+      const data = await callV3<TaskListEnvelope>(
+        b24,
+        'tasks.task.list',
+        {
           filter: filter ? normalizeBitrix24Filter(filter) : {},
           order: order ? normalizeBitrix24Order(order) : { ID: 'desc' },
           select: select ? normalizeBitrix24Select(select) : DEFAULT_SELECT_WIRE,
           start: start ?? 0,
         },
-      })
-      if (!response.isSuccess) {
-        throw new Bitrix24ToolError(
-          response.getErrorMessages().join('; ') || 'Failed to list Bitrix24 tasks',
-        )
-      }
-      const data = response.getData()?.result
+        'Failed to list Bitrix24 tasks',
+      )
       const tasks: TaskShort[] = (data?.tasks ?? [])
         .map(toTaskShort)
         .filter((t): t is TaskShort => t !== null)
@@ -85,18 +83,14 @@ export default defineMcpTool({
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify(
-              {
-                // Bitrix24 normally returns `total` (count across all pages).
-                // Fall back to `null` if the API didn't supply it — reporting
-                // the page-slice length would silently lie about pagination.
-                total: typeof data?.total === 'number' ? data.total : null,
-                returned: tasks.length,
-                tasks,
-              },
-              null,
-              2,
-            ),
+            text: JSON.stringify({
+              // Bitrix24 normally returns `total` (count across all pages).
+              // Fall back to `null` if the API didn't supply it — reporting
+              // the page-slice length would silently lie about pagination.
+              total: typeof data?.total === 'number' ? data.total : null,
+              returned: tasks.length,
+              tasks,
+            }),
           },
         ],
       }

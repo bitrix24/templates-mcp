@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import type { AjaxResult } from '@bitrix24/b24jssdk'
+import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
+import { Bitrix24ToolError } from '~/server/utils/errors'
+import { batchV3, callV3 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 
 /**
@@ -20,13 +21,17 @@ import { extractTasks } from '~/server/utils/tasks'
  * single-letter codes.
  *
  * Batch mode mirrors the lifecycle factory (#7): pass an array of ids to
- * rate many tasks in one call, paced by the client-side rate limiter.
+ * rate many tasks in one call. Uses the SDK's native `actions.v3.batch.make`,
+ * so the whole batch goes out as one HTTP request rather than N.
  */
 const RATING_TO_MARK = {
   positive: 'P',
   negative: 'N',
   none: null,
 } as const
+
+type Rating = keyof typeof RATING_TO_MARK
+type Mark = (typeof RATING_TO_MARK)[Rating]
 
 const DEFAULT_BATCH_CAP = 25
 
@@ -58,7 +63,7 @@ export default defineMcpTool({
         `Set true to allow batches larger than ${DEFAULT_BATCH_CAP}. Use sparingly — MCP clients may time out on long-running tool calls. Ignored for single-task input.`,
       ),
   },
-  handler: async (input: { taskId: number | number[]; rating: 'positive' | 'negative' | 'none'; force?: boolean }) => {
+  handler: async (input: { taskId: number | number[]; rating: Rating; force?: boolean }) => {
     const { taskId, rating, force } = input
     const mark = RATING_TO_MARK[rating]
     if (typeof taskId === 'number') {
@@ -68,60 +73,44 @@ export default defineMcpTool({
   },
 })
 
-async function runOne(taskId: number, rating: 'positive' | 'negative' | 'none', mark: 'P' | 'N' | null) {
-  try {
-    const b24 = useBitrix24()
-    const response = await b24.actions.v3.call.make<{ task: unknown }>({
-      method: 'tasks.task.update',
-      params: { taskId, fields: { MARK: mark } },
-    })
-    if (!response.isSuccess) {
-      throw new Bitrix24ToolError(
-        response.getErrorMessages().join('; ') || `Failed to rate Bitrix24 task ${taskId}`,
-      )
-    }
-    const [task] = extractTasks(response.getData()?.result)
+async function runOne(taskId: number, rating: Rating, mark: Mark) {
+  const b24 = useBitrix24()
+  const result = await callV3<SingleTaskEnvelope>(
+    b24,
+    'tasks.task.update',
+    { taskId, fields: { MARK: mark } },
+    `Failed to rate Bitrix24 task ${taskId}`,
+  )
+  const [task] = extractTasks(result)
 
-    if (!task) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Task ${taskId} rating set to ${rating}, but Bitrix24 returned no task body. Re-list to verify.`,
-          },
-        ],
-      }
-    }
-
+  if (!task) {
     return {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify(
-            {
-              rated: true,
-              id: task.id,
-              title: task.title,
-              rating,
-              mark,
-            },
-            null,
-            2,
-          ),
+          text: `Task ${taskId} rating set to ${rating}, but Bitrix24 returned no task body. Re-list to verify.`,
         },
       ],
     }
-  } catch (err) {
-    throw toToolError(err, `Failed to rate Bitrix24 task ${taskId}`)
+  }
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          rated: true,
+          id: task.id,
+          title: task.title,
+          rating,
+          mark,
+        }),
+      },
+    ],
   }
 }
 
-async function runBatch(
-  taskIds: number[],
-  rating: 'positive' | 'negative' | 'none',
-  mark: 'P' | 'N' | null,
-  force: boolean,
-) {
+async function runBatch(taskIds: number[], rating: Rating, mark: Mark, force: boolean) {
   if (taskIds.length > DEFAULT_BATCH_CAP && !force) {
     throw new Bitrix24ToolError(
       `Batch of ${taskIds.length} exceeds the default cap of ${DEFAULT_BATCH_CAP}. Pass force=true to override, or split into multiple calls.`,
@@ -130,54 +119,43 @@ async function runBatch(
   }
 
   const b24 = useBitrix24()
-  let results: BatchEntryResult[]
-  try {
-    const response = await b24.actions.v3.batch.make<{ task: unknown }>({
-      calls: taskIds.map((id) => ['tasks.task.update', { taskId: id, fields: { MARK: mark } }]),
-      options: { isHaltOnError: false, returnAjaxResult: true },
-    })
+  const rows = await batchV3<SingleTaskEnvelope>(
+    b24,
+    taskIds.map((id) => ['tasks.task.update', { taskId: id, fields: { MARK: mark } }]),
+    `Failed to rate ${taskIds.length} Bitrix24 task(s)`,
+  )
 
-    if (!response.isSuccess) {
+  const results: BatchEntryResult[] = rows.map((row, index) => {
+    const taskId = taskIds[index]
+    if (taskId === undefined) {
       throw new Bitrix24ToolError(
-        response.getErrorMessages().join('; ') || `Failed to rate ${taskIds.length} Bitrix24 task(s)`,
+        `Batch row index ${index} has no corresponding taskId; SDK rows/input length mismatch.`,
       )
     }
-
-    const rows = response.getData() as unknown as Array<AjaxResult<{ task: unknown }>>
-    results = rows.map((row, index) => {
-      const taskId = taskIds[index]!
-      if (!row.isSuccess) {
-        return {
-          taskId,
-          ok: false,
-          error: row.getErrorMessages().join('; ') || `Failed to rate Bitrix24 task ${taskId}`,
-        }
+    if (!row.isSuccess) {
+      return {
+        taskId,
+        ok: false,
+        error: row.getErrorMessages().join('; ') || `Failed to rate Bitrix24 task ${taskId}`,
       }
-      return { taskId, ok: true }
-    })
-  } catch (err) {
-    if (err instanceof Bitrix24ToolError) throw err
-    throw toToolError(err, `Failed to rate ${taskIds.length} Bitrix24 task(s)`)
-  }
+    }
+    return { taskId, ok: true }
+  })
 
   const ok = results.filter((r) => r.ok).length
   return {
     content: [
       {
         type: 'text' as const,
-        text: JSON.stringify(
-          {
-            batch: true,
-            rating,
-            mark,
-            total: results.length,
-            ok,
-            failed: results.length - ok,
-            results,
-          },
-          null,
-          2,
-        ),
+        text: JSON.stringify({
+          batch: true,
+          rating,
+          mark,
+          total: results.length,
+          ok,
+          failed: results.length - ok,
+          results,
+        }),
       },
     ],
   }

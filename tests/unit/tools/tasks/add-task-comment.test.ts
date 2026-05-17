@@ -48,7 +48,7 @@ describe('bitrix24_add_task_comment', () => {
     fake.v2Call.mockResolvedValue(fakeOk(1))
 
     await tool.handler({ taskId: 1, text: 'as someone else', authorId: 503 })
-    const args = fake.v2Call.mock.calls[0]![0] as { params: { FIELDS: Record<string, unknown> } }
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { FIELDS: Record<string, unknown> } }
     expect(args.params.FIELDS).toEqual({ POST_MESSAGE: 'as someone else', AUTHOR_ID: 503 })
   })
 

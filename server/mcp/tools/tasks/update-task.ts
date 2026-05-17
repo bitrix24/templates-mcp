@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
+import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
+import { toToolError } from '~/server/utils/errors'
+import { callV3 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 
 /**
@@ -30,16 +32,13 @@ export default defineMcpTool({
   handler: async ({ taskId, fields }) => {
     try {
       const b24 = useBitrix24()
-      const response = await b24.actions.v3.call.make<{ task: unknown }>({
-        method: 'tasks.task.update',
-        params: { taskId, fields },
-      })
-      if (!response.isSuccess) {
-        throw new Bitrix24ToolError(
-          response.getErrorMessages().join('; ') || `Failed to update Bitrix24 task ${taskId}`,
-        )
-      }
-      const [task] = extractTasks(response.getData()?.result)
+      const result = await callV3<SingleTaskEnvelope>(
+        b24,
+        'tasks.task.update',
+        { taskId, fields },
+        `Failed to update Bitrix24 task ${taskId}`,
+      )
+      const [task] = extractTasks(result)
 
       if (!task) {
         return {
@@ -56,18 +55,14 @@ export default defineMcpTool({
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify(
-              {
-                updated: true,
-                id: task.id,
-                title: task.title,
-                deadline: task.deadline ?? null,
-                responsibleId: task.responsibleId ?? null,
-                status: task.status ?? null,
-              },
-              null,
-              2,
-            ),
+            text: JSON.stringify({
+              updated: true,
+              id: task.id,
+              title: task.title,
+              deadline: task.deadline ?? null,
+              responsibleId: task.responsibleId ?? null,
+              status: task.status ?? null,
+            }),
           },
         ],
       }

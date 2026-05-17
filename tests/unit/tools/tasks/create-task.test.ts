@@ -70,7 +70,7 @@ describe('bitrix24_create_task', () => {
 
     await tool.handler({ title: 'minimal', responsibleId: 1 })
 
-    const args = fake.v3Call.mock.calls[0]![0] as { params: { fields: Record<string, unknown> } }
+    const args = fake.v3Call.mock.calls[0]![0] as unknown as { params: { fields: Record<string, unknown> } }
     expect(Object.keys(args.params.fields).sort()).toEqual(['RESPONSIBLE_ID', 'TITLE'])
   })
 
@@ -78,7 +78,7 @@ describe('bitrix24_create_task', () => {
     fake.v3Call.mockResolvedValue(fakeOk({ task: { id: 1, title: 'x' } }))
 
     await tool.handler({ title: 'x', responsibleId: 1, accomplices: [], auditors: [10, 20] })
-    const args = fake.v3Call.mock.calls[0]![0] as { params: { fields: Record<string, unknown> } }
+    const args = fake.v3Call.mock.calls[0]![0] as unknown as { params: { fields: Record<string, unknown> } }
     expect(args.params.fields.ACCOMPLICES).toBeUndefined()
     expect(args.params.fields.AUDITORS).toEqual([10, 20])
   })

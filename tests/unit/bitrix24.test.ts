@@ -66,4 +66,30 @@ describe('useBitrix24', () => {
     // setLogger only called once across both useBitrix24() calls
     expect(setLogger).toHaveBeenCalledTimes(1)
   })
+
+  it('rewraps a malformed-URL throw from fromWebhookUrl with operator-friendly hint', async () => {
+    runtimeConfig.bitrix24WebhookUrl = 'totally-not-a-url'
+    fromWebhookUrl.mockImplementation(() => {
+      throw new Error('Invalid webhook URL format')
+    })
+
+    const { useBitrix24 } = await loadFresh()
+    expect(() => useBitrix24()).toThrow(/NUXT_BITRIX24_WEBHOOK_URL is not a valid Bitrix24 webhook URL/)
+    expect(() => useBitrix24()).toThrow(/Invalid webhook URL format/) // original SDK reason included
+  })
+
+  it('passes a LoggerInterface-shaped object into client.setLogger', async () => {
+    runtimeConfig.bitrix24WebhookUrl = 'https://example.bitrix24.ru/rest/1/abc/'
+    const { useBitrix24 } = await loadFresh()
+    useBitrix24()
+    // Verify shape rather than identity — useLogger() is mocked and we want
+    // to know that whatever we pass exposes the LoggerInterface contract
+    // (debug/info/warning/error). Catches regressions where the wiring
+    // accidentally passes a wrong object.
+    const passed = setLogger.mock.calls[0]![0] as Record<string, unknown>
+    expect(typeof passed.debug).toBe('function')
+    expect(typeof passed.info).toBe('function')
+    expect(typeof passed.warning).toBe('function')
+    expect(typeof passed.error).toBe('function')
+  })
 })

@@ -96,7 +96,7 @@ describe('bitrix24_list_tasks', () => {
 
     await tool.handler({ filter: { responsibleId: 5, STATUS: 3, '%title': 'foo' } })
 
-    const args = fake.v3Call.mock.calls[0]![0] as { params: { filter: Record<string, unknown> } }
+    const args = fake.v3Call.mock.calls[0]![0] as unknown as { params: { filter: Record<string, unknown> } }
     expect(args.params.filter).toEqual({ RESPONSIBLE_ID: 5, STATUS: 3, '%TITLE': 'foo' })
   })
 
@@ -104,7 +104,7 @@ describe('bitrix24_list_tasks', () => {
     fake.v3Call.mockResolvedValue(fakeOk({ tasks: [], total: 0 }))
     await tool.handler({})
 
-    const args = fake.v3Call.mock.calls[0]![0] as {
+    const args = fake.v3Call.mock.calls[0]![0] as unknown as {
       params: { filter: object; order: object; select: string[]; start: number }
     }
     expect(args.params.filter).toEqual({})

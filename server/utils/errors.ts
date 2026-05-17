@@ -5,13 +5,18 @@ import { AjaxError, SdkError } from '@bitrix24/b24jssdk'
  * REST error. We rethrow them as structured Errors so MCP tool handlers can
  * surface meaningful messages to the AI agent without leaking internals like
  * webhook URLs or stack traces.
+ *
+ * `status` is always present on the instance (declared with definite type
+ * `number | undefined`, not optional `status?`) so consumers can iterate the
+ * shape without a hasOwn check. `undefined` means "the upstream error didn't
+ * carry an HTTP status" — typically a transport-level / config error.
  */
 export class Bitrix24ToolError extends Error {
   override readonly name = 'Bitrix24ToolError'
   readonly code: string
-  readonly status?: number
+  readonly status: number | undefined
 
-  constructor(message: string, code = 'BITRIX24_ERROR', status?: number) {
+  constructor(message: string, code = 'BITRIX24_ERROR', status: number | undefined = undefined) {
     super(message)
     this.code = code
     this.status = status

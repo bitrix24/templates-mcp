@@ -1,9 +1,10 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import type { AjaxResult } from '@bitrix24/b24jssdk'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
+import { Bitrix24ToolError } from '~/server/utils/errors'
+import { batchV3, callV3 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
+import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
 
 /**
  * Factory for the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}`
@@ -88,8 +89,8 @@ export function defineTaskLifecycleTool(spec: LifecycleToolSpec) {
     description: spec.description + LIFECYCLE_USAGE_NOTES,
     inputSchema: {
       taskId: taskIdSchema.describe(
-        spec.taskIdHint +
-          ' Pass a number for single-task semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
+        spec.taskIdHint
+          + ' Pass a number for single-task semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
       ),
       force: z
         .boolean()
@@ -109,54 +110,43 @@ export function defineTaskLifecycleTool(spec: LifecycleToolSpec) {
 }
 
 async function runOne(spec: LifecycleToolSpec, taskId: number) {
-  try {
-    const b24 = useBitrix24()
-    const response = await b24.actions.v3.call.make<{ task: unknown }>({
-      method: spec.method,
-      params: { taskId },
-    })
-    if (!response.isSuccess) {
-      throw new Bitrix24ToolError(
-        response.getErrorMessages().join('; ') || `Failed to ${spec.verb} Bitrix24 task ${taskId}`,
-      )
-    }
-    // Lifecycle methods always return a single `{ task: {...} }`. We use
-    // `extractTasks` (which also handles list-shaped responses) and take
-    // the first element so there's one shared parser across all task
-    // tools — same code path as `update_task`.
-    const [task] = extractTasks(response.getData()?.result)
+  const b24 = useBitrix24()
+  // Lifecycle methods always return a single `{ task: {...} }`. We use
+  // `extractTasks` (which also handles list-shaped responses) and take
+  // the first element so there's one shared parser across all task
+  // tools — same code path as `update_task`.
+  const result = await callV3<SingleTaskEnvelope>(
+    b24,
+    spec.method,
+    { taskId },
+    `Failed to ${spec.verb} Bitrix24 task ${taskId}`,
+  )
+  const [task] = extractTasks(result)
 
-    if (!task) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Task ${taskId} ${spec.pastTense}, but Bitrix24 returned no task body. Re-list to verify the status change.`,
-          },
-        ],
-      }
-    }
-
+  if (!task) {
     return {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify(
-            {
-              [spec.pastTense]: true,
-              id: task.id,
-              title: task.title,
-              status: task.status ?? null,
-              responsibleId: task.responsibleId ?? null,
-            },
-            null,
-            2,
-          ),
+          text: `Task ${taskId} ${spec.pastTense}, but Bitrix24 returned no task body. Re-list to verify the status change.`,
         },
       ],
     }
-  } catch (err) {
-    throw toToolError(err, `Failed to ${spec.verb} Bitrix24 task ${taskId}`)
+  }
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          [spec.pastTense]: true,
+          id: task.id,
+          title: task.title,
+          status: task.status ?? null,
+          responsibleId: task.responsibleId ?? null,
+        }),
+      },
+    ],
   }
 }
 
@@ -169,67 +159,51 @@ async function runBatch(spec: LifecycleToolSpec, taskIds: number[], force: boole
   }
 
   const b24 = useBitrix24()
-  let results: BatchEntryResult[]
-  try {
-    // Single HTTP round-trip carrying all N sub-calls. `isHaltOnError: false`
-    // gives us per-id partial-failure semantics; `returnAjaxResult: true` makes
-    // each entry an `AjaxResult<T>` (vs the bare payload), so we can check
-    // `isSuccess` / `getErrorMessages()` per row.
-    const response = await b24.actions.v3.batch.make<{ task: unknown }>({
-      calls: taskIds.map((id) => [spec.method, { taskId: id }]),
-      options: { isHaltOnError: false, returnAjaxResult: true },
-    })
+  const rows = await batchV3<SingleTaskEnvelope>(
+    b24,
+    taskIds.map((id) => [spec.method, { taskId: id }]),
+    `Failed to ${spec.verb} a batch of ${taskIds.length} task(s)`,
+  )
 
-    if (!response.isSuccess) {
+  const results: BatchEntryResult[] = rows.map((row, index) => {
+    const taskId = taskIds[index]
+    if (taskId === undefined) {
+      // Defensive: SDK contract guarantees rows.length === taskIds.length when
+      // returnAjaxResult is true. If that ever drifts, fail loud rather than
+      // silently producing an entry with `taskId: undefined`.
       throw new Bitrix24ToolError(
-        response.getErrorMessages().join('; ') || `Failed to ${spec.verb} a batch of ${taskIds.length} tasks`,
+        `Batch row index ${index} has no corresponding taskId; SDK rows/input length mismatch.`,
       )
     }
-
-    // The SDK example documents this cast when returnAjaxResult is true:
-    // batch.make typically yields Result<ICallBatchResult<T>>; the flag
-    // upgrades each row to a full AjaxResult<T> instead of the bare payload.
-    const rows = response.getData() as unknown as Array<AjaxResult<{ task: unknown }>>
-
-    results = rows.map((row, index) => {
-      const taskId = taskIds[index]!
-      if (!row.isSuccess) {
-        return {
-          taskId,
-          ok: false,
-          error: row.getErrorMessages().join('; ') || `Failed to ${spec.verb} Bitrix24 task ${taskId}`,
-        }
-      }
-      const [task] = extractTasks(row.getData()?.result)
+    if (!row.isSuccess) {
       return {
         taskId,
-        ok: true,
-        status: task?.status ?? null,
-        responsibleId: task?.responsibleId ?? null,
+        ok: false,
+        error: row.getErrorMessages().join('; ') || `Failed to ${spec.verb} Bitrix24 task ${taskId}`,
       }
-    })
-  } catch (err) {
-    if (err instanceof Bitrix24ToolError) throw err
-    throw toToolError(err, `Failed to ${spec.verb} a batch of ${taskIds.length} task(s)`)
-  }
+    }
+    const [task] = extractTasks(row.getData()?.result)
+    return {
+      taskId,
+      ok: true,
+      status: task?.status ?? null,
+      responsibleId: task?.responsibleId ?? null,
+    }
+  })
 
   const ok = results.filter((r) => r.ok).length
   return {
     content: [
       {
         type: 'text' as const,
-        text: JSON.stringify(
-          {
-            batch: true,
-            verb: spec.pastTense,
-            total: results.length,
-            ok,
-            failed: results.length - ok,
-            results,
-          },
-          null,
-          2,
-        ),
+        text: JSON.stringify({
+          batch: true,
+          verb: spec.pastTense,
+          total: results.length,
+          ok,
+          failed: results.length - ok,
+          results,
+        }),
       },
     ],
   }
