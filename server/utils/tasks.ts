@@ -8,6 +8,8 @@
  * map them to the UPPERCASE keys that the REST methods actually require.
  */
 
+import { pick } from '~/server/utils/wire-coerce'
+
 /** Subset of task fields we surface back to the agent. The full Bitrix24
  *  response carries 50+ fields; trimming to the agent-useful ones keeps the
  *  context window cheap. Agents that need more should use list-tasks with an
@@ -20,16 +22,6 @@ export interface TaskShort {
   responsibleId?: string
   createdDate?: string
   priority?: string
-}
-
-/**
- * Picks a field that may be in either camelCase or UPPERCASE in the Bitrix24
- * response. Returns `null` if neither is present, so the caller decides
- * whether to fall back or omit.
- */
-function pick<T>(obj: Record<string, unknown>, lower: string, upper: string): T | null {
-  const v = obj[lower] ?? obj[upper]
-  return v === undefined ? null : (v as T)
 }
 
 export function toTaskShort(raw: unknown): TaskShort | null {

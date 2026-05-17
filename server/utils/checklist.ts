@@ -3,6 +3,7 @@ import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import { Bitrix24ToolError } from '~/server/utils/errors'
 import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
+import { pick, toBool, toNumber } from '~/server/utils/wire-coerce'
 import type { BitrixChecklistItemRaw } from '~/server/types/bitrix24'
 
 /**
@@ -27,24 +28,6 @@ export interface ChecklistItemShort {
   createdBy: number | null
   toggledBy: number | null
   toggledDate: string | null
-}
-
-function pick<T>(obj: Record<string, unknown>, lower: string, upper: string): T | null {
-  const v = obj[lower] ?? obj[upper]
-  return v === undefined ? null : (v as T)
-}
-
-function toNumber(raw: unknown): number | null {
-  if (raw === null || raw === undefined || raw === '') return null
-  const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : (raw as number)
-  return Number.isFinite(n) ? n : null
-}
-
-/** Bitrix24 v2 ships boolean fields as the literal strings `"Y"` / `"N"`.
- *  Anything else is treated as false rather than silently accepted — drift
- *  surfaces loud instead of producing wrong-but-truthy data. */
-function toBool(raw: unknown): boolean {
-  return raw === 'Y'
 }
 
 export function toChecklistItemShort(raw: unknown): ChecklistItemShort | null {

@@ -1,4 +1,5 @@
 import type { BitrixTaskResultRaw } from '~/server/types/bitrix24'
+import { toNumber } from '~/server/utils/wire-coerce'
 
 /**
  * Pure parser for `tasks.task.result.*` response items. Mirrors what
@@ -16,12 +17,6 @@ export interface TaskResultShort {
   updatedAt: string | null
   status: string | null
   messageId: number | null
-}
-
-function toNumber(raw: unknown): number | null {
-  if (raw === null || raw === undefined || raw === '') return null
-  const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : (raw as number)
-  return Number.isFinite(n) ? n : null
 }
 
 export function toTaskResultShort(raw: unknown): TaskResultShort | null {

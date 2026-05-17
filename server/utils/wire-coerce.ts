@@ -1,0 +1,41 @@
+/**
+ * Wire-format coercions for Bitrix24 REST responses.
+ *
+ * Bitrix24 ships fields in mixed casing (UPPERCASE for legacy v2-style
+ * endpoints, camelCase for v3 responses) and stringifies numeric ids in
+ * both. These helpers — previously copy-pasted across `tasks.ts`,
+ * `checklist.ts`, and `task-results.ts` — live here as the single source of
+ * truth so that drift between domains stays impossible.
+ */
+
+/**
+ * Picks a field that may be in either camelCase or UPPERCASE on the wire.
+ * Returns `null` if neither key is present, so the caller decides whether to
+ * fall back or omit. Order is `lower` (camelCase) first, then `upper`
+ * (UPPER_SNAKE) — v3 responses are camelCase and we prefer them.
+ */
+export function pick<T>(obj: Record<string, unknown>, lower: string, upper: string): T | null {
+  const v = obj[lower] ?? obj[upper]
+  return v === undefined ? null : (v as T)
+}
+
+/**
+ * Coerce a wire-side value (stringified int, number, null, '') to a real
+ * number, returning `null` for absent / malformed inputs rather than NaN.
+ * `JSON.stringify` quietly turns NaN into `null`, which would conflate
+ * "missing" with "malformed" downstream.
+ */
+export function toNumber(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null
+  const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : (raw as number)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * Bitrix24 v2 ships boolean fields as the literal strings `"Y"` / `"N"`.
+ * Anything else is treated as `false` rather than silently accepted — drift
+ * surfaces loud instead of producing wrong-but-truthy data.
+ */
+export function toBool(raw: unknown): boolean {
+  return raw === 'Y'
+}
