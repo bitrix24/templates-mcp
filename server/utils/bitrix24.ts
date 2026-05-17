@@ -1,4 +1,5 @@
 import { B24Hook } from '@bitrix24/b24jssdk'
+import { makeRedactingLogger, redactString } from '~/server/utils/logger-redactor'
 import { useLogger } from '~/server/utils/logger'
 
 let client: B24Hook | null = null
@@ -57,7 +58,15 @@ export function useBitrix24(): B24Hook {
   try {
     client = B24Hook.fromWebhookUrl(bitrix24WebhookUrl)
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err)
+    // SECURITY (#26): the SDK parse error message can include the offending
+    // URL verbatim — e.g. `Invalid webhook URL format: <input>`. If the
+    // operator misconfigured the env var with a real-but-malformed webhook
+    // string, that URL contains the secret. Run the SDK reason through the
+    // same redactor we wrap the logger with so the secret never reaches the
+    // rewrapped error message (which could be logged by Nuxt's error
+    // handler).
+    const rawReason = err instanceof Error ? err.message : String(err)
+    const reason = redactString(rawReason)
     throw new Error(
       `NUXT_BITRIX24_WEBHOOK_URL is not a valid Bitrix24 webhook URL `
         + `(expected https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/): ${reason}`,
@@ -66,7 +75,18 @@ export function useBitrix24(): B24Hook {
 
   // Wire the SDK's internal events (retry, rate-limit, errors) into the
   // project-wide structured logger. One sink for app + SDK events.
-  client.setLogger(useLogger())
+  //
+  // SECURITY (#26): the SDK's HTTP layer logs the full request URL on
+  // every call (`post/send`, `post/response`, retry paths in
+  // `core/http/abstract-http.mjs`). That URL is the webhook URL itself
+  // — `https://<portal>/rest/<userId>/<SECRET>` — so an unwrapped
+  // `setLogger(useLogger())` would write the secret to every log sink
+  // on every API call. We wrap our logger in `makeRedactingLogger` to
+  // scrub URL-shaped values out of `message` + `context` before they
+  // reach the inner logger. Upstream Bitrix24 SDK should redact at
+  // source; until they do, this is the primary defence (see
+  // `server/utils/logger-redactor.ts` + `docs/SECURITY-AUDIT.md`).
+  client.setLogger(makeRedactingLogger(useLogger()))
 
   return client
 }

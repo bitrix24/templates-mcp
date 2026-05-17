@@ -1,7 +1,8 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { B24Hook, Logger, type LogRecord, LogLevel, MemoryHandler } from '@bitrix24/b24jssdk'
-import { describe, expect, it } from 'vitest'
+import { ApiVersion, B24Hook, Logger, type LogRecord, LogLevel, MemoryHandler } from '@bitrix24/b24jssdk'
+import { describe, expect, it, vi } from 'vitest'
+import { makeRedactingLogger } from '~/server/utils/logger-redactor'
 
 /**
  * Issue #26 regression guard — the webhook URL contains a secret. If any SDK
@@ -34,6 +35,16 @@ const SDK_ROOT = join(process.cwd(), 'node_modules/@bitrix24/b24jssdk/dist/esm')
  * keeps the scan focused on CALLERS of `_logger.*`, not the logger internals).
  */
 function* walkSdkSources(dir: string): Generator<string> {
+  // Fail loudly with a clear signal if the SDK source tree isn't where we
+  // expect — turns a cryptic ENOENT into "the SDK layout changed, update
+  // SDK_ROOT". Happens when bumping `@bitrix24/b24jssdk` to a major version
+  // that ships `lib/` instead of `dist/esm/`, or moves to a monorepo path.
+  if (!existsSync(dir)) {
+    throw new Error(
+      `SDK source tree not found at ${dir}. The package layout may have changed in a recent bump. `
+        + `Update SDK_ROOT in tests/unit/utils/sdk-logger-leak.test.ts and re-run the audit (docs/SECURITY-AUDIT.md).`,
+    )
+  }
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry)
     const st = statSync(path)
@@ -56,11 +67,28 @@ interface LoggerCallsite {
 }
 
 /**
- * Find every `logger.<level>(...)` or `_logger.<level>(...)` callsite and
- * capture a multi-line window around each so we can inspect the logged payload.
+ * Find every logger callsite in the SDK and capture a multi-line window
+ * around each so we can inspect the logged payload.
+ *
+ * The pattern covers THREE shapes SDK 1.1.1 uses:
+ *
+ *   1. `this._logger.<level>(...)` — direct field access on the action
+ *      layer (8 callsites in call-list / fetch-list).
+ *   2. `this.getLogger().<level>(...)` — getter access in the HTTP layer
+ *      (54+ callsites in `core/http/abstract-http.mjs` and friends).
+ *      **This is the critical case** — the HTTP layer logs the full
+ *      webhook URL via `getLogger().info('post/send', { method: <url> })`
+ *      on every request.
+ *   3. `logger.<level>(...)` — bare reference (used by no current SDK
+ *      callsite but kept defensive for future bumps).
+ *
+ * Missing this getter pattern was the original audit's blind spot —
+ * issue #26's first PR shipped a scan that found only the 8 action-layer
+ * callsites and declared the HTTP layer clean. The HTTP layer is in fact
+ * the primary leak surface.
  */
 function findLoggerCallsites(): LoggerCallsite[] {
-  const callsiteRe = /\b_?logger\.(log|debug|info|warning|warn|error|trace)\s*\(/
+  const callsiteRe = /\b(?:this\.)?(?:_logger|getLogger\s*\(\s*\)|logger)\.(log|debug|info|notice|warning|warn|error|critical|alert|emergency|trace)\s*\(/
   const results: LoggerCallsite[] = []
   for (const file of walkSdkSources(SDK_ROOT)) {
     const lines = readFileSync(file, 'utf8').split('\n')
@@ -80,9 +108,21 @@ function findLoggerCallsites(): LoggerCallsite[] {
 
 describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
   describe('static scan of installed SDK', () => {
-    it('finds at least one logger callsite (sanity — would fail if scanner is broken or SDK is empty)', () => {
+    it('finds the expected order-of-magnitude of SDK files + callsites (sanity vs SDK layout drift)', () => {
+      // A bare `> 0` check would pass even if the SDK moved most of its
+      // code somewhere we don't scan. We sanity-check against the
+      // SDK 1.1.1 baseline: ~100 .mjs files in dist/esm and ~60
+      // logger callsites (8 `_logger.*` in action layer + ~54
+      // `getLogger().*` across HTTP / pull / frame / helper). If the
+      // numbers drop dramatically, the scanner has gone blind to a
+      // chunk of the SDK — fail loud so the maintainer updates the
+      // matcher.
+      let filesScanned = 0
+      for (const _ of walkSdkSources(SDK_ROOT)) filesScanned++
+      expect(filesScanned, 'SDK file count fell below baseline — layout changed?').toBeGreaterThan(50)
+
       const callsites = findLoggerCallsites()
-      expect(callsites.length).toBeGreaterThan(0)
+      expect(callsites.length, 'logger callsite count fell below baseline — matcher pattern may have gone blind').toBeGreaterThan(30)
     })
 
     it('every logger callsite logs only safe identifiers (method / requestId / messages) — no URL or secret', () => {
@@ -179,27 +219,82 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
       assertNoSecretLeak(handler.getRecords(), 'repeated setLogger')
     })
 
-    it('our useBitrix24 wrapper does not surface the secret in the malformed-URL rewrap', async () => {
-      // The wrapper rewraps a `fromWebhookUrl` parse failure with operator
-      // hint text. If the rewrap ever interpolates the offending URL into
-      // the user-facing error (tempting for debuggability), the secret
-      // leaks via the error path even though the logger is silent.
-      //
-      // We use a malformed URL that still LOOKS like a webhook URL so the
-      // rewrap path is exercised — if the wrapper inlined the input, the
-      // sentinel would surface in the thrown error message.
-      const malformed = `${FAKE_WEBHOOK}!!INVALID!!`
+    it('SDK BASELINE: without our redactor, the HTTP layer DOES leak the secret on every call', async () => {
+      // Proves the redactor is necessary, not theatre. Wire a RAW logger
+      // (no redaction) into a real B24Hook, intercept the internal axios
+      // POST so no real network call happens, then trigger an API call
+      // and inspect what the logger captured. Should contain the secret
+      // — that's the leak we have to defend against. If this test ever
+      // STOPS finding the leak, the SDK upstream fixed it and our
+      // RedactingLogger becomes belt-and-suspenders rather than the
+      // primary defence.
+      const { logger, handler } = makeMemoryLogger()
+      const hook = B24Hook.fromWebhookUrl(FAKE_WEBHOOK)
+      hook.setLogger(logger)
+      await hook.init()
+      const httpV3 = hook.getHttpClient(ApiVersion.v3) as unknown as {
+        _clientAxios: { post: (...args: unknown[]) => Promise<unknown> }
+      }
+      httpV3._clientAxios.post = () =>
+        Promise.resolve({ status: 200, data: { result: { item: {} }, time: {} } })
+
+      await hook.actions.v3.call.make({ method: 'tasks.task.get', params: { taskId: 1 } })
+
+      const dump = JSON.stringify(handler.getRecords())
+      // Baseline assertion — if THIS fails, the SDK leak was fixed upstream
+      // (great news, but check whether the redactor + this test need
+      // updating). See docs/SECURITY-AUDIT.md.
+      expect(dump, 'SDK upstream may have fixed the leak — update SECURITY-AUDIT.md').toContain(SENTINEL_SECRET)
+    })
+
+    it('with our RedactingLogger wired, the same HTTP call does NOT leak the secret', async () => {
+      // The actual proof that `makeRedactingLogger` defends against the
+      // baseline leak above. Same setup, but wrap the logger via the same
+      // helper `server/utils/bitrix24.ts` uses. The redactor scrubs
+      // URL-shaped values out of every message + context before they
+      // reach the inner logger — sentinel must not appear in records.
+      const { logger, handler } = makeMemoryLogger()
+      const hook = B24Hook.fromWebhookUrl(FAKE_WEBHOOK)
+      hook.setLogger(makeRedactingLogger(logger))
+      await hook.init()
+      const httpV3 = hook.getHttpClient(ApiVersion.v3) as unknown as {
+        _clientAxios: { post: (...args: unknown[]) => Promise<unknown> }
+      }
+      httpV3._clientAxios.post = () =>
+        Promise.resolve({ status: 200, data: { result: { item: {} }, time: {} } })
+
+      await hook.actions.v3.call.make({ method: 'tasks.task.get', params: { taskId: 1 } })
+
+      assertNoSecretLeak(handler.getRecords(), 'HTTP call through redacting logger')
+    })
+
+    it('useBitrix24() wires the redacting logger so a non-URL env var value cannot leak via the rewrapped error', async () => {
+      // Issue #26 also covers the wrapper path: `useBitrix24()` catches
+      // a `fromWebhookUrl` parse failure and rewraps it with operator
+      // hint text. The SDK's parse error message can include the
+      // offending input verbatim — `Invalid webhook URL format: <input>`.
+      // If the operator misconfigured the env var with a real-but-
+      // malformed webhook string (still bearing a secret), an
+      // unredacted rewrap leaks the secret into the user-facing error.
+      // We pin that the rewrap runs `redactString` on the SDK reason.
+      vi.resetModules()
+      vi.stubGlobal('useRuntimeConfig', () => ({
+        bitrix24WebhookUrl: `${FAKE_WEBHOOK}!!INVALID!!`,
+      }))
+      const { useBitrix24 } = await import('../../../server/utils/bitrix24')
+
       let captured: unknown
       try {
-        B24Hook.fromWebhookUrl(malformed)
+        useBitrix24()
       } catch (err) {
         captured = err
       }
-      // If the SDK's parser accepted the malformed string (unlikely), the
-      // test is inert — we still pass because no leak occurred.
+      // We don't depend on whether SDK actually rejects the malformed
+      // input — only that IF it does, the error our wrapper throws does
+      // not contain the sentinel.
       if (captured) {
-        const errString = String(captured) + JSON.stringify(captured, Object.getOwnPropertyNames(captured))
-        expect(errString, 'SDK parse-error wrap leaked the webhook secret').not.toContain(SENTINEL_SECRET)
+        const errString = String((captured as Error).message ?? captured)
+        expect(errString, 'useBitrix24 rewrap leaked the webhook secret').not.toContain(SENTINEL_SECRET)
       }
     })
   })

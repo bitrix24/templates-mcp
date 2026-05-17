@@ -89,14 +89,15 @@ Full details in the root [`CONTRIBUTING.md`](../../CONTRIBUTING.md). Short versi
 
 Patch updates auto-merge when CI is green. Minor (for 1.x+) and major updates require manual review. `@bitrix24/b24jssdk*` and the MCP stack are critical-path and always need maintainer review. Don't try to bypass Renovate by hand-editing `package.json` unless explicitly asked — that creates churn.
 
-**`@bitrix24/b24jssdk` bumps** carry a credential-leak risk: the SDK has access to the webhook URL (which contains a secret) and we wire its logger into ours. If a new SDK version starts logging the URL on any path, the secret leaks to every log sink. Before merging a bump:
+**`@bitrix24/b24jssdk` bumps** carry a credential-leak risk: SDK 1.1.1 already leaks the webhook URL via its HTTP layer's `getLogger().info('post/send', { method: <full-url> })` callsite — we defend with `makeRedactingLogger` in `server/utils/bitrix24.ts` (issue #26). A new SDK version can add fresh leak surfaces. Before merging a bump:
 
-1. Run `pnpm test --run tests/unit/utils/sdk-logger-leak.test.ts` — the static scan + runtime scan are a CI gate (issue #26).
-2. If the static scan fails (new `_logger.*` callsite in the bumped SDK references a URL-shaped identifier), read the new callsite's logged payload. If it includes URL data, **open an issue and HOLD the bump.**
-3. Update `docs/SECURITY-AUDIT.md` with the new SDK version, the new callsite count, and a one-line description of each new callsite.
-4. Re-run the integration suite (`tests/integration/`) against a live portal to confirm no behaviour regressions.
+1. Run `pnpm test --run tests/unit/utils/sdk-logger-leak.test.ts` and `pnpm test --run tests/unit/utils/logger-redactor.test.ts`. Both are CI gates.
+2. If the static scan fails (new `_logger.*` / `getLogger().*` callsite in the bumped SDK references a URL-shaped identifier), read the new callsite's logged payload. If it includes URL data not covered by our redactor regex, extend the redactor or refuse the bump.
+3. If the BASELINE test starts FAILING (sentinel no longer appears in raw logs), SDK upstream may have fixed the leak — re-audit and update `docs/SECURITY-AUDIT.md`.
+4. Update the **"Audit pass — SDK <version>"** section of `docs/SECURITY-AUDIT.md` with the new version, callsite count per surface, and a one-line description of each new callsite touching a URL-shaped field.
+5. Re-run the integration suite (`tests/integration/`) against a live portal to confirm no behaviour regressions.
 
-Skipping the audit on a bump means trusting the SDK maintainers' judgement about credential disclosure — re-establish that trust on every major version, don't assume it across bumps.
+Skipping the audit means trusting the SDK maintainers' judgement about credential disclosure — re-establish that trust on every bump (minor or patch can add a logger callsite as easily as a major).
 
 ## When asked to add a new tool
 
