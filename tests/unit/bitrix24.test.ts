@@ -78,6 +78,27 @@ describe('useBitrix24', () => {
     expect(() => useBitrix24()).toThrow(/Invalid webhook URL format/) // original SDK reason included
   })
 
+  it('redacts the webhook secret if the SDK error message echoes the input URL (issue #26)', async () => {
+    // If the operator misconfigures the env var with a real-but-malformed
+    // webhook (e.g. trailing garbage), the SDK's parse error can include the
+    // raw URL — secret and all — verbatim in its message. The rewrap path
+    // interpolates that message into the new Error, which Nuxt's error
+    // handler will log. `redactString(rawReason)` must scrub the secret
+    // before it reaches the rewrapped message.
+    runtimeConfig.bitrix24WebhookUrl = 'https://example.bitrix24.ru/rest/1/SUPERSECRETXYZ/garbage'
+    fromWebhookUrl.mockImplementation(() => {
+      throw new Error('Invalid webhook URL format: https://example.bitrix24.ru/rest/1/SUPERSECRETXYZ/garbage')
+    })
+
+    const { useBitrix24 } = await loadFresh()
+    let caught: Error | undefined
+    try { useBitrix24() } catch (err) { caught = err as Error }
+
+    expect(caught).toBeDefined()
+    expect(caught!.message).not.toContain('SUPERSECRETXYZ')
+    expect(caught!.message).toContain('<REDACTED>')
+  })
+
   it('passes a LoggerInterface-shaped object into client.setLogger', async () => {
     runtimeConfig.bitrix24WebhookUrl = 'https://example.bitrix24.ru/rest/1/abc/'
     const { useBitrix24 } = await loadFresh()

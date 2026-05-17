@@ -95,7 +95,8 @@ Patch updates auto-merge when CI is green. Minor (for 1.x+) and major updates re
 2. If the static scan fails (new `_logger.*` / `getLogger().*` callsite in the bumped SDK references a URL-shaped identifier), read the new callsite's logged payload. If it includes URL data not covered by our redactor regex, extend the redactor or refuse the bump.
 3. If the BASELINE test starts FAILING (sentinel no longer appears in raw logs), SDK upstream may have fixed the leak — re-audit and update `docs/SECURITY-AUDIT.md`.
 4. Update the **"Audit pass — SDK <version>"** section of `docs/SECURITY-AUDIT.md` with the new version, callsite count per surface, and a one-line description of each new callsite touching a URL-shaped field.
-5. Re-run the integration suite (`tests/integration/`) against a live portal to confirm no behaviour regressions.
+5. **Check logger-context shape**: `redactValue` in `server/utils/logger-redactor.ts` only recurses into objects with `Object.prototype` (plain object literals). If a bumped SDK starts passing class instances, `Object.create(null)` contexts, `Map`, `Set`, or `Buffer` as the `context` argument, URL-shaped fields inside them bypass redaction. Inspect the new HTTP-layer callsites — if any pass a non-plain-object context, extend `redactValue` to handle that prototype before merging.
+6. Re-run the integration suite (`tests/integration/`) against a live portal to confirm no behaviour regressions.
 
 Skipping the audit means trusting the SDK maintainers' judgement about credential disclosure — re-establish that trust on every bump (minor or patch can add a logger callsite as easily as a major).
 
