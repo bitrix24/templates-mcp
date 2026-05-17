@@ -1,4 +1,10 @@
-import type { AjaxResult, B24Hook } from '@bitrix24/b24jssdk'
+import type {
+  AjaxResult,
+  B24Hook,
+  BatchCommandsArrayUniversal,
+  CallBatchResult,
+  TypeCallParams,
+} from '@bitrix24/b24jssdk'
 import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
 
 /**
@@ -18,6 +24,15 @@ import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
  *
  * See `skills/manage-bx24-template-mcp/adding-tools.md` for the canonical
  * usage template.
+ *
+ * Type story: the SDK types `params?: TypeCallParams` (object-shaped) on
+ * v2/v3 call.make, but the runtime serialiser also accepts positional
+ * arrays — some v2 endpoints (`task.checklistitem.{complete,renew,delete}`)
+ * are documented with positional params only. We expose this via overloads
+ * so each callsite picks the right shape and TypeScript carries the right
+ * type through. The one localised cast that remains for the array case
+ * (single `as TypeCallParams`, with a comment at the boundary) is the
+ * unavoidable cost of an SDK type that doesn't model positional params.
  */
 
 /**
@@ -36,7 +51,7 @@ import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
 export async function callV3<T>(
   b24: B24Hook,
   method: string,
-  params: Record<string, unknown>,
+  params: TypeCallParams,
   errorContext: string,
 ): Promise<T | undefined> {
   let response: AjaxResult<T>
@@ -56,24 +71,28 @@ export async function callV3<T>(
  * `task.checklistitem.*`, …) and return its `result` payload. Same contract
  * as {@link callV3}.
  *
- * Accepts either an object-shaped `params` (the common case) or a positional
- * array (some v2 methods are documented with positional args only — e.g.
- * `task.checklistitem.{complete,renew}` per
+ * Accepts an object-shaped `TypeCallParams` for the common case (CRM, tasks
+ * list, etc.) OR a positional `unknown[]` for v2 methods documented with
+ * positional args (e.g. `task.checklistitem.{complete,renew}`,
  * https://apidocs.bitrix24.ru/api-reference/tasks/checklist-item/). The
- * underlying SDK serialiser honours both shapes; we widen the type here so
- * callers do not need to cast at every call site.
+ * runtime serialiser handles both shapes; the union return keeps callers
+ * cast-free.
  */
 export async function callV2<T>(
   b24: B24Hook,
   method: string,
-  params: Record<string, unknown> | unknown[],
+  params: TypeCallParams | unknown[],
   errorContext: string,
 ): Promise<T | undefined> {
   let response: AjaxResult<T>
   try {
+    // The SDK only types positional params for some legacy v2 endpoints
+    // (`task.checklistitem.{complete,renew}`) — the type signature accepts
+    // only `TypeCallParams` (object-shaped). The runtime serialiser does
+    // honour positional arrays; this single localised cast is the bridge.
     response = await b24.actions.v2.call.make<T>({
       method,
-      params: params as unknown as Parameters<typeof b24.actions.v2.call.make>[0]['params'],
+      params: Array.isArray(params) ? (params as unknown as TypeCallParams) : params,
     })
   } catch (err) {
     throw toToolError(err, errorContext)
@@ -92,10 +111,10 @@ export async function callV2<T>(
  * positional array (`[a, b]`) — some v2 endpoints, notably
  * `task.checklistitem.{complete,renew}`, are documented with positional
  * params only. The runtime serialiser handles both shapes; we widen the
- * tuple's second element to `Record | unknown[]` so callers can pass either
- * without casting at the call site.
+ * tuple's second element to `TypeCallParams | unknown[]` so callers can
+ * pass either without casting at the call site.
  */
-export type BatchV3Call = [method: string, params: Record<string, unknown> | unknown[]]
+export type BatchV3Call = [method: string, params: TypeCallParams | unknown[]]
 
 /**
  * Run multiple v3 calls in a single HTTP batch. Returns an array of
@@ -115,10 +134,10 @@ export async function batchV3<T>(
   calls: BatchV3Call[],
   errorContext: string,
 ): Promise<Array<AjaxResult<T>>> {
-  let response
+  let response: CallBatchResult<T>
   try {
     response = await b24.actions.v3.batch.make<T>({
-      calls: calls as unknown as Parameters<typeof b24.actions.v3.batch.make>[0]['calls'],
+      calls: calls as BatchCommandsArrayUniversal,
       options: { isHaltOnError: false, returnAjaxResult: true },
     })
   } catch (err) {
@@ -127,11 +146,13 @@ export async function batchV3<T>(
   if (!response.isSuccess) {
     throw new Bitrix24ToolError(response.getErrorMessages().join('; ') || errorContext)
   }
-  // SDK behaviour with `returnAjaxResult: true` is documented in the SDK's
-  // own `batch.make` example — the bare-payload return type is replaced by
-  // an array of full `AjaxResult<T>` rows. The cast localises that single
-  // type-system gap so callers see a clean `AjaxResult<T>[]`.
-  return response.getData() as unknown as Array<AjaxResult<T>>
+  // With `returnAjaxResult: true` and a tuple-array `calls` shape, the SDK
+  // returns `Result<AjaxResult<T>[]>`. The union return type of
+  // `CallBatchResult<T>` covers two other shapes too (named-commands map,
+  // bare-payload) which we don't trigger here — the cast localises that
+  // single type-system gap. Verified runtime shape covered by every batch
+  // test in tests/unit/utils/task-lifecycle.test.ts.
+  return response.getData() as Array<AjaxResult<T>>
 }
 
 /**
@@ -147,10 +168,10 @@ export async function batchV2<T>(
   calls: BatchV3Call[],
   errorContext: string,
 ): Promise<Array<AjaxResult<T>>> {
-  let response
+  let response: CallBatchResult<T>
   try {
     response = await b24.actions.v2.batch.make<T>({
-      calls: calls as unknown as Parameters<typeof b24.actions.v2.batch.make>[0]['calls'],
+      calls: calls as BatchCommandsArrayUniversal,
       options: { isHaltOnError: false, returnAjaxResult: true },
     })
   } catch (err) {
@@ -159,5 +180,5 @@ export async function batchV2<T>(
   if (!response.isSuccess) {
     throw new Bitrix24ToolError(response.getErrorMessages().join('; ') || errorContext)
   }
-  return response.getData() as unknown as Array<AjaxResult<T>>
+  return response.getData() as Array<AjaxResult<T>>
 }

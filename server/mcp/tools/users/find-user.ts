@@ -1,3 +1,4 @@
+import type { TypeCallParams } from '@bitrix24/b24jssdk'
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
@@ -112,15 +113,16 @@ export default defineMcpTool({
     }
 
     const b24 = useBitrix24()
-    // user.search is v2 and uses a non-standard params shape: `sort` and
-    // `order` are scalar strings (not the `Record<string, …>` that v3-shaped
-    // `TypeCallParams.order` documents). Cast keeps the wire payload honest
-    // while the type stays correct for the other 99 % of calls.
+    // user.search is v2 and uses a non-standard params shape: `order` is a
+    // scalar 'ASC' / 'DESC' (not the `Record<string, 'ASC' | 'DESC'>`
+    // documented by `TypeCallParams.order`). The SDK type is wrong for this
+    // one endpoint; this single cast bridges the type-system gap without
+    // forcing every other callsite to widen.
     const all
       = (await callV2<UserSearchRow[]>(
           b24,
           'user.search',
-          { FILTER: filter, sort: 'ID', order: 'ASC' } as unknown as Record<string, unknown>,
+          { FILTER: filter, sort: 'ID', order: 'ASC' } as unknown as TypeCallParams,
           'Failed to search Bitrix24 users',
         ))
       ?? []
