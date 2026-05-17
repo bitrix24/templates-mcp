@@ -21,7 +21,7 @@ import { callV2 } from '~/server/utils/sdk-helpers'
 export default defineMcpTool({
   name: 'bitrix24_add_checklist_item',
   description:
-    'Add a new item to a Bitrix24 task checklist. `parentId` controls nesting: omit (or pass 0) to start a NEW checklist on the task — the `title` then becomes the checklist name. Pass an existing item id to nest under it. Returns the new item id. The whole checklist tree is flat with `PARENT_ID` references — fetch it via `bitrix24_list_checklist_items`.',
+    'Use this for one of two operator intents: (a) START A NEW CHECKLIST on a task — just pass `taskId` and `title`; the title becomes the checklist heading. (b) ADD AN ITEM under an existing checklist — pass the heading id (look it up via `bitrix24_list_checklist_items` and take the one whose `parentId` is 0) as `parentId`. Returns the new item id. Bitrix24 stores the whole checklist tree as a flat list with `parentId` references; this tool adds one node at a time.',
   inputSchema: {
     taskId: z.number().int().positive().describe('Task id the checklist belongs to.'),
     title: z

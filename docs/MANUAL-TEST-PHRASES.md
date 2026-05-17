@@ -50,7 +50,7 @@ When you see a Bitrix24 method name in a tool's source, sanity-check it has the 
 
 | Mark | Meaning |
 |---|---|
-| ✅ | Tool exists today (PR #4). Expect the LLM to call the right tool. |
+| ✅ | Tool exists today — see the API version table above for which PR introduced each tool group. Expect the LLM to call the right tool. |
 | ⏳ | Tool **does not exist yet** — queued for a future PR. Expect the LLM to either fail gracefully or suggest a workaround. Track these as "wishlist hits". |
 | 🧠 | **Composite query** — no single tool covers it. The LLM should chain existing tools (list + get + reason). Watch for hallucinated tool names. |
 
@@ -195,25 +195,27 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 
 ---
 
-## 8. Lifecycle (start / pause / complete / approve / decline / defer / renew) ⏳ — NEEDS NEW TOOLS
+## 8. Lifecycle (start / pause / complete / approve / disapprove / defer / renew) ✅ (PR #5)
 
-**Status:** no tools today. REST methods: `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}`.
+**Status:** seven thin v3 wrappers shipped. REST: `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}`. Each takes `{ taskId }` (or `taskId: number[]` for batch mode up to 25, `force: true` to override) and returns the resulting status.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 8.1 | Я взялся за задачу 123. | ⏳ `start_task { taskId: 123 }` |
-| 8.2 | Пауза в задаче 123, отвлекли. | ⏳ `pause_task { taskId: 123 }` |
-| 8.3 | Закрой задачу 123, я её сделал. | ⏳ `complete_task { taskId: 123 }` |
-| 8.4 | Прими работу по задаче 123. | ⏳ `approve_task { taskId: 123 }` |
-| 8.5 | Отправь задачу 123 на доработку, исполнитель сделал не то. | ⏳ `disapprove_task { taskId: 123 }` |
-| 8.6 | Отложи задачу 123, пока без приоритета. | ⏳ `defer_task { taskId: 123 }` |
-| 8.7 | Восстанови задачу 123 из закрытых. | ⏳ `renew_task { taskId: 123 }` |
-| 8.8 | Start working on task 123 and add a comment "поехали". | ⏳ Chain: `start_task` then `add_task_comment` |
+| 8.1 | Я взялся за задачу 123. | `start_task { taskId: 123 }` |
+| 8.2 | Пауза в задаче 123, отвлекли. | `pause_task { taskId: 123 }` |
+| 8.3 | Закрой задачу 123, я её сделал. | `complete_task { taskId: 123 }` |
+| 8.4 | Прими работу по задаче 123. | `approve_task { taskId: 123 }` |
+| 8.5 | Отправь задачу 123 на доработку, исполнитель сделал не то. | `disapprove_task { taskId: 123 }` |
+| 8.6 | Отложи задачу 123, пока без приоритета. | `defer_task { taskId: 123 }` |
+| 8.7 | Восстанови задачу 123 из закрытых. | `renew_task { taskId: 123 }` |
+| 8.8 | Start working on task 123 and add a comment "поехали". | Chain: `start_task` then `add_task_comment` |
+| 8.9 | Закрой задачи 5, 7 и 12 одним вызовом. | `complete_task { taskId: [5, 7, 12] }` — batch mode via `actions.v3.batch.make`, returns `{ batch, total, ok, failed, results }`. |
 
-**Proposed tools:** a single thin wrapper per lifecycle action. Each takes `{ taskId }` and returns the resulting status. Names mirror Bitrix24 REST one-to-one for predictability:
-- `bitrix24_start_task`, `bitrix24_pause_task`, `bitrix24_complete_task`, `bitrix24_approve_task`, `bitrix24_disapprove_task`, `bitrix24_defer_task`, `bitrix24_renew_task`
+Trade-off recorded for the future: seven separate tools (one per verb) rather than one `bitrix24_change_task_status` with an enum, so the LLM gets per-action description text. Tracked as `rfc(evals): measure cost — N specialized lifecycle tools vs 1 enum-based tool` in issue #9.
 
-Alternative: one `bitrix24_change_task_status` with `action: "start"|"pause"|...` enum. **Trade-off**: one tool keeps the surface smaller (LLM less likely to confuse), but loses the per-action description text where we explain when to use each. We'll likely go with **separate tools** for that reason.
+**Out of scope / queued for later PRs:**
+- `accept` / `decline` / `delegate` — third-leg lifecycle actions not in `tasks.task.*`. Tracked in issue #8.
+- `bitrix24_find_task` for free-text task resolution — tracked in issue #6.
 
 ---
 
@@ -305,7 +307,7 @@ Roughly in order of value-for-effort:
 | Priority | PR scope | Tools |
 |---|---|---|
 | ✅ | **`feat(tools): task lifecycle`** (PR #5) | `start_task`, `pause_task`, `complete_task`, `approve_task`, `disapprove_task`, `defer_task`, `renew_task` (7 thin wrappers) |
-| ✅ | **`feat(tools): task checklist`** | `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` |
+| ✅ | **`feat(tools): task checklist`** (PR #17) | `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` |
 | 1 | **`feat(tools): list task comments + subtask parentId`** | `list_task_comments` (new tool, filters service messages by default); schema bump on `create_task` to accept `parentId` |
 | 2 | **`feat(tools): task time tracking`** | `add_elapsed_time`, `list_elapsed_time` |
 | 3 | **`feat(tools): task dependencies`** | `add_task_dependency`, `remove_task_dependency`, `list_task_dependencies` |

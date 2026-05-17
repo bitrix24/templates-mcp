@@ -19,6 +19,7 @@ describe('toChecklistItemShort', () => {
         ID: '477',
         TASK_ID: '8017',
         PARENT_ID: '431',
+        CREATED_BY: '503',
         TITLE: 'Подготовить договор',
         SORT_INDEX: '2',
         IS_COMPLETE: 'Y',
@@ -34,6 +35,7 @@ describe('toChecklistItemShort', () => {
       sortIndex: 2,
       isComplete: true,
       isImportant: false,
+      createdBy: 503,
       toggledBy: 503,
       toggledDate: '2025-11-10T15:02:30+03:00',
     })
@@ -52,6 +54,7 @@ describe('toChecklistItemShort', () => {
       TOGGLED_DATE: '',
     })
     expect(heading?.parentId).toBe(0)
+    expect(heading?.createdBy).toBeNull()
     expect(heading?.toggledBy).toBeNull()
     // An empty TOGGLED_DATE string is normalised to null so the agent can
     // distinguish "never toggled" from a valid timestamp.
@@ -67,10 +70,25 @@ describe('toChecklistItemShort', () => {
       sortIndex: 1,
       isComplete: 'N',
       isImportant: 'Y',
+      createdBy: 47,
       toggledBy: null,
       toggledDate: null,
     })
-    expect(item).toMatchObject({ id: 10, taskId: 99, isComplete: false, isImportant: true })
+    expect(item).toMatchObject({ id: 10, taskId: 99, isComplete: false, isImportant: true, createdBy: 47 })
+  })
+
+  it('treats unexpected boolean encodings as false (pins to literal "Y")', () => {
+    // Bitrix24 v2 ships boolean fields as "Y" / "N". Anything else is drift —
+    // we surface false rather than silently accepting a truthy-but-wrong wire.
+    const item = toChecklistItemShort({
+      ID: 1,
+      TASK_ID: 1,
+      TITLE: 'x',
+      IS_COMPLETE: 1, // numeric — not in the contract
+      IS_IMPORTANT: true, // boolean — not in the contract
+    })
+    expect(item?.isComplete).toBe(false)
+    expect(item?.isImportant).toBe(false)
   })
 
   it('returns null on shapes missing id / taskId / title', () => {

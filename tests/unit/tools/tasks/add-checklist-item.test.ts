@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
@@ -25,6 +26,7 @@ interface AddInput {
 
 const tool = (await import('../../../../server/mcp/tools/tasks/add-checklist-item')).default as unknown as {
   handler: (input: AddInput) => Promise<ToolContent>
+  inputSchema: { title: z.ZodString; taskId: z.ZodNumber }
 }
 
 describe('bitrix24_add_checklist_item', () => {
@@ -98,5 +100,16 @@ describe('bitrix24_add_checklist_item', () => {
       name: 'Bitrix24ToolError',
       message: 'action not allowed',
     })
+  })
+
+  it('schema rejects empty title at the Zod layer', () => {
+    const parsed = tool.inputSchema.title.safeParse('')
+    expect(parsed.success).toBe(false)
+  })
+
+  it('schema rejects non-positive taskId at the Zod layer', () => {
+    expect(tool.inputSchema.taskId.safeParse(0).success).toBe(false)
+    expect(tool.inputSchema.taskId.safeParse(-1).success).toBe(false)
+    expect(tool.inputSchema.taskId.safeParse(1.5).success).toBe(false)
   })
 })

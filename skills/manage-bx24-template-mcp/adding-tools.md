@@ -92,7 +92,7 @@ Note the absence of `try`/`catch` in this template: `callV3` already throws `Bit
 
 ## When the REST method is v2
 
-`user.*`, `task.commentitem.*`, `task.elapseditem.*`, and other legacy methods live under v2. Use `callV2` instead of `callV3` — same signature, same return contract.
+`user.*`, `task.commentitem.*`, `task.checklistitem.*`, `task.elapseditem.*`, and other legacy methods live under v2. Use `callV2` instead of `callV3` — same signature, same return contract. `callV2`'s `params` accepts either an object (the common case) or a positional array — some v2 methods are documented with positional args only (e.g. `task.checklistitem.{complete,renew}` per apidocs.bitrix24.ru).
 
 ```ts
 const user = await callV2<UserCurrentResponse>(
@@ -101,13 +101,30 @@ const user = await callV2<UserCurrentResponse>(
   {},
   'Failed to fetch current Bitrix24 user',
 )
+
+// Positional [taskId, itemId] — accepted directly, no cast needed.
+await callV2<unknown>(
+  b24,
+  'task.checklistitem.complete',
+  [taskId, itemId],
+  `Failed to complete Bitrix24 checklist item ${itemId} on task ${taskId}`,
+)
 ```
 
 `user.search` has a non-standard params shape (scalar `sort` / `order`); see `server/mcp/tools/users/find-user.ts` for the documented `as unknown as Record<string, unknown>` cast. Rarely needed elsewhere.
 
+### Shared factory pattern (multiple thin wrappers over one verb shape)
+
+When a group of tools shares the wire signature — same params, same response — keep the boilerplate in a single factory file rather than copy-pasting `defineMcpTool` N times. Two precedents:
+
+- `server/utils/task-lifecycle.ts` — wraps the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}` v3 methods. Each tool file is a four-line `defineTaskLifecycleTool({...})` call.
+- `server/utils/checklist.ts` — wraps the three `task.checklistitem.{complete,renew,delete}` v2 methods. Same shape but uses `callV2` / `batchV2` and positional `[taskId, itemId]` params.
+
+A factory pays for itself when (a) three or more tools share the call shape and (b) the per-tool difference is description text + method name. Otherwise repeat the four lines.
+
 ## When you need a batch
 
-If the tool acts on a collection (10–25 ids), use **`batchV3`** — one HTTP round-trip with up to 50 sub-calls. Don't loop `callV3` sequentially; that pattern existed briefly during PR #12 and was replaced (it lost the SDK's transactional report shape and ran ~25× slower).
+If the tool acts on a collection (10–50 ids), use **`batchV3`** (for v3 methods) or **`batchV2`** (for v2 methods) — one HTTP round-trip with up to 50 sub-calls. Don't loop `callV3` / `callV2` sequentially; that pattern existed briefly and was replaced (it lost the SDK's transactional report shape and ran ~25× slower).
 
 ```ts
 import { batchV3 } from '~/server/utils/sdk-helpers'

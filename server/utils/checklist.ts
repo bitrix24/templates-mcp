@@ -1,27 +1,21 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
-import { callV2 } from '~/server/utils/sdk-helpers'
+import { Bitrix24ToolError } from '~/server/utils/errors'
+import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
+import type { BitrixChecklistItemRaw } from '~/server/types/bitrix24'
 
 /**
- * Shared types and helpers for the Bitrix24 task-checklist tools.
+ * Shared types + helpers for the five `task.checklistitem.*` tools.
  *
- * The five tools (`add` / `list` / `complete` / `renew` / `delete`) wrap the
- * `task.checklistitem.*` REST methods. These methods are v2-only — Bitrix24
- * has no v3 `tasks.task.checklist.*` namespace for actual tasks (the
- * `tasks.template.checklist.*` family is for task templates only). v2 is the
- * documented and stable surface; the `apidocs.bitrix24.ru/api-reference/tasks/
- * checklist-item/*` pages do not flag these as deprecated.
- *
- * Response field casing mirrors v2 conventions (UPPER_SNAKE on the wire), so
- * `toChecklistItemShort` mirrors `toTaskShort` and tolerates the mixed-casing
- * shapes the SDK can hand back depending on transform middleware.
+ * v2-only namespace — v3 has `tasks.template.checklist.*` for task templates
+ * but no equivalent for tasks themselves. The five apidocs pages
+ * (apidocs.bitrix24.ru/api-reference/tasks/checklist-item/*) are documented
+ * and not flagged as deprecated.
  */
 
-/** Subset of checklist-item fields surfaced to the agent. The full Bitrix24
- *  response carries 11+ fields (members, attachments, …); trimming keeps the
- *  agent context window cheap and matches what `list_tasks` does for tasks. */
+/** Subset of checklist-item fields surfaced to the agent. Mirrors what
+ *  `list_tasks` does for tasks — keep the response small and predictable. */
 export interface ChecklistItemShort {
   id: number
   taskId: number
@@ -30,6 +24,7 @@ export interface ChecklistItemShort {
   sortIndex: number
   isComplete: boolean
   isImportant: boolean
+  createdBy: number | null
   toggledBy: number | null
   toggledDate: string | null
 }
@@ -39,18 +34,17 @@ function pick<T>(obj: Record<string, unknown>, lower: string, upper: string): T 
   return v === undefined ? null : (v as T)
 }
 
-/** Coerce Bitrix24's stringified numeric ids ("8017") into actual numbers.
- *  Returns null for absent / non-numeric values so the JSON payload distinguishes
- *  "missing" from "0". */
 function toNumber(raw: unknown): number | null {
   if (raw === null || raw === undefined || raw === '') return null
   const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : (raw as number)
   return Number.isFinite(n) ? n : null
 }
 
+/** Bitrix24 v2 ships boolean fields as the literal strings `"Y"` / `"N"`.
+ *  Anything else is treated as false rather than silently accepted — drift
+ *  surfaces loud instead of producing wrong-but-truthy data. */
 function toBool(raw: unknown): boolean {
-  // Bitrix24 returns the literal string "Y" / "N"; sometimes "1" / "0" via batch.
-  return raw === 'Y' || raw === true || raw === 1 || raw === '1'
+  return raw === 'Y'
 }
 
 export function toChecklistItemShort(raw: unknown): ChecklistItemShort | null {
@@ -63,15 +57,16 @@ export function toChecklistItemShort(raw: unknown): ChecklistItemShort | null {
   return {
     id,
     taskId,
-    // parentId can be the literal number 0 (top-level checklist heading) or a
-    // stringified id ("431") for nested items. Both forms are valid; we
-    // surface 0 unchanged so the agent can identify headings.
+    // parentId === 0 marks a checklist heading; the wire ships 0 as a number
+    // for headings and a stringified id for nested items.
     parentId: toNumber(pick(r, 'parentId', 'PARENT_ID')) ?? 0,
     title,
     sortIndex: toNumber(pick(r, 'sortIndex', 'SORT_INDEX')) ?? 0,
     isComplete: toBool(pick(r, 'isComplete', 'IS_COMPLETE')),
     isImportant: toBool(pick(r, 'isImportant', 'IS_IMPORTANT')),
+    createdBy: toNumber(pick(r, 'createdBy', 'CREATED_BY')),
     toggledBy: toNumber(pick(r, 'toggledBy', 'TOGGLED_BY')),
+    // Empty string -> null so callers can tell "never toggled" from "real timestamp".
     toggledDate: pick<string>(r, 'toggledDate', 'TOGGLED_DATE') || null,
   }
 }
@@ -79,15 +74,15 @@ export function toChecklistItemShort(raw: unknown): ChecklistItemShort | null {
 /**
  * Factory for the three `task.checklistitem.{complete,renew,delete}` tools.
  *
- * All three take the same `[TASKID, ITEMID]` positional contract on the wire
- * (the documented form on apidocs.bitrix24.ru — only the `delete` page also
- * shows a named `{TASKID, ITEMID}` example, while `complete`/`renew` show
- * positional only). Positional is the lowest-common-denominator that all
- * three honour. All three accept either a single `itemId: number` or an
- * array for batch mode — same shape as the lifecycle factory in
- * `task-lifecycle.ts`, kept separate because (a) the wire call is positional,
- * not named, and (b) `task.checklistitem.*` is v2-only, so we cannot piggy-
- * back on the v3 batch endpoint and have to loop `callV2` sequentially.
+ * All three take positional `[taskId, itemId]` on the wire (documented form
+ * on apidocs.bitrix24.ru) and return a boolean. Single mode = one `callV2`.
+ * Batch mode = one `batchV2` round-trip via `actions.v2.batch.make` (cap 50
+ * per Bitrix24's server-side limit).
+ *
+ * For `delete` only: when the target is a checklist heading (`parentId: 0`)
+ * the request wipes the whole sub-tree. To prevent silent data loss we
+ * require an explicit `confirmDeleteHeading: true` for those calls — see
+ * `runOne` / `runBatch`.
  */
 export type ChecklistActionMethod =
   | 'task.checklistitem.complete'
@@ -107,10 +102,9 @@ export interface ChecklistActionToolSpec {
   description: string
 }
 
+const DEFAULT_BATCH_CAP = 50
 const CHECKLIST_ACTION_USAGE_NOTES =
-  ' Accepts a single item id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. The Bitrix24 SDK paces outbound calls automatically. If the operator names the item in free text instead of an id, list the checklist first via `bitrix24_list_checklist_items` and match by title.'
-
-const DEFAULT_BATCH_CAP = 25
+  ` Accepts a single item id OR an array of ids (batch mode, up to ${DEFAULT_BATCH_CAP} — pass \`force: true\` to override). Batch mode goes through one HTTP round-trip and returns a \`{ batch, total, ok, failed, results }\` summary; per-id errors do not abort the batch. If the operator names the item in free text instead of an id, list the checklist first via \`bitrix24_list_checklist_items\` and match by title.`
 
 interface BatchEntryResult {
   itemId: number
@@ -118,7 +112,14 @@ interface BatchEntryResult {
   error?: string
 }
 
+/** Positional `[taskId, itemId]` tuple — the documented wire form for the
+ *  three action methods. `callV2`/`batchV2` accept positional params. */
+function positional(taskId: number, itemId: number): unknown[] {
+  return [taskId, itemId]
+}
+
 export function defineChecklistActionTool(spec: ChecklistActionToolSpec) {
+  const isDelete = spec.method === 'task.checklistitem.delete'
   return defineMcpTool({
     name: spec.name,
     description: spec.description + CHECKLIST_ACTION_USAGE_NOTES,
@@ -135,31 +136,44 @@ export function defineChecklistActionTool(spec: ChecklistActionToolSpec) {
         .describe(
           `Set true to allow batches larger than ${DEFAULT_BATCH_CAP}. Use sparingly — MCP clients may time out on long-running tool calls. Ignored for single-item input.`,
         ),
+      // Only the delete tool surfaces this gate. Other action tools omit it
+      // from the schema entirely so the LLM doesn't see an irrelevant field.
+      ...(isDelete
+        ? {
+            confirmDeleteHeading: z
+              .boolean()
+              .optional()
+              .describe(
+                'Required when deleting a checklist HEADING (an item whose parentId is 0). Heading deletion wipes the entire checklist — heading + every child — with no undo. The tool refuses with a HEADING_DELETE_NEEDS_CONFIRM error unless you confirm. Confirm with the operator before passing true. Ignored when the target is a regular item.',
+              ),
+          }
+        : {}),
     },
-    handler: async (input: { taskId: number; itemId: number | number[]; force?: boolean }) => {
-      const { taskId, itemId, force } = input
+    handler: async (input: {
+      taskId: number
+      itemId: number | number[]
+      force?: boolean
+      confirmDeleteHeading?: boolean
+    }) => {
+      const { taskId, itemId, force, confirmDeleteHeading } = input
+      const confirm = confirmDeleteHeading ?? false
       if (typeof itemId === 'number') {
-        return runOne(spec, taskId, itemId)
+        return runOne(spec, taskId, itemId, confirm)
       }
-      return runBatch(spec, taskId, itemId, force ?? false)
+      return runBatch(spec, taskId, itemId, force ?? false, confirm)
     },
   })
 }
 
-/**
- * Wire the positional `[taskId, itemId]` tuple through `callV2`. The SDK
- * types `params` as `Record<string, unknown>`, but the v2 REST adapter
- * serialises `[a, b]` to `0=a&1=b` form — which is what `task.checklistitem.
- * {complete,renew,delete}` expect per the apidocs examples. Localise the
- * cast so the type-system gap doesn't propagate beyond this file.
- */
-function positional(taskId: number, itemId: number): Record<string, unknown> {
-  return [taskId, itemId] as unknown as Record<string, unknown>
-}
+async function runOne(spec: ChecklistActionToolSpec, taskId: number, itemId: number, confirmDeleteHeading: boolean) {
+  const b24 = useBitrix24()
 
-async function runOne(spec: ChecklistActionToolSpec, taskId: number, itemId: number) {
+  if (spec.method === 'task.checklistitem.delete' && !confirmDeleteHeading) {
+    await assertNotHeading(b24, taskId, itemId)
+  }
+
   await callV2<unknown>(
-    useBitrix24(),
+    b24,
     spec.method,
     positional(taskId, itemId),
     `Failed to ${spec.verb} Bitrix24 checklist item ${itemId} on task ${taskId}`,
@@ -184,6 +198,7 @@ async function runBatch(
   taskId: number,
   itemIds: number[],
   force: boolean,
+  confirmDeleteHeading: boolean,
 ) {
   if (itemIds.length > DEFAULT_BATCH_CAP && !force) {
     throw new Bitrix24ToolError(
@@ -193,27 +208,38 @@ async function runBatch(
   }
 
   const b24 = useBitrix24()
-  const results: BatchEntryResult[] = []
 
-  // Sequential, not parallel: `task.checklistitem.*` is v2 and cannot ride
-  // the v3 batch endpoint, so we loop `callV2`. The SDK's client-side rate
-  // limiter would serialise them anyway, and sequential ordering preserves
-  // a clean results[] alignment with the input order and predictable error
-  // semantics.
-  for (const itemId of itemIds) {
-    try {
-      await callV2<unknown>(
-        b24,
-        spec.method,
-        positional(taskId, itemId),
-        `Failed to ${spec.verb} Bitrix24 checklist item ${itemId} on task ${taskId}`,
-      )
-      results.push({ itemId, ok: true })
-    } catch (err) {
-      const wrapped = toToolError(err, `Failed to ${spec.verb} Bitrix24 checklist item ${itemId} on task ${taskId}`)
-      results.push({ itemId, ok: false, error: wrapped.message })
-    }
+  if (spec.method === 'task.checklistitem.delete' && !confirmDeleteHeading) {
+    // Single pre-flight `getlist` instead of N individual `get` calls — the
+    // heading check applies to the whole batch and getlist returns one
+    // response with parentId for every item on the task.
+    await assertBatchNoHeadings(b24, taskId, itemIds)
   }
+
+  const rows = await batchV2<unknown>(
+    b24,
+    itemIds.map((id) => [spec.method, positional(taskId, id)]),
+    `Failed to ${spec.verb} a batch of ${itemIds.length} checklist item(s) on task ${taskId}`,
+  )
+
+  const results: BatchEntryResult[] = rows.map((row, index) => {
+    const id = itemIds[index]
+    if (id === undefined) {
+      // Defensive: SDK contract guarantees rows.length === itemIds.length when
+      // returnAjaxResult is true. Fail loud rather than emitting itemId:undefined.
+      throw new Bitrix24ToolError(
+        `Batch row index ${index} has no corresponding itemId; SDK rows/input length mismatch.`,
+      )
+    }
+    if (!row.isSuccess) {
+      return {
+        itemId: id,
+        ok: false,
+        error: row.getErrorMessages().join('; ') || `Failed to ${spec.verb} Bitrix24 checklist item ${id} on task ${taskId}`,
+      }
+    }
+    return { itemId: id, ok: true }
+  })
 
   const ok = results.filter((r) => r.ok).length
   return {
@@ -231,5 +257,54 @@ async function runBatch(
         }),
       },
     ],
+  }
+}
+
+/**
+ * Refuse to delete a checklist heading unless the agent confirmed it. Reads
+ * the checklist once and matches on `parentId === 0`. If Bitrix24 returns no
+ * matching item we let the delete call proceed — its own NOT_FOUND error is
+ * a cleaner signal than fabricating one here.
+ */
+async function assertNotHeading(b24: Parameters<typeof callV2>[0], taskId: number, itemId: number): Promise<void> {
+  const items = await callV2<BitrixChecklistItemRaw[]>(
+    b24,
+    'task.checklistitem.getlist',
+    { TASKID: taskId },
+    `Failed to pre-flight delete for Bitrix24 checklist item ${itemId} on task ${taskId}`,
+  )
+  if (!Array.isArray(items)) return
+  const target = items.find((it) => toNumber(it.id ?? it.ID) === itemId)
+  if (!target) return
+  if ((toNumber(target.parentId ?? target.PARENT_ID) ?? 0) === 0) {
+    throw new Bitrix24ToolError(
+      `Item ${itemId} is a checklist HEADING on task ${taskId}; deleting it wipes the whole checklist (heading + all children) with no undo. Re-call \`bitrix24_delete_checklist_item\` with \`confirmDeleteHeading: true\` after the operator has agreed.`,
+      'HEADING_DELETE_NEEDS_CONFIRM',
+    )
+  }
+}
+
+async function assertBatchNoHeadings(
+  b24: Parameters<typeof callV2>[0],
+  taskId: number,
+  itemIds: number[],
+): Promise<void> {
+  const items = await callV2<BitrixChecklistItemRaw[]>(
+    b24,
+    'task.checklistitem.getlist',
+    { TASKID: taskId },
+    `Failed to pre-flight batch delete for Bitrix24 task ${taskId}`,
+  )
+  if (!Array.isArray(items)) return
+  const headingIds = items
+    .filter((it) => (toNumber(it.parentId ?? it.PARENT_ID) ?? 0) === 0)
+    .map((it) => toNumber(it.id ?? it.ID))
+    .filter((id): id is number => id !== null)
+  const headingHits = itemIds.filter((id) => headingIds.includes(id))
+  if (headingHits.length > 0) {
+    throw new Bitrix24ToolError(
+      `Batch refused: ${headingHits.join(', ')} ${headingHits.length === 1 ? 'is a checklist heading' : 'are checklist headings'} on task ${taskId}. Deleting a heading wipes the whole checklist with no undo. Re-call with \`confirmDeleteHeading: true\` after the operator has agreed, or split the batch.`,
+      'HEADING_DELETE_NEEDS_CONFIRM',
+    )
   }
 }

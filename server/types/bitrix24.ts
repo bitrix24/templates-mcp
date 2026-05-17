@@ -41,3 +41,32 @@ export interface TaskListEnvelope {
   tasks?: BitrixTaskRaw[]
   total?: number
 }
+
+/**
+ * Bitrix24 checklist-item wire shape — v2 `task.checklistitem.{add,getlist}`
+ * REST methods. Bitrix24 ships UPPER_SNAKE on the wire; we still tolerate
+ * camelCase in case the SDK transforms responses for a future release. All
+ * id fields can arrive stringified ("431") or numeric (0 for headings).
+ */
+export interface BitrixChecklistItemRaw {
+  id?: number | string
+  ID?: number | string
+  taskId?: number | string
+  TASK_ID?: number | string
+  parentId?: number | string
+  PARENT_ID?: number | string
+  title?: string
+  TITLE?: string
+  sortIndex?: number | string
+  SORT_INDEX?: number | string
+  isComplete?: 'Y' | 'N' | boolean
+  IS_COMPLETE?: 'Y' | 'N' | boolean
+  isImportant?: 'Y' | 'N' | boolean
+  IS_IMPORTANT?: 'Y' | 'N' | boolean
+  createdBy?: number | string | null
+  CREATED_BY?: number | string | null
+  toggledBy?: number | string | null
+  TOGGLED_BY?: number | string | null
+  toggledDate?: string | null
+  TOGGLED_DATE?: string | null
+}

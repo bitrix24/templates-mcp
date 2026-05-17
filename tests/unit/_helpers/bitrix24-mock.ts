@@ -8,6 +8,7 @@ import { vi, type Mock } from 'vitest'
  *   - `actions.v3.call.make`
  *   - `actions.v3.batch.make`
  *   - `actions.v2.call.make`
+ *   - `actions.v2.batch.make`
  *
  * Tests pass the matching fn into `mockResolvedValue` / `mockRejectedValue`
  * for setup. Each mocked `.make()` returns a Promise<AjaxResult-like>; build
@@ -74,11 +75,13 @@ export interface FakeBitrix24Client {
   v3Batch: BatchMakeMock
   /** Mock for `b24.actions.v2.call.make`. */
   v2Call: CallMakeMock
+  /** Mock for `b24.actions.v2.batch.make`. */
+  v2Batch: BatchMakeMock
   /** The stand-in `B24Hook` for `useBitrix24()`. */
   b24: {
     actions: {
       v3: { call: { make: CallMakeMock }; batch: { make: BatchMakeMock } }
-      v2: { call: { make: CallMakeMock } }
+      v2: { call: { make: CallMakeMock }; batch: { make: BatchMakeMock } }
     }
   }
 }
@@ -87,14 +90,16 @@ export function makeFakeBitrix24(): FakeBitrix24Client {
   const v3Call = vi.fn() as unknown as CallMakeMock
   const v3Batch = vi.fn() as unknown as BatchMakeMock
   const v2Call = vi.fn() as unknown as CallMakeMock
+  const v2Batch = vi.fn() as unknown as BatchMakeMock
   return {
     v3Call,
     v3Batch,
     v2Call,
+    v2Batch,
     b24: {
       actions: {
         v3: { call: { make: v3Call }, batch: { make: v3Batch } },
-        v2: { call: { make: v2Call } },
+        v2: { call: { make: v2Call }, batch: { make: v2Batch } },
       },
     },
   }

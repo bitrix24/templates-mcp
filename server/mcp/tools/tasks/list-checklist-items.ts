@@ -3,6 +3,7 @@ import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import { callV2 } from '~/server/utils/sdk-helpers'
 import { toChecklistItemShort, type ChecklistItemShort } from '~/server/utils/checklist'
+import type { BitrixChecklistItemRaw } from '~/server/types/bitrix24'
 
 /**
  * Lists all checklist items on a Bitrix24 task. Bitrix24 represents the
@@ -64,11 +65,9 @@ export default defineMcpTool({
       params.ORDER = { [CAMEL_TO_WIRE[order.field]]: order.direction.toUpperCase() }
     }
 
-    // task.checklistitem.getlist returns `{ result: [...] }`. Despite the
-    // method name suggesting a "list" wrapper around items+meta, the actual
-    // payload is a bare array of items — confirmed against the response
-    // example on apidocs.bitrix24.ru. `callV2` unwraps the envelope.
-    const raw = await callV2<unknown[]>(
+    // `task.checklistitem.getlist` returns `{ result: [...] }` — a bare array
+    // of items (confirmed against the apidocs.bitrix24.ru response example).
+    const raw = await callV2<BitrixChecklistItemRaw[]>(
       useBitrix24(),
       'task.checklistitem.getlist',
       params,

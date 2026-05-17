@@ -22,6 +22,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/renew-checklist-i
 describe('bitrix24_renew_checklist_item', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
+    fake.v2Batch.mockReset()
   })
 
   it('calls task.checklistitem.renew with positional [taskId, itemId]', async () => {
@@ -44,13 +45,28 @@ describe('bitrix24_renew_checklist_item', () => {
     })
   })
 
-  it('batch mode runs through every itemId sequentially', async () => {
-    fake.v2Call.mockResolvedValueOnce(fakeOk(true)).mockResolvedValueOnce(fakeOk(true))
+  it('batch mode dispatches one v2 batch.make call with renew tuples', async () => {
+    fake.v2Batch.mockResolvedValue({
+      isSuccess: true,
+      getData: () => [fakeOk(true), fakeOk(true)],
+      getErrorMessages: () => [],
+    })
 
     const result = await tool.handler({ taskId: 13, itemId: [21, 22] })
 
-    expect(fake.v2Call).toHaveBeenCalledTimes(2)
-    const payload = JSON.parse(result.content[0]!.text)
-    expect(payload).toMatchObject({ batch: true, verb: 'renewed', taskId: 13, total: 2, ok: 2, failed: 0 })
+    expect(fake.v2Batch).toHaveBeenCalledTimes(1)
+    const calls = (fake.v2Batch.mock.calls[0]![0] as unknown as { calls: Array<[string, unknown[]]> }).calls
+    expect(calls).toEqual([
+      ['task.checklistitem.renew', [13, 21]],
+      ['task.checklistitem.renew', [13, 22]],
+    ])
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      batch: true,
+      verb: 'renewed',
+      taskId: 13,
+      total: 2,
+      ok: 2,
+      failed: 0,
+    })
   })
 })
