@@ -118,6 +118,14 @@ import updateTaskResult from '~/server/mcp/tools/tasks/update-task-result'
 // eslint-disable-next-line import/first
 import deleteTaskResult from '~/server/mcp/tools/tasks/delete-task-result'
 // eslint-disable-next-line import/first
+import addElapsedTime from '~/server/mcp/tools/tasks/add-elapsed-time'
+// eslint-disable-next-line import/first
+import listElapsedTime from '~/server/mcp/tools/tasks/list-elapsed-time'
+// eslint-disable-next-line import/first
+import updateElapsedTime from '~/server/mcp/tools/tasks/update-elapsed-time'
+// eslint-disable-next-line import/first
+import deleteElapsedTime from '~/server/mcp/tools/tasks/delete-elapsed-time'
+// eslint-disable-next-line import/first
 import submitFeedback from '~/server/mcp/tools/meta/submit-feedback'
 
 interface McpToolDef {
@@ -150,6 +158,10 @@ const ALL_TOOLS: McpToolDef[] = [
   listTaskResults as unknown as McpToolDef,
   updateTaskResult as unknown as McpToolDef,
   deleteTaskResult as unknown as McpToolDef,
+  addElapsedTime as unknown as McpToolDef,
+  listElapsedTime as unknown as McpToolDef,
+  updateElapsedTime as unknown as McpToolDef,
+  deleteElapsedTime as unknown as McpToolDef,
   submitFeedback as unknown as McpToolDef,
 ]
 
@@ -479,6 +491,28 @@ const CASES: Case[] = [
     input: 'Удали результат 17 в задаче 51 — я ошибся, не должен был его записывать.',
     expected: 'bitrix24_delete_task_result',
     notes: 'Destructive; resultId given explicitly.',
+  },
+
+  // ── task.elapseditem.* (PR #B — manual time logging) ───────────────────
+  {
+    input: 'Запиши 30 минут на задачу 691 — собирал договор.',
+    expected: 'bitrix24_add_elapsed_time',
+    notes: 'Manual time entry — LLM must convert "30 минут" to 1800 seconds.',
+  },
+  {
+    input: 'Покажи сколько часов потратили на задачу 691 на этой неделе.',
+    expected: 'bitrix24_list_elapsed_time',
+    notes: 'Read entries — must NOT route to list_tasks.',
+  },
+  {
+    input: 'Исправь запись 5 на задаче 691 — там не 15, а 45 минут.',
+    expected: 'bitrix24_update_elapsed_time',
+    notes: 'Update — entry id explicit, distinguishes from update_task / update_task_result.',
+  },
+  {
+    input: 'Удали записи 7, 8, 9 на задаче 691 — это были миссклики.',
+    expected: 'bitrix24_delete_elapsed_time',
+    notes: 'Batch delete — array of ids, destructive, must NOT route to delete_task_result.',
   },
 
   // ── Multilingual / non-Latin (i18n probe — ≥ 3 cases per language) ─────

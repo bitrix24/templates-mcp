@@ -97,3 +97,36 @@ export interface TaskResultItemEnvelope {
 export interface TaskResultListEnvelope {
   items?: BitrixTaskResultRaw[]
 }
+
+/**
+ * Elapsed-time wire shape — v2 `task.elapseditem.{add,getlist,update,delete}`.
+ * Bitrix24 ships UPPER_SNAKE on the wire; we still tolerate camelCase in case
+ * the SDK transforms responses for a future release. All id and duration
+ * fields can arrive stringified.
+ *
+ * `MINUTES` is a derived field (SECONDS / 60) that Bitrix24 ships alongside
+ * SECONDS for convenience; we drop it from the projection — operators can
+ * always derive minutes themselves and surfacing both invites the LLM to
+ * present contradictory values.
+ *
+ * `SOURCE` is a Bitrix24-internal enum (manual entry, timer, integration, …);
+ * not surfaced today.
+ */
+export interface BitrixElapsedTimeRaw {
+  id?: number | string
+  ID?: number | string
+  taskId?: number | string
+  TASK_ID?: number | string
+  userId?: number | string | null
+  USER_ID?: number | string | null
+  commentText?: string
+  COMMENT_TEXT?: string
+  seconds?: number | string
+  SECONDS?: number | string
+  createdDate?: string | null
+  CREATED_DATE?: string | null
+  dateStart?: string | null
+  DATE_START?: string | null
+  dateStop?: string | null
+  DATE_STOP?: string | null
+}
