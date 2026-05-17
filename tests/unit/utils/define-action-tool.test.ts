@@ -168,8 +168,15 @@ describe('defineActionTool', () => {
     expect(payload).toMatchObject({ batch: true, contextKey: 'task-7', total: 2, ok: 2 })
   })
 
-  it('passes the resolved id array to batchSummaryExtras (count etc. is derivable)', async () => {
-    const extras = vi.fn((_input: unknown, ids: number[]) => ({ requestedCount: ids.length }))
+  it('passes the POST-extractIds array to batchSummaryExtras (not the raw input id)', async () => {
+    // Use a non-identity extractIds (sort ascending) to prove that extras
+    // receives what the factory passed to runBatch — not the raw input.
+    // If extras saw input.id directly, the test would assert [30, 10, 20];
+    // because it must see the resolved array, the assertion is [10, 20, 30].
+    const extras = vi.fn((_input: unknown, ids: number[]) => ({
+      requestedCount: ids.length,
+      firstId: ids[0],
+    }))
     const tool = defineActionTool<{ id: number | number[] }, { id: number; ok: boolean }>({
       name: 'fake',
       description: 'desc',
@@ -177,15 +184,21 @@ describe('defineActionTool', () => {
       pastTense: 'done',
       inputSchema: { id: idOrIdArraySchema },
       batchCap: 25,
-      extractIds: (input) => input.id,
+      extractIds: (input) => (Array.isArray(input.id) ? [...input.id].sort((a, b) => a - b) : input.id),
       runOne: vi.fn(),
       runBatch: async (_input, ids) => ids.map((id) => ({ id, ok: true })),
       batchSummaryExtras: extras,
     }) as unknown as ToolDef<{ id: number | number[] }>
 
-    const result = await tool.handler({ id: [10, 20, 30] })
-    const payload = JSON.parse(result.content[0]!.text) as { requestedCount: number; total: number }
-    expect(extras).toHaveBeenCalledWith({ id: [10, 20, 30] }, [10, 20, 30])
+    const result = await tool.handler({ id: [30, 10, 20] })
+    const payload = JSON.parse(result.content[0]!.text) as {
+      requestedCount: number
+      firstId: number
+      total: number
+    }
+    // Second arg is the sorted (post-extractIds) array, not the raw input.
+    expect(extras).toHaveBeenCalledWith({ id: [30, 10, 20] }, [10, 20, 30])
+    expect(payload.firstId).toBe(10)
     expect(payload.requestedCount).toBe(3)
     expect(payload.total).toBe(3)
   })
@@ -292,8 +305,10 @@ describe('mapBatchRows', () => {
     ])
   })
 
-  it('throws when rows are LONGER than ids (extra-rows drift)', () => {
+  it('throws Bitrix24ToolError when rows are LONGER than ids (extra-rows drift)', () => {
     const rows = [okRow({ value: 'a' }), okRow({ value: 'b' }), okRow({ value: 'c' })]
+    // Pin both the error class (so a stray generic Error wouldn't pass) and
+    // the message format (so changes to the message surface in test diffs).
     expect(() =>
       mapBatchRows<{ value: string }, { id: number; ok: boolean }>(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -302,10 +317,15 @@ describe('mapBatchRows', () => {
         'id',
         ({ id, ok }) => ({ id, ok }),
       ),
-    ).toThrow(/SDK rows\/input length mismatch: 3 rows for 2 id entries/)
+    ).toThrow(
+      expect.objectContaining({
+        name: 'Bitrix24ToolError',
+        message: expect.stringMatching(/SDK rows\/input length mismatch: 3 rows for 2 id entries/),
+      }) as unknown as Error,
+    )
   })
 
-  it('throws when rows are SHORTER than ids (missing-rows drift)', () => {
+  it('throws Bitrix24ToolError when rows are SHORTER than ids (missing-rows drift)', () => {
     // The original `id === undefined` per-row check only caught extra
     // rows; missing rows would silently truncate the output. The upfront
     // length assert now catches both directions.
@@ -318,7 +338,12 @@ describe('mapBatchRows', () => {
         'id',
         ({ id, ok }) => ({ id, ok }),
       ),
-    ).toThrow(/SDK rows\/input length mismatch: 1 rows for 3 id entries/)
+    ).toThrow(
+      expect.objectContaining({
+        name: 'Bitrix24ToolError',
+        message: expect.stringMatching(/SDK rows\/input length mismatch: 1 rows for 3 id entries/),
+      }) as unknown as Error,
+    )
   })
 
   it('uses the errorFallback when SDK returns no error messages', () => {

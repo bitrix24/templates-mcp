@@ -30,9 +30,9 @@
  * v3 also documents `in`, `not in`, `not contains`, `starts with`,
  * `ends with` — these have no v2-prefix equivalent and aren't surfaced via
  * this helper today. Callers that need them should construct the tuple
- * literal directly (`['fieldName', 'in', [1, 2, 3]]`) — a future overload
- * may accept pre-built {@link V3FilterCondition}[] alongside the object
- * form.
+ * literal directly (operator-first per the 3-tuple shape:
+ * `['in', 'fieldName', [1, 2, 3]]`) — a future overload may accept
+ * pre-built {@link V3FilterCondition}[] alongside the object form.
  *
  * Why centralise: `tasks.task.result.list` already uses this contract
  * (see `list-task-results.ts`) and more v3 endpoints land in Phase 2. One
@@ -86,8 +86,10 @@ export function toV3Filter(filter: Record<string, unknown>): V3FilterCondition[]
   const out: V3FilterCondition[] = []
   for (const [key, value] of Object.entries(filter)) {
     const match = OPERATOR_PREFIX_RE.exec(key)
-    // The regex always matches (`.+` is non-empty per Object.entries spec);
-    // the conditional is a defensive cast for TS.
+    // Regex matches every non-empty key (the `.+` requires ≥1 char after
+    // the optional prefix). The `!match` branch handles the only failure
+    // mode — an empty-string key — by passing it through verbatim; Bitrix24
+    // will reject it server-side, which is the correct failure surface.
     if (!match) {
       out.push([key, value])
       continue

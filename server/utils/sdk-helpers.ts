@@ -117,16 +117,16 @@ export async function callV2<T>(
  */
 export type BatchCall = [method: string, params: TypeCallParams | unknown[]]
 
-/**
- * Cast applied to `response.getData()` return on both {@link batchV3} and
- * {@link batchV2}. With `returnAjaxResult: true` and a tuple-array `calls`
- * shape, the SDK returns `Result<AjaxResult<T>[]>`. The union return type
- * of `CallBatchResult<T>` covers two other shapes too (named-commands
- * map, bare-payload) which we don't trigger here — the cast localises
- * that single type-system gap. Runtime shape covered by every batch test
- * in `tests/unit/utils/task-lifecycle.test.ts` and
- * `tests/unit/tools/tasks/*checklist*.test.ts`.
- */
+// Implementation note for the `as Array<AjaxResult<T>>` cast used by both
+// batchV3 and batchV2 below: with `returnAjaxResult: true` and a tuple-
+// array `calls` shape, the SDK returns `Result<AjaxResult<T>[]>`. The
+// union return type of `CallBatchResult<T>` covers two other shapes too
+// (named-commands map, bare-payload) which we don't trigger here — the
+// cast localises that single type-system gap. Runtime shape covered by
+// every batch test in:
+//   - tests/unit/utils/task-lifecycle.test.ts (lifecycle factory)
+//   - tests/unit/tools/tasks/*checklist*.test.ts (checklist factory)
+//   - tests/unit/utils/define-action-tool.test.ts (mapBatchRows core)
 
 /**
  * Run multiple v3 calls in a single HTTP batch. Returns an array of

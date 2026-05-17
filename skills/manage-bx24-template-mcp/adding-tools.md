@@ -179,6 +179,7 @@ If the tool acts on a collection (10–50 ids), use **`batchV3`** (for v3 method
 
 ```ts
 import { batchV3 } from '~/server/utils/sdk-helpers'
+import { Bitrix24ToolError } from '~/server/utils/errors'
 
 const rows = await batchV3<{ task: TaskItem }>(
   b24,
@@ -298,6 +299,17 @@ Apply SKILL.md "Persona walk" to your tool's description and eval cases. Specifi
 | 🏭 DE Müller | Audit trail in the result? No silent mutations? |
 | 🌙 UAE Fatima | Locale-independent? RTL-friendly? Hijri-aware deadlines? |
 
+## Commit message conventions
+
+The `Commit messages` CI job runs `commitlint` against both the PR title and every commit in the PR. Conventional Commits format is enforced via `commitlint.config.js`:
+
+- **Allowed types**: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `ci`, `perf`, `build`, `revert`
+- **Allowed scopes**: `tools`, `client`, `auth`, `security`, `deploy`, `evals`, `skill`, `feedback`, `deps`, `docs`, `ci`, `tsconfig`, `lint`, `types`, `test`, `utils`
+- **Header max length**: 120 chars
+- **Subject case**: lowercase first word (rest free — `JSDoc`, `BatchCall` etc. are fine mid-sentence)
+
+Pick the broadest scope that applies — a refactor across `server/utils/*` is `refactor(utils): ...`, not `refactor(sdk-helpers): ...`. If your change genuinely doesn't fit any existing scope, extend the enum in `commitlint.config.js` as part of the same PR and explain why in the commit body.
+
 ## Checklist before the PR
 
 - [ ] One file under `server/mcp/tools/<group>/<kebab>.ts`.
@@ -309,4 +321,4 @@ Apply SKILL.md "Persona walk" to your tool's description and eval cases. Specifi
 - [ ] Eval case in `tests/evals/tool-selection.eval.ts` (plus disambiguation if needed).
 - [ ] Persona walk applied.
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` all green.
-- [ ] PR title follows Conventional Commits: `feat(tools): add bitrix24_<name>`.
+- [ ] PR title follows Conventional Commits (see "Commit message conventions" above): `feat(tools): add bitrix24_<name>`.

@@ -75,13 +75,22 @@ export function forceFlagSchema(cap: number) {
 
 /**
  * Shape every {@link defineActionTool} caller must satisfy on its input
- * type. `force` is read by the factory itself (batch-cap override), so
- * the type system carries the obligation that every caller's input
- * includes the flag, even if Zod-schema authors forget to declare it.
+ * type. Two constraints:
  *
- * Adding a new family without `force` would be a regression — Bitrix24
- * batch caps could not be overridden by the agent, and the type error
- * here surfaces that immediately instead of at runtime.
+ *   1. `force?: boolean` — read by the factory itself (batch-cap override),
+ *      so the type system carries the obligation that every caller's input
+ *      includes the flag even if Zod-schema authors forget to declare it.
+ *      Adding a new family without `force` would be a regression: Bitrix24
+ *      batch caps could not be overridden by the agent, and the type error
+ *      here surfaces that immediately instead of at runtime.
+ *
+ *   2. `extends Record<string, unknown>` — required because the factory's
+ *      handler boundary widens `ShapeOutput<ZodRawShape>` to
+ *      `Record<string, unknown>` (mcp-toolkit's generic loses the specific
+ *      shape at the `spec.inputSchema: z.ZodRawShape` seam). The constraint
+ *      lets the localised `as unknown as TInput` cast inside the handler
+ *      stay sound — TInput is structurally assignable from the broad
+ *      `Record<string, unknown>` Zod produces post-validation.
  */
 export interface ActionToolInput extends Record<string, unknown> {
   force?: boolean

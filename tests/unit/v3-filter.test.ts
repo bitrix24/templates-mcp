@@ -44,9 +44,13 @@ describe('toV3Filter', () => {
     ])
   })
 
-  it('matches longer prefixes first (`!=` does not truncate to `!`, `>=` does not truncate to `>`)', () => {
-    expect(toV3Filter({ '!=status': 'closed' })).toEqual([['<>', 'status', 'closed']])
+  it('matches longer prefixes first via sorted prefix list (`>=` does not truncate to `>`)', () => {
+    // `!=` vs `!` is also covered by the dedicated translation tests
+    // above (lines 19-22). This test pins the regex's longest-first
+    // ordering on a different operator family to make the invariant
+    // explicit regardless of the operator under test.
     expect(toV3Filter({ '>=created': 1 })).toEqual([['>=', 'created', 1]])
+    expect(toV3Filter({ '<=created': 2 })).toEqual([['<=', 'created', 2]])
   })
 
   it('returns an empty array for an empty filter', () => {
@@ -56,6 +60,9 @@ describe('toV3Filter', () => {
   it('passes through unrecognised prefix-looking keys unchanged', () => {
     // A leading character that isn't a known operator (e.g. `~`) is left as
     // part of the field name — the helper does not invent operators.
+    // NB: if `~` is later added to V2_PREFIX_TO_V3_OPERATOR, this test
+    // will start failing — that's intentional, the test pins the
+    // closed-vocabulary contract.
     expect(toV3Filter({ '~weird': 1 })).toEqual([['~weird', 1]])
   })
 
@@ -64,6 +71,12 @@ describe('toV3Filter', () => {
       ['taskId', null],
       ['tags', [1, 2]],
     ])
+  })
+
+  it('combines operator prefix with null value (`!=fieldName: null` → `[<>, fieldName, null]`)', () => {
+    // Operator translation and value type are orthogonal — a null value
+    // must still flow through the operator path without coercion.
+    expect(toV3Filter({ '!taskId': null })).toEqual([['<>', 'taskId', null]])
   })
 
   it('handles a mixed filter end-to-end with all translations applied', () => {
