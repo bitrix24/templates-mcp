@@ -14,6 +14,7 @@ export default {
         'tools',
         'client',
         'auth',
+        'security',
         'deploy',
         'evals',
         'skill',
