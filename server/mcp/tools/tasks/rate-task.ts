@@ -21,8 +21,8 @@ import { extractTasks } from '~/server/utils/tasks'
  * single-letter codes.
  *
  * Batch mode mirrors the lifecycle factory (#7): pass an array of ids to
- * rate many tasks in one call. Uses the SDK's native `actions.v3.batch.make`,
- * so the whole batch goes out as one HTTP request rather than N.
+ * rate many tasks in one call via the `batchV3` helper from `sdk-helpers.ts`,
+ * which sends the whole batch as one HTTP request rather than N.
  */
 const RATING_TO_MARK = {
   positive: 'P',
