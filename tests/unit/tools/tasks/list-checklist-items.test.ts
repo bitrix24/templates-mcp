@@ -135,4 +135,27 @@ describe('bitrix24_list_checklist_items', () => {
       message: 'access denied',
     })
   })
+
+  it('propagates the SDK error code on access denial (e.g. caller cannot see the task)', async () => {
+    fake.v2Call.mockRejectedValue(
+      Object.assign(new Error('Access denied'), { code: 'ERROR_CORE' }),
+    )
+    await expect(tool.handler({ taskId: 7 })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'ERROR_CORE',
+    })
+  })
+
+  it('returns no items when isSuccess=false would have thrown — callV2 throws first, the empty-array fallback is unreachable here (regression guard)', async () => {
+    // If the SDK reports !isSuccess, callV2 throws — verifying the handler
+    // doesn't swallow that throw into a "0 items" success response.
+    fake.v2Call.mockResolvedValue({
+      isSuccess: false,
+      getData: () => ({ result: undefined }),
+      getErrorMessages: () => ['QUERY_LIMIT_EXCEEDED'],
+    })
+    await expect(tool.handler({ taskId: 7 })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+    })
+  })
 })

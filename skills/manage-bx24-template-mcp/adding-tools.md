@@ -122,6 +122,21 @@ When a group of tools shares the wire signature — same params, same response �
 
 A factory pays for itself when (a) three or more tools share the call shape and (b) the per-tool difference is description text + method name. Otherwise repeat the four lines.
 
+### Destructive cascade ops — require a confirm flag
+
+Ground Rule #9 in `SKILL.md`: when a Bitrix24 method silently destroys more than the agent meant to, gate the call behind a `confirm<Action>: boolean` field in the schema and a typed `*_NEEDS_CONFIRM` error code.
+
+Reference implementation: `server/mcp/tools/tasks/delete-checklist-item.ts` + `server/utils/checklist.ts` (`assertNotHeading`, `assertBatchNoHeadings`). The factory adds `confirmDeleteHeading` to the Zod schema only for the delete tool (siblings `complete` / `renew` omit it). Pre-flight `callV2('task.checklistitem.getlist', { TASKID })` runs once for the whole batch — one extra round-trip, gates both single and batch flows.
+
+Checklist for new destructive tools:
+
+1. Identify the cascade: which Bitrix24 entities does the call silently remove besides the target?
+2. Add `confirm<CascadeName>: boolean.optional()` to the Zod schema. Describe in plain language what gets wiped.
+3. Pre-flight via the cheapest list/get method that returns the cascade indicator (`parentId`, `groupId`, …).
+4. Throw `Bitrix24ToolError(message, '<CASCADE>_NEEDS_CONFIRM')`. Message MUST name the target and tell the agent how to re-call.
+5. Skip pre-flight when confirm is `true` — the agent committed.
+6. For batch mode, run ONE shared pre-flight, not N per-id checks.
+
 ## When you need a batch
 
 If the tool acts on a collection (10–50 ids), use **`batchV3`** (for v3 methods) or **`batchV2`** (for v2 methods) — one HTTP round-trip with up to 50 sub-calls. Don't loop `callV3` / `callV2` sequentially; that pattern existed briefly and was replaced (it lost the SDK's transactional report shape and ran ~25× slower).
