@@ -157,13 +157,22 @@ Tooling depth on tasks (concrete gap analysis lives in [`docs/MANUAL-TEST-PHRASE
 - **Time tracking**: `add_elapsed_time`, `list_elapsed_time` over `task.elapseditem.*`.
 - **Task dependencies**: `add_task_dependency`, `remove_task_dependency`, `list_task_dependencies` over `tasks.task.dependence.*`.
 
-CRM & infrastructure:
+Infrastructure:
 
-- **Deals**: create, list, move through stages
-- **Contacts**: create, list, search by phone/email
 - **MCP resources** for static dictionaries (pipelines, stages, users) with TTL cache
 - **MCP prompts** for typical scenarios
 - **Client-side rate limiting** on Bitrix24 (2 req/sec, queue) — ✅ **provided by the SDK out of the box**. `@bitrix24/b24jssdk` 1.1+ ships `RestrictionManager` (leaky-bucket, default burst 50 / drain 2 req/sec, adaptive delay on `QUERY_LIMIT_EXCEEDED`, retry × 3 with backoff), initialised in `B24Hook`'s constructor via `ParamsFactory.getDefault()`. No project-side wrapper. Configurable per-tariff (`getEnterprise`, `getBatchProcessing`, `getRealtime`). Issue #7's bulk input on the 8 mutation tools shipped on top of this.
+
+### Post-pilot expansion (after the pilot launch — incremental, via the new-tool process)
+
+Once the pilot is in production, the toolset grows entity by entity rather than as one big committed block. Every addition follows [`docs/ADDING-TOOLS.md`](./docs/ADDING-TOOLS.md) (mirror for agents: [`skills/manage-bx24-template-mcp/adding-tools.md`](./skills/manage-bx24-template-mcp/adding-tools.md)) — one tool per PR with Zod schema, unit tests, eval cases, and a description tightened against the persona walk.
+
+CRM coverage we expect to ship this way:
+
+- **Deals**: create, list, move through stages
+- **Contacts**: create, list, search by phone/email
+
+No fixed delivery order — driven by pilot feedback and `bx24mcp_submit_feedback` signal. Further CRM entities (companies, leads, invoices, etc.) come in the same way when demand appears.
 
 ### Phase 3
 
@@ -966,7 +975,8 @@ Already drafted in the brief; final version stays terse and rule-oriented:
 | Phase | Scope | Definition of done |
 |---|---|---|
 | MVP | 5 base tools + `bx24mcp_submit_feedback`, webhook auth, HTTP transport, Inspector, Docker, nginx-proxy, GH Actions, Renovate, docs, tests | Claude.ai creates/reads tasks in prod; agent can submit feedback as an issue; Renovate is active |
-| Phase 2 | Deals, contacts, rate limiting, resources, prompts, caching. Starts **immediately** after MVP | All major Bitrix24 entities available, error rate < 1% over 100 calls |
+| Phase 2 | Task comments and checklists, rate limiting, resources, prompts, caching. Starts **immediately** after MVP | Infrastructure ready for entity expansion, error rate < 1% over 100 calls |
+| Post-pilot expansion | CRM (Deals, Contacts, …) added incrementally via [`docs/ADDING-TOOLS.md`](./docs/ADDING-TOOLS.md) — one tool per PR, driven by pilot feedback | All major Bitrix24 entities reachable through tools shipped via the new-tool process |
 | Phase 3 | OAuth, multi-tenant, batch, Code Mode | Multiple users connect their own portals, LLM orchestrates via JS code |
 
 ## Resolved open questions
