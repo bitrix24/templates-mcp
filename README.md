@@ -62,7 +62,7 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `bitrix24_rate_task` | Set or clear the task rating (positive / negative / none — Bitrix24 `MARK` field). |
 | `bitrix24_add_task_result` | Record a free-form RESULT (outcome text) on a task — separate from comments and from the task body. |
 | `bitrix24_list_task_results` | List the results recorded on a task. Newest-first by default; pagination via limit/offset. |
-| `bitrix24_update_task_result` | Rewrite the text of an existing result. Author-only on most portals. |
+| `bitrix24_update_task_result` | Rewrite the text of an existing result. Author-only: Bitrix24 returns `ACCESSDENIEDEXCEPTION` if any other operator (besides a portal admin) tries to edit. |
 | `bitrix24_delete_task_result` | Delete a result by id. Author-only; the task itself is not affected. |
 | `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 

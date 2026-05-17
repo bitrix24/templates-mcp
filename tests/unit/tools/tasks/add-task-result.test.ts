@@ -47,14 +47,35 @@ describe('bitrix24_add_task_result', () => {
       method: 'tasks.task.result.add',
       params: { fields: { taskId: 51, text: 'Done' } },
     })
-    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+    expect(JSON.parse(result.content[0]!.text)).toEqual({
       added: true,
       id: 17,
       taskId: 51,
       text: 'Done',
       authorId: 1,
+      createdAt: '2026-04-30T10:15:00+03:00',
+      updatedAt: null,
       status: 'open',
+      messageId: null,
     })
+  })
+
+  it('surfaces messageId when the result was promoted from a chat message', async () => {
+    fake.v3Call.mockResolvedValue(
+      fakeOk({
+        item: {
+          id: 18,
+          taskId: 51,
+          text: 'From chat',
+          authorId: 1,
+          createdAt: '2026-04-30T10:25:00+03:00',
+          status: 'open',
+          messageId: 335,
+        },
+      }),
+    )
+    const payload = JSON.parse((await tool.handler({ taskId: 51, text: 'From chat' })).content[0]!.text)
+    expect(payload.messageId).toBe(335)
   })
 
   it('coerces stringified ids in the wire response', async () => {

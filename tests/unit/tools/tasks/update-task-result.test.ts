@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { z } from 'zod'
 import { fakeOk, fakeOkEmpty, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
@@ -17,6 +18,7 @@ interface ToolContent {
 
 const tool = (await import('../../../../server/mcp/tools/tasks/update-task-result')).default as unknown as {
   handler: (input: { resultId: number; text: string }) => Promise<ToolContent>
+  inputSchema: { resultId: z.ZodNumber; text: z.ZodString }
 }
 
 describe('bitrix24_update_task_result', () => {
@@ -64,6 +66,25 @@ describe('bitrix24_update_task_result', () => {
     await expect(tool.handler({ resultId: 42, text: 'denied' })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'access denied',
+    })
+  })
+
+  it('schema rejects empty text and non-positive resultId at the Zod layer', () => {
+    expect(tool.inputSchema.text.safeParse('').success).toBe(false)
+    expect(tool.inputSchema.resultId.safeParse(0).success).toBe(false)
+    expect(tool.inputSchema.resultId.safeParse(-1).success).toBe(false)
+    expect(tool.inputSchema.resultId.safeParse(1.5).success).toBe(false)
+  })
+
+  it('propagates ACCESSDENIEDEXCEPTION codes (author-only endpoint)', async () => {
+    fake.v3Call.mockRejectedValue(
+      Object.assign(new Error('Access denied'), {
+        code: 'BITRIX_REST_V3_EXCEPTION_ACCESSDENIEDEXCEPTION',
+      }),
+    )
+    await expect(tool.handler({ resultId: 42, text: 'x' })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'BITRIX_REST_V3_EXCEPTION_ACCESSDENIEDEXCEPTION',
     })
   })
 })
