@@ -92,7 +92,7 @@ Note the absence of `try`/`catch` in this template: `callV3` already throws `Bit
 
 ## When the REST method is v2
 
-`user.*`, `task.commentitem.*`, `task.elapseditem.*`, and other legacy methods live under v2. Use `callV2` instead of `callV3` — same signature, same return contract.
+`user.*`, `task.commentitem.*`, `task.checklistitem.*`, `task.elapseditem.*`, and other legacy methods live under v2. Use `callV2` instead of `callV3` — same signature, same return contract. `callV2`'s `params` accepts either an object (the common case) or a positional array — some v2 methods are documented with positional args only (e.g. `task.checklistitem.{complete,renew}` per apidocs.bitrix24.ru).
 
 ```ts
 const user = await callV2<UserCurrentResponse>(
@@ -101,13 +101,59 @@ const user = await callV2<UserCurrentResponse>(
   {},
   'Failed to fetch current Bitrix24 user',
 )
+
+// Positional [taskId, itemId] — accepted directly, no cast needed.
+await callV2<unknown>(
+  b24,
+  'task.checklistitem.complete',
+  [taskId, itemId],
+  `Failed to complete Bitrix24 checklist item ${itemId} on task ${taskId}`,
+)
 ```
 
 `user.search` has a non-standard params shape (scalar `sort` / `order`); see `server/mcp/tools/users/find-user.ts` for the documented `as unknown as Record<string, unknown>` cast. Rarely needed elsewhere.
 
+### Shared factory pattern (multiple thin wrappers over one verb shape)
+
+When a group of tools shares the wire signature — same params, same response — keep the boilerplate in a single factory file rather than copy-pasting `defineMcpTool` N times. Two precedents:
+
+- `server/utils/task-lifecycle.ts` — wraps the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}` v3 methods. Each tool file is a four-line `defineTaskLifecycleTool({...})` call.
+- `server/utils/checklist.ts` — wraps the three `task.checklistitem.{complete,renew,delete}` v2 methods. Same shape but uses `callV2` / `batchV2` and positional `[taskId, itemId]` params.
+
+A factory pays for itself when (a) three or more tools share the call shape and (b) the per-tool difference is description text + method name. Otherwise repeat the four lines.
+
+### Destructive cascade ops — require a confirm flag
+
+Ground Rule #9 in `SKILL.md`: when a Bitrix24 method silently destroys more than the agent meant to, gate the call behind a `confirm<Action>: boolean` field in the schema and a typed `*_NEEDS_CONFIRM` error code.
+
+Reference implementation: `server/mcp/tools/tasks/delete-checklist-item.ts` + `server/utils/checklist.ts` (`assertNotHeading`, `assertBatchNoHeadings`). The factory adds `confirmDeleteHeading` to the Zod schema only for the delete tool (siblings `complete` / `renew` omit it). Pre-flight `callV2('task.checklistitem.getlist', { TASKID })` runs once for the whole batch — one extra round-trip, gates both single and batch flows.
+
+Checklist for new destructive tools:
+
+1. Identify the cascade: which Bitrix24 entities does the call silently remove besides the target?
+2. Add `confirm<CascadeName>: boolean.optional()` to the Zod schema. Describe in plain language what gets wiped.
+3. Pre-flight via the cheapest list/get method that returns the cascade indicator (`parentId`, `groupId`, …).
+4. Throw `Bitrix24ToolError(message, '<CASCADE>_NEEDS_CONFIRM')`. Message MUST name the target and tell the agent how to re-call.
+5. Skip pre-flight when confirm is `true` — the agent committed.
+6. For batch mode, run ONE shared pre-flight, not N per-id checks.
+
+#### Known Bitrix24 cascades (extend as you add destructive tools)
+
+Use this table to decide whether a `delete_*` / `move_*` tool needs a confirm flag. "Pre-flight method" is the cheapest call that surfaces the cascade indicator for a single id; row "Confirm field" suggests the canonical schema field name to keep families consistent.
+
+| Destructive op | Cascade target | Cascade indicator | Pre-flight method | Confirm field | Reference |
+|---|---|---|---|---|---|
+| `task.checklistitem.delete` on a heading | every child checklist item under the heading | `PARENT_ID === 0` on the target | `task.checklistitem.getlist { TASKID }` (one call gates both single + batch) | `confirmDeleteHeading` | `server/utils/checklist.ts` ✅ shipped in PR #17 |
+| `sonet_group.delete` *(future)* | every task / file / discussion in the workgroup | the workgroup id itself | `sonet_group.get { ID }` + `tasks.task.list { GROUP_ID }` | `confirmDeleteWorkgroup` | not implemented |
+| `tasks.task.delete` *(future)* | every comment / checklist item / time entry / result / dependency on the task | the task id itself | `tasks.task.get` (cheap) | `confirmDeleteTask` | not implemented; consider deferring — Bitrix24 UI hides hard-delete behind a per-portal toggle |
+| `crm.deal.delete` *(post-pilot)* | every activity / quote / invoice linked to the deal | the deal id itself | `crm.activity.list { OWNER_TYPE_ID, OWNER_ID }` | `confirmDeleteDeal` | post-pilot |
+| `disk.folder.deletetree` *(future)* | every file / sub-folder under the disk folder | folder type vs file type | `disk.folder.get { id }` | `confirmDeleteFolder` | not implemented |
+
+If your tool isn't in this table and you find yourself adding a `confirm*` flag, add a row to keep the registry useful. If your tool feels destructive but doesn't cascade beyond a single record (e.g. `delete_task_result` removes one result; the parent task is untouched), no confirm flag is required — the Bitrix24 server-side author-only check is the right gate.
+
 ## When you need a batch
 
-If the tool acts on a collection (10–25 ids), use **`batchV3`** — one HTTP round-trip with up to 50 sub-calls. Don't loop `callV3` sequentially; that pattern existed briefly during PR #12 and was replaced (it lost the SDK's transactional report shape and ran ~25× slower).
+If the tool acts on a collection (10–50 ids), use **`batchV3`** (for v3 methods) or **`batchV2`** (for v2 methods) — one HTTP round-trip with up to 50 sub-calls. Don't loop `callV3` / `callV2` sequentially; that pattern existed briefly and was replaced (it lost the SDK's transactional report shape and ran ~25× slower).
 
 ```ts
 import { batchV3 } from '~/server/utils/sdk-helpers'

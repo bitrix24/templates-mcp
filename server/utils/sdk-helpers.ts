@@ -52,23 +52,29 @@ export async function callV3<T>(
 }
 
 /**
- * Call a v2 REST method (`user.*`, `task.commentitem.*`, …) and return its
- * `result` payload. Same contract as {@link callV3}.
+ * Call a v2 REST method (`user.*`, `task.commentitem.*`,
+ * `task.checklistitem.*`, …) and return its `result` payload. Same contract
+ * as {@link callV3}.
  *
- * Some v2 methods (notably `user.search`) use a non-standard params shape
- * that the SDK's `TypeCallParams` doesn't model. For those calls, pre-cast
- * params to `Record<string, unknown>` at the call site with a comment
- * explaining the quirk — see `server/mcp/tools/users/find-user.ts`.
+ * Accepts either an object-shaped `params` (the common case) or a positional
+ * array (some v2 methods are documented with positional args only — e.g.
+ * `task.checklistitem.{complete,renew}` per
+ * https://apidocs.bitrix24.ru/api-reference/tasks/checklist-item/). The
+ * underlying SDK serialiser honours both shapes; we widen the type here so
+ * callers do not need to cast at every call site.
  */
 export async function callV2<T>(
   b24: B24Hook,
   method: string,
-  params: Record<string, unknown>,
+  params: Record<string, unknown> | unknown[],
   errorContext: string,
 ): Promise<T | undefined> {
   let response: AjaxResult<T>
   try {
-    response = await b24.actions.v2.call.make<T>({ method, params })
+    response = await b24.actions.v2.call.make<T>({
+      method,
+      params: params as unknown as Parameters<typeof b24.actions.v2.call.make>[0]['params'],
+    })
   } catch (err) {
     throw toToolError(err, errorContext)
   }
@@ -81,8 +87,15 @@ export async function callV2<T>(
 /**
  * One v3 batch call shape: a tuple of REST method name + params object.
  * Matches the array form of `BatchCommandsArrayUniversal` from the SDK.
+ *
+ * Bitrix24's batch transport accepts both an object-shaped params and a
+ * positional array (`[a, b]`) — some v2 endpoints, notably
+ * `task.checklistitem.{complete,renew}`, are documented with positional
+ * params only. The runtime serialiser handles both shapes; we widen the
+ * tuple's second element to `Record | unknown[]` so callers can pass either
+ * without casting at the call site.
  */
-export type BatchV3Call = [method: string, params: Record<string, unknown>]
+export type BatchV3Call = [method: string, params: Record<string, unknown> | unknown[]]
 
 /**
  * Run multiple v3 calls in a single HTTP batch. Returns an array of
@@ -105,7 +118,7 @@ export async function batchV3<T>(
   let response
   try {
     response = await b24.actions.v3.batch.make<T>({
-      calls,
+      calls: calls as unknown as Parameters<typeof b24.actions.v3.batch.make>[0]['calls'],
       options: { isHaltOnError: false, returnAjaxResult: true },
     })
   } catch (err) {
@@ -118,5 +131,33 @@ export async function batchV3<T>(
   // own `batch.make` example — the bare-payload return type is replaced by
   // an array of full `AjaxResult<T>` rows. The cast localises that single
   // type-system gap so callers see a clean `AjaxResult<T>[]`.
+  return response.getData() as unknown as Array<AjaxResult<T>>
+}
+
+/**
+ * Run multiple v2 calls in a single HTTP batch via `actions.v2.batch.make`.
+ * Mirror of {@link batchV3} for v2-only methods (`task.commentitem.*`,
+ * `task.checklistitem.*`, …) — same `{ isHaltOnError: false,
+ * returnAjaxResult: true }` semantics, same array-of-`AjaxResult<T>` return
+ * type. Bitrix24 caps a v2 batch at 50 commands (per the SDK BatchV2 JSDoc
+ * "@warning The maximum number of commands in one batch request is 50.").
+ */
+export async function batchV2<T>(
+  b24: B24Hook,
+  calls: BatchV3Call[],
+  errorContext: string,
+): Promise<Array<AjaxResult<T>>> {
+  let response
+  try {
+    response = await b24.actions.v2.batch.make<T>({
+      calls: calls as unknown as Parameters<typeof b24.actions.v2.batch.make>[0]['calls'],
+      options: { isHaltOnError: false, returnAjaxResult: true },
+    })
+  } catch (err) {
+    throw toToolError(err, errorContext)
+  }
+  if (!response.isSuccess) {
+    throw new Bitrix24ToolError(response.getErrorMessages().join('; ') || errorContext)
+  }
   return response.getData() as unknown as Array<AjaxResult<T>>
 }

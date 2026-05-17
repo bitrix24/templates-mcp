@@ -151,7 +151,7 @@ bx24-template-mcp/
 Tooling depth on tasks (concrete gap analysis lives in [`docs/MANUAL-TEST-PHRASES.md`](./docs/MANUAL-TEST-PHRASES.md) — phrase pack for verifying each tool against a real LLM):
 
 - **Task lifecycle**: `start`, `pause`, `complete`, `approve`, `disapprove`, `defer`, `renew` — 7 thin v3 wrappers around `tasks.task.*` REST methods. ✅ **Shipped in PR #5** (also added `bitrix24_rate_task` for the `MARK` field). Follow-ups for the full lifecycle (`accept` / `decline` / `delegate`) tracked in issue #8; bulk operations + rate-limit in #7.
-- **Checklists**: `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item`. Whole tree is flat with `PARENT_ID` nesting.
+- **Checklists**: `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` — flat tree with `PARENT_ID` nesting, v2 namespace `task.checklistitem.*` (no v3 equivalent). ✅ **Shipped in PR #17** (includes single-RTT v2 batching via `actions.v2.batch.make` and `confirmDeleteHeading` safety gate on heading deletion).
 - **Comments — read**: `list_task_comments` over the new `tasks.task.chat.message.list`. Default filter strips service messages ("user X changed Y"). Also migrate the existing write tool from the deprecated `task.commentitem.add` to `tasks.task.chat.message.send`.
 - **Subtasks**: extend `bitrix24_create_task` schema with optional `parentId`. No new tool; `list_tasks` already supports `PARENT_ID` filter via the generic filter object.
 - **Time tracking**: `add_elapsed_time`, `list_elapsed_time` over `task.elapseditem.*`.

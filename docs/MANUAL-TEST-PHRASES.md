@@ -17,7 +17,7 @@ Bitrix24 has two parallel REST API generations:
 - **v3** (modern, recommended) — methods under the `tasks.*` / `crm.*` namespaces. URL pattern `apidocs.bitrix24.com/api-reference/rest-v3/…`.
 - **v2** (legacy / deprecated for new development) — methods like `task.*` (without the `s.`), `task.item.*`. Still work, but docs flag them with "Метод устарел".
 
-**Always prefer v3.** Our coverage today (18 Bitrix24 tools + 1 meta-tool):
+**Always prefer v3.** Our coverage today (23 Bitrix24 tools + 1 meta-tool):
 
 | Tool | Method | API |
 |---|---|---|
@@ -35,13 +35,18 @@ Bitrix24 has two parallel REST API generations:
 | `bitrix24_defer_task` | `tasks.task.defer` | **v3** ✓ |
 | `bitrix24_renew_task` | `tasks.task.renew` | **v3** ✓ |
 | `bitrix24_rate_task` | `tasks.task.update` (field `MARK`) | **v3** ✓ — no dedicated rate method; we write `MARK: "P" \| "N" \| null` |
+| `bitrix24_add_checklist_item` | `task.checklistitem.add` | **v2 only** — no v3 equivalent for task checklists (v3 `tasks.template.checklist.*` is for templates). |
+| `bitrix24_list_checklist_items` | `task.checklistitem.getlist` | **v2 only** — same reason. |
+| `bitrix24_complete_checklist_item` | `task.checklistitem.complete` | **v2 only** — same reason. |
+| `bitrix24_renew_checklist_item` | `task.checklistitem.renew` | **v2 only** — same reason. |
+| `bitrix24_delete_checklist_item` | `task.checklistitem.delete` | **v2 only** — same reason. |
 | `bitrix24_add_task_result` | `tasks.task.result.add` | **v3** ✓ |
 | `bitrix24_list_task_results` | `tasks.task.result.list` | **v3** ✓ — taskId filter is required by the endpoint; we bake it into the schema. |
 | `bitrix24_update_task_result` | `tasks.task.result.update` | **v3** ✓ — author-only. |
 | `bitrix24_delete_task_result` | `tasks.task.result.delete` | **v3** ✓ — author-only; destructive. |
 | `bx24mcp_submit_feedback` | _(no Bitrix24 call)_ | meta-tool — files a GitHub issue |
 
-All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through `actions.v3.batch.make` as one HTTP round-trip.
+All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through `actions.v3.batch.make` as one HTTP round-trip. The 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) accept `itemId: number[]` for batch mode too, but loop sequentially (the v2 `task.checklistitem.*` namespace isn't exposed to `actions.v3.batch.make`).
 
 When you see a Bitrix24 method name in a tool's source, sanity-check it has the `tasks.` (with `s`) prefix or lives under a documented v3 URL. The phrase pack below assumes v3 throughout.
 
@@ -49,7 +54,7 @@ When you see a Bitrix24 method name in a tool's source, sanity-check it has the 
 
 | Mark | Meaning |
 |---|---|
-| ✅ | Tool exists today (PR #4). Expect the LLM to call the right tool. |
+| ✅ | Tool exists today — see the API version table above for which PR introduced each tool group. Expect the LLM to call the right tool. |
 | ⏳ | Tool **does not exist yet** — queued for a future PR. Expect the LLM to either fail gracefully or suggest a workaround. Track these as "wishlist hits". |
 | 🧠 | **Composite query** — no single tool covers it. The LLM should chain existing tools (list + get + reason). Watch for hallucinated tool names. |
 
@@ -166,51 +171,55 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 
 ---
 
-## 7. Checklists ⏳ — NEEDS NEW TOOLS
+## 7. Checklists ✅ (PR for Phase 2)
 
-**Status:** no tools today. Bitrix24 REST: `task.checklistitem.{add,update,complete,renew,delete,getlist,get,moveafteritem}`.
-
-A task has multiple checklists; each checklist contains items. The Bitrix24 REST treats the whole tree as flat items with a `PARENT_ID` to nest. For an MCP-friendly API we'll likely expose two tools and let the agent compose:
+**Status:** five tools shipped. Bitrix24 REST: `task.checklistitem.{add,getlist,complete,renew,delete}` — v2 namespace; v3 has no equivalent for task checklists (only `tasks.template.checklist.*` for task templates). The whole checklist tree on a task is FLAT — every item carries a `parentId`; the special value `0` marks a **checklist heading**, and every regular item references its heading (or a deeper parent) by id. Multiple headings per task → multiple checklists.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 7.1 | Добавь чек-лист "QA" к задаче 123 с пунктами: «UI», «API», «миграция». | ⏳ Three `add_checklist_item` calls; first is the heading, next three are children with `parentId` |
-| 7.2 | Поставь в чек-листе задачи 123 пункт "QA / API" как выполненный. | ⏳ `list_checklist` to find the item id, then `complete_checklist_item { itemId }` |
-| 7.3 | Покажи прогресс чек-листа задачи 123. | ⏳ `list_checklist_items { taskId: 123 }`, count completed vs total |
-| 7.4 | Добавь в чек-лист задачи 123 ещё один пункт «деплой». | ⏳ `add_checklist_item { taskId: 123, title: "деплой" }` |
-| 7.5 | Сними отметку выполнения с пункта «деплой» в задаче 123. | ⏳ `renew_checklist_item { itemId }` |
-| 7.6 | Удали из чек-листа задачи 123 пункт «UI». | ⏳ `delete_checklist_item { itemId }` |
-| 7.7 | Создай в задаче 123 новый чек-лист "Релизный план" с пунктами: «changelog», «прогон тестов», «тег», «smoke». | ⏳ One header + four children |
+| 7.1 | Добавь чек-лист "QA" к задаче 123 с пунктами: «UI», «API», «миграция». | Four `add_checklist_item` calls. First: `{ taskId: 123, title: "QA" }` (no `parentId` → starts a new checklist; the returned id is the heading id). Next three: `{ taskId: 123, title: "UI", parentId: <heading-id> }` etc. |
+| 7.2 | Поставь в чек-листе задачи 123 пункт "QA / API" как выполненный. | `list_checklist_items { taskId: 123 }` → find the item by title → `complete_checklist_item { taskId: 123, itemId: <found> }` |
+| 7.3 | Покажи прогресс чек-листа задачи 123. | `list_checklist_items { taskId: 123 }` — agent counts `isComplete: true` over the items in each heading. |
+| 7.4 | Добавь в чек-лист задачи 123 ещё один пункт «деплой». | `list_checklist_items` to locate the heading (or accept the operator naming it), then `add_checklist_item { taskId: 123, title: "деплой", parentId: <heading-id> }`. |
+| 7.5 | Сними отметку выполнения с пункта «деплой» в задаче 123. | `list_checklist_items` → match title → `renew_checklist_item { taskId: 123, itemId: <found> }`. |
+| 7.6 | Удали из чек-листа задачи 123 пункт «UI». | `list_checklist_items` → match → `delete_checklist_item { taskId: 123, itemId: <found> }`. |
+| 7.7 | Создай в задаче 123 новый чек-лист "Релизный план" с пунктами: «changelog», «прогон тестов», «тег», «smoke». | Heading add (no `parentId`) + four child adds with the returned heading id. |
+| 7.8 | Закрой пункты 47, 48 и 49 в задаче 123 одним вызовом. | `complete_checklist_item { taskId: 123, itemId: [47, 48, 49] }` — batch mode mirrors the lifecycle tools, returns `{ batch, total, ok, failed, results }`. |
 
-**Proposed tools:**
-- `bitrix24_add_checklist_item` (title, taskId, parentId?, sortIndex?, isImportant?)
-- `bitrix24_list_checklist_items` (taskId) — returns the tree
-- `bitrix24_complete_checklist_item` (itemId)
-- `bitrix24_renew_checklist_item` (itemId)
-- `bitrix24_delete_checklist_item` (itemId)
-- (optional) `bitrix24_update_checklist_item` (itemId, title?, isImportant?)
+**Tools shipped:**
+- `bitrix24_add_checklist_item` — `{ taskId, title, parentId?, sortIndex?, isImportant? }`. `parentId: 0` (or omitted) creates a new checklist; the `title` becomes the heading.
+- `bitrix24_list_checklist_items` — `{ taskId, order? }` (order: `{ field, direction }`, sort fields per apidocs).
+- `bitrix24_complete_checklist_item` — `{ taskId, itemId | itemId[] }` (single or batch up to 25).
+- `bitrix24_renew_checklist_item` — `{ taskId, itemId | itemId[] }`.
+- `bitrix24_delete_checklist_item` — `{ taskId, itemId | itemId[] }`. Heading deletion removes the whole checklist (heading + children) — confirm with the operator before deleting a heading.
+
+**Out of scope this PR (file as follow-ups if real demand emerges):**
+- `update_checklist_item` (move / rename / reassign members). The five tools above cover every phrase in this section; rename + move are rarely demanded and would expand the surface for marginal value.
+- `MEMBERS` field on `add_checklist_item`. The Bitrix24 API accepts `MEMBERS: { <userId>: { TYPE: "A"|"U" } }` for per-item assignees / watchers, but no test phrase exercises it today.
 
 ---
 
-## 8. Lifecycle (start / pause / complete / approve / decline / defer / renew) ⏳ — NEEDS NEW TOOLS
+## 8. Lifecycle (start / pause / complete / approve / disapprove / defer / renew) ✅ (PR #5)
 
-**Status:** no tools today. REST methods: `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}`.
+**Status:** seven thin v3 wrappers shipped. REST: `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}`. Each takes `{ taskId }` (or `taskId: number[]` for batch mode up to 25, `force: true` to override) and returns the resulting status.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 8.1 | Я взялся за задачу 123. | ⏳ `start_task { taskId: 123 }` |
-| 8.2 | Пауза в задаче 123, отвлекли. | ⏳ `pause_task { taskId: 123 }` |
-| 8.3 | Закрой задачу 123, я её сделал. | ⏳ `complete_task { taskId: 123 }` |
-| 8.4 | Прими работу по задаче 123. | ⏳ `approve_task { taskId: 123 }` |
-| 8.5 | Отправь задачу 123 на доработку, исполнитель сделал не то. | ⏳ `disapprove_task { taskId: 123 }` |
-| 8.6 | Отложи задачу 123, пока без приоритета. | ⏳ `defer_task { taskId: 123 }` |
-| 8.7 | Восстанови задачу 123 из закрытых. | ⏳ `renew_task { taskId: 123 }` |
-| 8.8 | Start working on task 123 and add a comment "поехали". | ⏳ Chain: `start_task` then `add_task_comment` |
+| 8.1 | Я взялся за задачу 123. | `start_task { taskId: 123 }` |
+| 8.2 | Пауза в задаче 123, отвлекли. | `pause_task { taskId: 123 }` |
+| 8.3 | Закрой задачу 123, я её сделал. | `complete_task { taskId: 123 }` |
+| 8.4 | Прими работу по задаче 123. | `approve_task { taskId: 123 }` |
+| 8.5 | Отправь задачу 123 на доработку, исполнитель сделал не то. | `disapprove_task { taskId: 123 }` |
+| 8.6 | Отложи задачу 123, пока без приоритета. | `defer_task { taskId: 123 }` |
+| 8.7 | Восстанови задачу 123 из закрытых. | `renew_task { taskId: 123 }` |
+| 8.8 | Start working on task 123 and add a comment "поехали". | Chain: `start_task` then `add_task_comment` |
+| 8.9 | Закрой задачи 5, 7 и 12 одним вызовом. | `complete_task { taskId: [5, 7, 12] }` — batch mode via `actions.v3.batch.make`, returns `{ batch, total, ok, failed, results }`. |
 
-**Proposed tools:** a single thin wrapper per lifecycle action. Each takes `{ taskId }` and returns the resulting status. Names mirror Bitrix24 REST one-to-one for predictability:
-- `bitrix24_start_task`, `bitrix24_pause_task`, `bitrix24_complete_task`, `bitrix24_approve_task`, `bitrix24_disapprove_task`, `bitrix24_defer_task`, `bitrix24_renew_task`
+Trade-off recorded for the future: seven separate tools (one per verb) rather than one `bitrix24_change_task_status` with an enum, so the LLM gets per-action description text. Tracked as `rfc(evals): measure cost — N specialized lifecycle tools vs 1 enum-based tool` in issue #9.
 
-Alternative: one `bitrix24_change_task_status` with `action: "start"|"pause"|...` enum. **Trade-off**: one tool keeps the surface smaller (LLM less likely to confuse), but loses the per-action description text where we explain when to use each. We'll likely go with **separate tools** for that reason.
+**Out of scope / queued for later PRs:**
+- `accept` / `decline` / `delegate` — third-leg lifecycle actions not in `tasks.task.*`. Tracked in issue #8.
+- `bitrix24_find_task` for free-text task resolution — tracked in issue #6.
 
 ---
 
@@ -329,12 +338,12 @@ Roughly in order of value-for-effort:
 
 | Priority | PR scope | Tools |
 |---|---|---|
-| 1 | **`feat(tools): task lifecycle`** | `start_task`, `pause_task`, `complete_task`, `approve_task`, `disapprove_task`, `defer_task`, `renew_task` (7 thin wrappers) |
-| 2 | **`feat(tools): task checklist`** | `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` |
-| 3 | **`feat(tools): list task comments + subtask parentId`** | `list_task_comments` (new tool, filters service messages by default); schema bump on `create_task` to accept `parentId` |
-| 4 | **`feat(tools): task time tracking`** | `add_elapsed_time`, `list_elapsed_time` |
-| 5 | **`feat(tools): task dependencies`** | `add_task_dependency`, `remove_task_dependency`, `list_task_dependencies` |
-| 6 | **(retire `task.commentitem.add` → `tasks.task.chat.message.send`)** | Migrate `add_task_comment` to the modern endpoint; this also fixes "deprecated" warning |
+| ✅ | **`feat(tools): task lifecycle`** (PR #5) | `start_task`, `pause_task`, `complete_task`, `approve_task`, `disapprove_task`, `defer_task`, `renew_task` (7 thin wrappers) |
+| ✅ | **`feat(tools): task checklist`** (PR #17) | `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` |
+| 1 | **`feat(tools): list task comments + subtask parentId`** | `list_task_comments` (new tool, filters service messages by default); schema bump on `create_task` to accept `parentId` |
+| 2 | **`feat(tools): task time tracking`** | `add_elapsed_time`, `list_elapsed_time` |
+| 3 | **`feat(tools): task dependencies`** | `add_task_dependency`, `remove_task_dependency`, `list_task_dependencies` |
+| 4 | **(retire `task.commentitem.add` → `tasks.task.chat.message.send`)** | Migrate `add_task_comment` to the modern endpoint; this also fixes "deprecated" warning |
 
 After all of those land, sections 5–10 of this doc flip from ⏳ to ✅ and the analytics queries in section 11 become realistic.
 

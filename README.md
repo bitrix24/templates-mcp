@@ -60,15 +60,20 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `bitrix24_defer_task` | Move a task to Deferred (6) — postponed but not closed. |
 | `bitrix24_renew_task` | Reopen a Completed or Deferred task → Pending (2). |
 | `bitrix24_rate_task` | Set or clear the task rating (positive / negative / none — Bitrix24 `MARK` field). |
+| `bitrix24_add_checklist_item` | Add an item to a task checklist. Omit `parentId` (or pass 0) to start a new checklist — the `title` becomes the heading. |
+| `bitrix24_list_checklist_items` | List every checklist item on a task as a flat tree (`parentId: 0` = checklist heading). |
+| `bitrix24_complete_checklist_item` | Check off a checklist item. |
+| `bitrix24_renew_checklist_item` | Un-check a previously completed checklist item. |
+| `bitrix24_delete_checklist_item` | Delete a checklist item. Heading deletion (parentId 0) wipes the whole checklist and is refused without `confirmDeleteHeading: true`. |
 | `bitrix24_add_task_result` | Record a free-form RESULT (outcome text) on a task — separate from comments and from the task body. |
 | `bitrix24_list_task_results` | List the results recorded on a task. Newest-first by default; pagination via limit/offset. |
 | `bitrix24_update_task_result` | Rewrite the text of an existing result. Author-only: Bitrix24 returns `ACCESSDENIEDEXCEPTION` if any other operator (besides a portal admin) tries to edit. |
 | `bitrix24_delete_task_result` | Delete a result by id. Author-only; the task itself is not affected. |
 | `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 
-18 Bitrix24 + 1 meta = **19 tools total**.
+23 Bitrix24 + 1 meta = **24 tools total**.
 
-The 8 mutation tools above (`start_task` / `pause_task` / `complete_task` / `approve_task` / `disapprove_task` / `defer_task` / `renew_task` / `rate_task`) accept either a single `taskId` **or** an array of ids for batch mode (up to 25; pass `force: true` to override). Rate limiting, retry, and adaptive back-pressure are provided by the [`@bitrix24/b24jssdk`](https://www.npmjs.com/package/@bitrix24/b24jssdk) `RestrictionManager` — initialised with `ParamsFactory.getDefault()` (standard tariff: burst 50, drain 2 req/sec, 3 retries on transient errors). Override at runtime via `client.setRestrictionManagerParams(ParamsFactory.getEnterprise())` etc.
+The 8 task-mutation tools above (`start_task` / `pause_task` / `complete_task` / `approve_task` / `disapprove_task` / `defer_task` / `renew_task` / `rate_task`) plus the 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) accept either a single id **or** an array for batch mode (up to 50; pass `force: true` to override). Batches go through one HTTP round-trip — `actions.v3.batch.make` for the lifecycle tools, `actions.v2.batch.make` for the checklist actions. `add_checklist_item` and `list_checklist_items` are single-call only by design. Rate limiting, retry, and adaptive back-pressure are provided by the [`@bitrix24/b24jssdk`](https://www.npmjs.com/package/@bitrix24/b24jssdk) `RestrictionManager` — initialised with `ParamsFactory.getDefault()` (standard tariff: burst 50, drain 2 req/sec, 3 retries on transient errors). Override at runtime via `client.setRestrictionManagerParams(ParamsFactory.getEnterprise())` etc.
 
 ## Connecting Claude
 
