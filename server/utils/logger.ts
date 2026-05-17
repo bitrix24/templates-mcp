@@ -19,6 +19,13 @@ import { ConsoleHandler, Logger, LogLevel, type LoggerInterface } from '@bitrix2
  * concrete `Logger` is still used internally to call `pushHandler` at
  * bootstrap.
  *
+ * **Init order matters.** The level is locked when the first `useLogger()`
+ * call materialises the singleton — typically the first `useBitrix24()`
+ * invocation. Make sure `NODE_ENV` is set BEFORE that (Nuxt / Nitro do this
+ * during boot, before any handler runs, so the default flow is correct).
+ * Custom server entry points that defer env loading would need to call
+ * `useLogger()` after their config is ready.
+ *
  * To plug in more handlers (file rotation, telegram, etc.), call
  * `pushHandler(new StreamHandler({…}))` etc. once at startup before the
  * first `useLogger()` invocation, or cast to `Logger` if you need to do it

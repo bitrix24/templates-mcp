@@ -16,9 +16,11 @@ export class Bitrix24ToolError extends Error {
   readonly code: string
   readonly status: number | undefined
 
-  constructor(message: string, code = 'BITRIX24_ERROR', status: number | undefined = undefined) {
+  constructor(message: string, code = 'BITRIX24_ERROR', status?: number) {
     super(message)
     this.code = code
+    // Assigned unconditionally so the property exists on every instance;
+    // a missing status from the caller lands as `undefined` (not "absent").
     this.status = status
   }
 }
