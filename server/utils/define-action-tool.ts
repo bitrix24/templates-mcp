@@ -14,6 +14,10 @@ import { Bitrix24ToolError } from '~/server/utils/errors'
  *     pre-flight
  *   - `server/mcp/tools/tasks/delete-elapsed-time.ts` — v2 delete with
  *     universal `confirmDelete` gate (Ground Rule #9)
+ *   - `server/mcp/tools/tasks/add-task-dependency.ts` — v2 add with
+ *     fixed `taskIdTo` + `linkType` and id-or-array `taskIdFrom`
+ *   - `server/mcp/tools/tasks/remove-task-dependency.ts` — v2 delete
+ *     mirror of add; uses the universal `confirmDelete` gate
  *
  * All families share:
  *   1. The same input shape — a target id that's either a number
@@ -30,8 +34,8 @@ import { Bitrix24ToolError } from '~/server/utils/errors'
  * single-vs-batch dispatch + summary projection that used to drift
  * between families.
  *
- * Adding a new action-tool family (e.g. `task.dependence.*` in Phase 2)
- * means writing the runOne / runBatch callbacks — the scaffold stays here.
+ * Adding a new action-tool family means writing the runOne / runBatch
+ * callbacks — the scaffold stays here.
  */
 
 /**

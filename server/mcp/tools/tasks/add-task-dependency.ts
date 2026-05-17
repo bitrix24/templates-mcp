@@ -22,10 +22,20 @@ import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
  * Bitrix24 REST: task.dependence.add (v2 — no v3 equivalent)
  *   https://apidocs.bitrix24.com/api-reference/tasks/task-dependence-add.html
  *
- * The user-prompt brief expected `tasks.task.dependence.add` (v3); a v3
- * dependence namespace does not exist as of 2026-05. Bitrix24 surfaces
+ * The brief expected `tasks.task.dependence.add` (v3); a v3 dependence
+ * namespace does not exist as of 2026-05. Bitrix24 surfaces
  * dependence-modification through the v2 `task.dependence.*` family
- * only.
+ * only — listed alongside `task.checklistitem.*` / `task.elapseditem.*`
+ * in SKILL.md Rule #7's v2-canonical registry.
+ *
+ * The apidocs error table for `task.dependence.add` lists
+ * `ERROR_BATCH_METHOD_NOT_ALLOWED` as a possible error code, which on
+ * first read suggests batching might be blocked server-side. In
+ * practice this is the generic Bitrix24 batch-rejection error code
+ * that appears on every method's error table, NOT a per-endpoint deny
+ * list — `task.checklistitem.delete` (PR #31) lists the same error
+ * and is batched here without issue. The first pilot smoke-test should
+ * still confirm the batch path responds normally on a live portal.
  *
  * Operator path: "сделай так, чтобы задача 100 шла после задач 5, 7, 9" →
  * fix `taskIdTo: 100` + `linkType: 2` (FS), pass `taskIdFrom: [5, 7, 9]`
@@ -58,7 +68,7 @@ interface AddTaskDependencyBatchRow {
 export default defineActionTool<AddTaskDependencyInput, AddTaskDependencyBatchRow>({
   name: 'bitrix24_add_task_dependency',
   description:
-    'Create a "previous task" dependency between two Bitrix24 tasks — the dependent task (`taskIdTo`) is scheduled relative to the predecessor (`taskIdFrom`) according to `linkType`. Use this to wire the "Предыдущие задачи" relationship that the Bitrix24 task form exposes (commonly for Gantt-style scheduling). Bitrix24 rejects with ILLEGAL_NEW_LINK if the same `(taskIdFrom, taskIdTo)` pair already has a link, and with ACTION_NOT_ALLOWED if the resulting graph would be invalid (e.g. a cycle, or insufficient rights on one of the tasks). NOT a delete — does not require `confirmDelete`. To remove a link, use `bitrix24_remove_task_dependency`; to read existing predecessors, use `bitrix24_list_task_dependencies`.',
+    'Create a "previous task" dependency between two Bitrix24 tasks — the dependent task (`taskIdTo`) is scheduled relative to the predecessor (`taskIdFrom`) according to `linkType`. Use this to wire the "Предыдущие задачи" relationship that the Bitrix24 task form exposes (commonly for Gantt-style scheduling). Bitrix24 rejects with ILLEGAL_NEW_LINK if the same `(taskIdFrom, taskIdTo)` pair already has a link, with ACTION_NOT_ALLOWED if the link cannot be created for non-rights reasons (e.g. a scheduling cycle), and with INVALID_CREDENTIALS if the calling user lacks rights on one of the tasks. NOT a delete — does not require `confirmDelete`. To remove a link, use `bitrix24_remove_task_dependency`; to read existing predecessors, use `bitrix24_list_task_dependencies`.',
   usageNotes: USAGE_NOTES,
   pastTense: 'linked',
   batchCap: DEFAULT_BATCH_CAP,
@@ -79,7 +89,7 @@ export default defineActionTool<AddTaskDependencyInput, AddTaskDependencyBatchRo
       .min(0)
       .max(3)
       .describe(
-        'Schedule relationship between predecessor (`taskIdFrom`) and dependent (`taskIdTo`). One value per call (single OR batch). Choices: 0 = start-start (both tasks start together) | 1 = start-finish (dependent finishes when predecessor starts; rarely useful) | 2 = finish-start (dependent starts when predecessor finishes — the DEFAULT operator intent for "сделай B после A") | 3 = finish-finish (both tasks finish together). When the operator says "после" / "потом" / "вслед за" with no further detail, use 2 (FS).',
+        'Schedule relationship between predecessor (`taskIdFrom`) and dependent (`taskIdTo`). One value per call (single OR batch). Choices: 0 = start-start (both tasks start together) | 1 = start-finish (dependent finishes when predecessor starts) | 2 = finish-start (dependent starts when predecessor finishes — the DEFAULT operator intent for "сделай B после A") | 3 = finish-finish (both tasks finish together). When the operator says "после" / "потом" / "вслед за" with no further detail, use 2 (FS).',
       ),
     force: forceFlagSchema(DEFAULT_BATCH_CAP),
   },

@@ -44,7 +44,7 @@ import { toNumber } from '~/server/utils/wire-coerce'
 export default defineMcpTool({
   name: 'bitrix24_list_task_dependencies',
   description:
-    'List the predecessor tasks ("Предыдущие задачи") that a Bitrix24 task depends on. Returns an array of task IDs — the ids of tasks that must complete (or start) before the given task can proceed. Does NOT return the per-link `linkType` (SS/SF/FS/FF) — Bitrix24\'s current read endpoint only exposes the predecessor ids; the link-type info is set by `bitrix24_add_task_dependency` but cannot be read back via REST. Operators wanting that view should use the Bitrix24 UI. Returns an empty array when the task has no predecessors. To MODIFY links, use `bitrix24_add_task_dependency` / `bitrix24_remove_task_dependency`.',
+    'List the predecessor tasks ("Предыдущие задачи") that a Bitrix24 task depends on. Returns an array of task IDs — the ids of tasks that must complete (or start) before the given task can proceed. Does NOT return the per-link `linkType` (SS/SF/FS/FF): the current read endpoint (`task.item.getdependson`) only exposes predecessor ids, and as of 2026-05 no REST method documents a way to read the link types back. Operators wanting that view should use the Bitrix24 UI. Returns an empty array when the task has no predecessors. To MODIFY links, use `bitrix24_add_task_dependency` / `bitrix24_remove_task_dependency`.',
   inputSchema: {
     taskId: z
       .number()

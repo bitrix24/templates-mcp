@@ -398,19 +398,24 @@ describe('assertConfirmedDelete', () => {
     // tests assert against the target-description substring; this test
     // additionally pins the `Re-call \`<toolName>\`` instruction so the
     // agent sees which exact tool to call back with `confirmDelete: true`.
-    expect(() =>
-      assertConfirmedDelete('bitrix24_delete_widget', '3 widgets [5, 7, 9] on board 12', false),
-    ).toThrow(
-      expect.objectContaining({
-        message: expect.stringContaining('Refusing to delete 3 widgets [5, 7, 9] on board 12'),
-      }) as unknown as Error,
-    )
-    expect(() =>
-      assertConfirmedDelete('bitrix24_delete_widget', '3 widgets [5, 7, 9] on board 12', false),
-    ).toThrow(
-      expect.objectContaining({
-        message: expect.stringContaining('Re-call `bitrix24_delete_widget` with `confirmDelete: true`'),
-      }) as unknown as Error,
-    )
+    // Capture a single throw and assert both substrings against the same
+    // error so the test pins ONE end-to-end message rather than two
+    // independent throws that could drift apart silently.
+    let captured: unknown
+    try {
+      assertConfirmedDelete('bitrix24_delete_widget', '3 widgets [5, 7, 9] on board 12', false)
+    } catch (err) {
+      captured = err
+    }
+    expect(captured).toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+      message: expect.stringContaining('Refusing to delete 3 widgets [5, 7, 9] on board 12') as unknown as string,
+    })
+    expect(captured).toMatchObject({
+      message: expect.stringContaining(
+        'Re-call `bitrix24_delete_widget` with `confirmDelete: true`',
+      ) as unknown as string,
+    })
   })
 })

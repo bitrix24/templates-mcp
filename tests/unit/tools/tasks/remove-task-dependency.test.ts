@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
@@ -22,6 +23,12 @@ const tool = (await import('../../../../server/mcp/tools/tasks/remove-task-depen
     confirmDelete?: boolean
     force?: boolean
   }) => Promise<ToolContent>
+  inputSchema: {
+    taskIdTo: z.ZodNumber
+    taskIdFrom: z.ZodType<number | number[]>
+    confirmDelete: z.ZodOptional<z.ZodBoolean>
+    force: z.ZodOptional<z.ZodBoolean>
+  }
 }
 
 describe('bitrix24_remove_task_dependency', () => {
@@ -188,6 +195,30 @@ describe('bitrix24_remove_task_dependency', () => {
       name: 'Bitrix24ToolError',
       message: 'access denied',
     })
+  })
+
+  it('wraps SDK errors into Bitrix24ToolError on batch mode (network throw aborts the whole batch)', async () => {
+    fake.v2Batch.mockRejectedValue(new Error('timeout'))
+    await expect(
+      tool.handler({ taskIdTo: 100, taskIdFrom: [5, 7, 9], confirmDelete: true }),
+    ).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      message: 'timeout',
+    })
+  })
+
+  it('schema accepts confirmDelete as optional boolean, rejects coerced string/number forms', () => {
+    // Mirrors the schema-pin block on delete-task-result / delete-checklist-item.
+    // Pins the wire-side contract of `confirmDeleteSchema()` for this tool —
+    // a future refactor of the shared schema must not silently change
+    // coercion behaviour for the delete-dependency path.
+    expect(tool.inputSchema.confirmDelete.safeParse(undefined).success).toBe(true)
+    expect(tool.inputSchema.confirmDelete.safeParse(true).success).toBe(true)
+    expect(tool.inputSchema.confirmDelete.safeParse(false).success).toBe(true)
+    // Zod's strict boolean — `"true"` string is rejected; no coercion bypass.
+    expect(tool.inputSchema.confirmDelete.safeParse('true').success).toBe(false)
+    expect(tool.inputSchema.confirmDelete.safeParse(1).success).toBe(false)
+    expect(tool.inputSchema.confirmDelete.safeParse(null).success).toBe(false)
   })
 
   it('confirm gate STILL fires when force=true bypasses BATCH_TOO_LARGE on >50 ids (same precedence as delete_elapsed_time)', async () => {

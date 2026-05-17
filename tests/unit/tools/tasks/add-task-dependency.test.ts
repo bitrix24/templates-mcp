@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
@@ -22,6 +23,12 @@ const tool = (await import('../../../../server/mcp/tools/tasks/add-task-dependen
     linkType: number
     force?: boolean
   }) => Promise<ToolContent>
+  inputSchema: {
+    taskIdTo: z.ZodNumber
+    taskIdFrom: z.ZodType<number | number[]>
+    linkType: z.ZodNumber
+    force: z.ZodOptional<z.ZodBoolean>
+  }
 }
 
 describe('bitrix24_add_task_dependency', () => {
@@ -168,6 +175,22 @@ describe('bitrix24_add_task_dependency', () => {
       name: 'Bitrix24ToolError',
       message: 'timeout',
     })
+  })
+
+  it('schema accepts every valid linkType (0..3) and rejects out-of-range / non-integer values', () => {
+    // Pins the `z.number().int().min(0).max(3)` contract. If someone
+    // widens the range or relaxes the integer constraint, the tool
+    // description (which enumerates 0..3 with operator semantics) goes
+    // stale silently — this guard catches that drift.
+    expect(tool.inputSchema.linkType.safeParse(0).success).toBe(true) // SS
+    expect(tool.inputSchema.linkType.safeParse(1).success).toBe(true) // SF
+    expect(tool.inputSchema.linkType.safeParse(2).success).toBe(true) // FS (default operator intent)
+    expect(tool.inputSchema.linkType.safeParse(3).success).toBe(true) // FF
+    expect(tool.inputSchema.linkType.safeParse(-1).success).toBe(false)
+    expect(tool.inputSchema.linkType.safeParse(4).success).toBe(false)
+    expect(tool.inputSchema.linkType.safeParse(1.5).success).toBe(false)
+    // No string coercion — must arrive as a number on the wire.
+    expect(tool.inputSchema.linkType.safeParse('2').success).toBe(false)
   })
 
   it('does NOT require confirmDelete — adds are not destructive (Rule #9 applies to delete tools only)', async () => {
