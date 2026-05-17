@@ -170,7 +170,7 @@ Every delete tool needs the universal `confirmDelete` flag (Rule #9). Some addit
 | Destructive op | Cascade target | Cascade indicator | Pre-flight method | Confirm field | Reference |
 |---|---|---|---|---|---|
 | `task.checklistitem.delete` on a heading | every child checklist item under the heading | `PARENT_ID === 0` on the target | `task.checklistitem.getlist { TASKID }` (one call gates both single + batch) | `confirmDelete` (Rule #9) + `confirmDeleteHeading` (Rule #10, cascade) | `server/utils/checklist.ts` ✅ shipped — universal gate retrofit landed in PR #31 |
-| `task.elapseditem.delete` (single or batch) | none — line-item delete only | — | — | universal `confirmDelete` only (Ground Rule #9) | `server/mcp/tools/tasks/delete-elapsed-time.ts` ✅ shipped in PR-B |
+| `task.elapseditem.delete` (single or batch) | none — line-item delete only | — | — | universal `confirmDelete` only (Ground Rule #9) | `server/mcp/tools/tasks/delete-elapsed-time.ts` ✅ shipped in PR #28 |
 | `tasks.task.result.delete` (single) | none — single result, parent task untouched | — | — | universal `confirmDelete` only (Ground Rule #9) | `server/mcp/tools/tasks/delete-task-result.ts` ✅ shipped — universal gate retrofit landed in PR #31 |
 | `sonet_group.delete` *(future)* | every task / file / discussion in the workgroup | the workgroup id itself | `sonet_group.get { ID }` + `tasks.task.list { GROUP_ID }` | `confirmDeleteWorkgroup` | not implemented |
 | `tasks.task.delete` *(future)* | every comment / checklist item / time entry / result / dependency on the task | the task id itself | `tasks.task.get` (cheap) | `confirmDeleteTask` | not implemented; consider deferring — Bitrix24 UI hides hard-delete behind a per-portal toggle |

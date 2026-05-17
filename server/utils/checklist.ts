@@ -257,10 +257,11 @@ async function runBatch(
  * delete short-circuits without the pre-flight `getlist` round-trip.
  *
  * Duplicated as a module-local function in `delete-elapsed-time.ts` (same
- * name, identical shape — only the tool name in the error message differs).
- * Consolidation into a shared `define-action-tool.ts` helper is tracked
- * for the PR-C window — see the follow-up issue. The shared
- * `confirmDeleteSchema()` already lives there.
+ * name, identical shape — only the tool name and entity description in
+ * the error message differ). Consolidation into a shared
+ * `define-action-tool.ts` helper is tracked in issue #32; planned for the
+ * PR-C window so the helper lands alongside its third consumer. The
+ * shared `confirmDeleteSchema()` already lives in `define-action-tool.ts`.
  */
 function assertConfirmedDelete(taskId: number, itemId: number | number[], confirmed: boolean): void {
   if (confirmed) return
