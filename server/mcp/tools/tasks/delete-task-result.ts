@@ -16,8 +16,10 @@ import { callV3 } from '~/server/utils/sdk-helpers'
  * result entry disappears.
  *
  * SKILL.md Rule #9: requires `confirmDelete: true` from the agent. The
- * shared `confirmDeleteSchema()` keeps the LLM-facing wording uniform
- * across delete tools.
+ * standalone handler (no factory dispatch) checks the flag inline and
+ * throws `Bitrix24ToolError` code `DELETE_NEEDS_CONFIRM` if absent or
+ * `false`. The shared `confirmDeleteSchema()` keeps the LLM-facing
+ * wording uniform across delete tools.
  */
 export default defineMcpTool({
   name: 'bitrix24_delete_task_result',

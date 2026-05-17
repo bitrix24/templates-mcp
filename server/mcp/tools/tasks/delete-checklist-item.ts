@@ -15,8 +15,10 @@ import { defineChecklistActionTool } from '~/server/utils/checklist'
  *     — additionally required when the target is a checklist heading
  *     (parentId === 0). Refused with `HEADING_DELETE_NEEDS_CONFIRM` after a
  *     single pre-flight `task.checklistitem.getlist` that gates both
- *     single-id and batch flows. See `server/utils/checklist.ts`
- *     (`assertConfirmedDelete` / `assertNotHeading` / `assertBatchNoHeadings`).
+ *     single-id and batch flows. See `server/utils/checklist.ts`:
+ *       - `assertConfirmedDelete` — Rule #9 gate (universal, fires first)
+ *       - `assertNotHeading` — Rule #10 cascade gate, single-id
+ *       - `assertBatchNoHeadings` — Rule #10 cascade gate, batch (one pre-flight)
  *
  * Heading deletes need BOTH flags `true`; regular-item deletes only need
  * `confirmDelete: true`.

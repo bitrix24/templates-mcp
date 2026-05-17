@@ -44,9 +44,12 @@ describe('bitrix24_delete_task_result', () => {
       code: 'DELETE_NEEDS_CONFIRM',
       message: expect.stringMatching(/task result 42/) as unknown as string,
     })
+    // Explicit `false` path must produce the same error shape (name +
+    // code + message format) — pins symmetry vs. `undefined`.
     await expect(tool.handler({ resultId: 42, confirmDelete: false })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: 'DELETE_NEEDS_CONFIRM',
+      message: expect.stringMatching(/task result 42/) as unknown as string,
     })
     // No wire call should have fired in either refusal path.
     expect(fake.v3Call).not.toHaveBeenCalled()

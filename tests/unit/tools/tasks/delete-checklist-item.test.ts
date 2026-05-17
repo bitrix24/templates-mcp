@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
@@ -23,6 +24,10 @@ const tool = (await import('../../../../server/mcp/tools/tasks/delete-checklist-
     confirmDelete?: boolean
     confirmDeleteHeading?: boolean
   }) => Promise<ToolContent>
+  inputSchema: {
+    confirmDelete: z.ZodOptional<z.ZodBoolean>
+    confirmDeleteHeading: z.ZodOptional<z.ZodBoolean>
+  }
 }
 
 /** Shared checklist fixture: heading 431, two regular items 433 / 475. */
@@ -59,11 +64,30 @@ describe('bitrix24_delete_checklist_item', () => {
 
   it('refuses single delete without confirmDelete: true and names the target (Ground Rule #9, universal)', async () => {
     // Rule #9 fires BEFORE the heading pre-flight — the agent learns the
-    // confirm requirement without burning a getlist round-trip.
+    // confirm requirement without burning a getlist round-trip. Both
+    // `undefined` and explicit `false` paths must refuse.
     await expect(tool.handler({ taskId: 13, itemId: 475 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: 'DELETE_NEEDS_CONFIRM',
       message: expect.stringMatching(/checklist item 475 on task 13/) as unknown as string,
+    })
+    await expect(tool.handler({ taskId: 13, itemId: 475, confirmDelete: false })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+    })
+    expect(fake.v2Call).not.toHaveBeenCalled()
+  })
+
+  it('refuses single heading delete with confirmDeleteHeading: true but confirmDelete absent (Rule #9 fires first)', async () => {
+    // Pins the stacking-order invariant: Rule #9 has priority. Even when
+    // the agent supplied the cascade flag for a heading target, the
+    // universal gate refuses BEFORE the pre-flight runs — no getlist
+    // round-trip, no leak about whether the target is a heading.
+    await expect(
+      tool.handler({ taskId: 13, itemId: 431, confirmDeleteHeading: true }),
+    ).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
     })
     expect(fake.v2Call).not.toHaveBeenCalled()
   })
@@ -159,5 +183,43 @@ describe('bitrix24_delete_checklist_item', () => {
     }
     expect(payload).toMatchObject({ batch: true, verb: 'deleted', total: 2, ok: 1, failed: 1 })
     expect(payload.results[1]!.error).toMatch(/access denied/)
+  })
+
+  it('batch rejects > 50 ids with BATCH_TOO_LARGE BEFORE confirm gate fires (cap check is factory-side)', async () => {
+    // Cap check lives in `defineActionTool` dispatch — runs before the
+    // spec's runBatch (which calls assertConfirmedDelete). Result: agent
+    // missing both `force` AND `confirmDelete` sees BATCH_TOO_LARGE
+    // first, learns about the confirm requirement only on retry with
+    // force=true. Same dispatch order as `delete_elapsed_time`.
+    const ids = Array.from({ length: 51 }, (_, i) => i + 1)
+
+    await expect(tool.handler({ taskId: 1, itemId: ids })).rejects.toMatchObject({
+      code: 'BATCH_TOO_LARGE',
+    })
+
+    // With force=true the cap clears; now the confirm gate fires.
+    await expect(
+      tool.handler({ taskId: 1, itemId: ids, force: true }),
+    ).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: 'DELETE_NEEDS_CONFIRM',
+    })
+
+    // No wire call in either refusal path.
+    expect(fake.v2Call).not.toHaveBeenCalled()
+    expect(fake.v2Batch).not.toHaveBeenCalled()
+  })
+
+  it('schema accepts confirmDelete + confirmDeleteHeading as optional booleans (no coercion bypass)', () => {
+    // Zod strictness: only true / false / undefined accepted; strings and
+    // numbers rejected. Pins the same surface as delete_task_result.
+    for (const schema of [tool.inputSchema.confirmDelete, tool.inputSchema.confirmDeleteHeading]) {
+      expect(schema.safeParse(undefined).success).toBe(true)
+      expect(schema.safeParse(true).success).toBe(true)
+      expect(schema.safeParse(false).success).toBe(true)
+      expect(schema.safeParse('true').success).toBe(false)
+      expect(schema.safeParse(1).success).toBe(false)
+      expect(schema.safeParse(null).success).toBe(false)
+    }
   })
 })

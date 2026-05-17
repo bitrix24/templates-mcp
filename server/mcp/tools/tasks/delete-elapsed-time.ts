@@ -78,7 +78,7 @@ export default defineActionTool<DeleteElapsedTimeInput, DeleteElapsedTimeBatchRo
   batchSummaryExtras: (input) => ({ taskId: input.taskId }),
 })
 
-function assertConfirmed(taskId: number, itemId: number | number[], confirmed: boolean): void {
+function assertConfirmedDelete(taskId: number, itemId: number | number[], confirmed: boolean): void {
   if (confirmed) return
   const target = Array.isArray(itemId)
     ? `${itemId.length} elapsed-time entries [${itemId.join(', ')}] on task ${taskId}`
@@ -90,7 +90,7 @@ function assertConfirmed(taskId: number, itemId: number | number[], confirmed: b
 }
 
 async function runOne(taskId: number, itemId: number, confirmDelete: boolean) {
-  assertConfirmed(taskId, itemId, confirmDelete)
+  assertConfirmedDelete(taskId, itemId, confirmDelete)
   const b24 = useBitrix24()
   await callV2<null>(
     b24,
@@ -118,7 +118,7 @@ async function runBatch(
   itemIds: number[],
   confirmDelete: boolean,
 ): Promise<DeleteElapsedTimeBatchRow[]> {
-  assertConfirmed(taskId, itemIds, confirmDelete)
+  assertConfirmedDelete(taskId, itemIds, confirmDelete)
   const b24 = useBitrix24()
   const rows = await batchV2<null>(
     b24,

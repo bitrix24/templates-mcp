@@ -73,10 +73,22 @@ export function toChecklistItemShort(raw: unknown): ChecklistItemShort | null {
  * Batch mode = one `batchV2` round-trip via `actions.v2.batch.make` (cap 50
  * per Bitrix24's server-side limit).
  *
- * For `delete` only: when the target is a checklist heading (`parentId: 0`)
- * the request wipes the whole sub-tree. To prevent silent data loss we
- * require an explicit `confirmDeleteHeading: true` for those calls — see
- * `runOne` / `runBatch`.
+ * For `delete` only: TWO confirm flags are wired (the sibling `complete` /
+ * `renew` tools omit both):
+ *
+ *   - `confirmDelete: boolean` — SKILL.md Rule #9 (universal). Refuses with
+ *     `DELETE_NEEDS_CONFIRM` if not `true`. Fires FIRST (before any wire
+ *     call) so the agent learns about the gate without burning a pre-flight.
+ *   - `confirmDeleteHeading: boolean` — SKILL.md Rule #10 (cascade). Stacks
+ *     on top: when the target is a checklist heading (`parentId: 0`) the
+ *     request wipes the whole sub-tree. Pre-flight `task.checklistitem.getlist`
+ *     refuses with `HEADING_DELETE_NEEDS_CONFIRM` unless this flag is
+ *     `true` too. Heading deletes need BOTH flags; regular-item deletes
+ *     only need `confirmDelete: true`.
+ *
+ * See `assertConfirmedDelete` / `assertNotHeading` / `assertBatchNoHeadings`
+ * below for the enforcement helpers, and `runOne` / `runBatch` for the
+ * dispatch order.
  */
 export type ChecklistActionMethod =
   | 'task.checklistitem.complete'
@@ -240,9 +252,15 @@ async function runBatch(
 /**
  * Universal delete gate per SKILL.md Ground Rule #9 — refuse any checklist
  * delete that wasn't explicitly confirmed by the operator. Single or batch.
- * Mirrors the `assertConfirmed` pattern in `delete-elapsed-time.ts`; the
- * shared `confirmDeleteSchema()` helper keeps the LLM-facing wording
- * uniform across delete tools.
+ * Must be called BEFORE the cascade gate (`assertNotHeading` /
+ * `assertBatchNoHeadings`) — Rule #9 has priority so any unconfirmed
+ * delete short-circuits without the pre-flight `getlist` round-trip.
+ *
+ * Duplicated as a module-local function in `delete-elapsed-time.ts` (same
+ * name, identical shape — only the tool name in the error message differs).
+ * Consolidation into a shared `define-action-tool.ts` helper is tracked
+ * for the PR-C window — see the follow-up issue. The shared
+ * `confirmDeleteSchema()` already lives there.
  */
 function assertConfirmedDelete(taskId: number, itemId: number | number[], confirmed: boolean): void {
   if (confirmed) return
@@ -273,7 +291,7 @@ async function assertNotHeading(b24: Parameters<typeof callV2>[0], taskId: numbe
   if (!target) return
   if ((toNumber(target.parentId ?? target.PARENT_ID) ?? 0) === 0) {
     throw new Bitrix24ToolError(
-      `Item ${itemId} is a checklist HEADING on task ${taskId}; deleting it wipes the whole checklist (heading + all children) with no undo. Re-call \`bitrix24_delete_checklist_item\` with \`confirmDeleteHeading: true\` after the operator has agreed.`,
+      `Item ${itemId} is a checklist HEADING on task ${taskId}; deleting it wipes the whole checklist (heading + all children) with no undo. Re-call \`bitrix24_delete_checklist_item\` with BOTH \`confirmDelete: true\` (Rule #9) AND \`confirmDeleteHeading: true\` (Rule #10) after the operator has agreed.`,
       'HEADING_DELETE_NEEDS_CONFIRM',
     )
   }
@@ -298,7 +316,7 @@ async function assertBatchNoHeadings(
   const headingHits = itemIds.filter((id) => headingIds.includes(id))
   if (headingHits.length > 0) {
     throw new Bitrix24ToolError(
-      `Batch refused: ${headingHits.join(', ')} ${headingHits.length === 1 ? 'is a checklist heading' : 'are checklist headings'} on task ${taskId}. Deleting a heading wipes the whole checklist with no undo. Re-call with \`confirmDeleteHeading: true\` after the operator has agreed, or split the batch.`,
+      `Batch refused: ${headingHits.join(', ')} ${headingHits.length === 1 ? 'is a checklist heading' : 'are checklist headings'} on task ${taskId}. Deleting a heading wipes the whole checklist with no undo. Re-call with BOTH \`confirmDelete: true\` (Rule #9) AND \`confirmDeleteHeading: true\` (Rule #10) after the operator has agreed, or split the batch.`,
       'HEADING_DELETE_NEEDS_CONFIRM',
     )
   }

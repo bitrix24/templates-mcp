@@ -154,7 +154,7 @@ A factory pays for itself when (a) three or more tools share the call shape and 
 **Reference implementations**:
 
 - `server/mcp/tools/tasks/delete-elapsed-time.ts` — universal `confirmDelete` only (no cascade). The cleanest pattern for line-item deletes.
-- `server/mcp/tools/tasks/delete-checklist-item.ts` + `server/utils/checklist.ts` (`assertNotHeading`, `assertBatchNoHeadings`) — both `confirmDelete` (universal, when retrofit lands) AND `confirmDeleteHeading` (cascade-specific). Pre-flight `callV2('task.checklistitem.getlist', { TASKID })` runs once for the whole batch — one extra round-trip, gates both flows.
+- `server/mcp/tools/tasks/delete-checklist-item.ts` + `server/utils/checklist.ts` (`assertConfirmedDelete`, `assertNotHeading`, `assertBatchNoHeadings`) — both `confirmDelete` (universal, Rule #9) AND `confirmDeleteHeading` (cascade-specific, Rule #10). Universal gate fires FIRST; cascade pre-flight `callV2('task.checklistitem.getlist', { TASKID })` runs once for the whole batch only when the universal gate passes — one extra round-trip, gates both flows.
 
 **Checklist for new delete tools**:
 
@@ -169,9 +169,9 @@ Every delete tool needs the universal `confirmDelete` flag (Rule #9). Some addit
 
 | Destructive op | Cascade target | Cascade indicator | Pre-flight method | Confirm field | Reference |
 |---|---|---|---|---|---|
-| `task.checklistitem.delete` on a heading | every child checklist item under the heading | `PARENT_ID === 0` on the target | `task.checklistitem.getlist { TASKID }` (one call gates both single + batch) | `confirmDelete` (Rule #9) + `confirmDeleteHeading` (Rule #10, cascade) | `server/utils/checklist.ts` ✅ shipped — universal gate retrofit landed in PR-B-retrofit |
+| `task.checklistitem.delete` on a heading | every child checklist item under the heading | `PARENT_ID === 0` on the target | `task.checklistitem.getlist { TASKID }` (one call gates both single + batch) | `confirmDelete` (Rule #9) + `confirmDeleteHeading` (Rule #10, cascade) | `server/utils/checklist.ts` ✅ shipped — universal gate retrofit landed in PR #31 |
 | `task.elapseditem.delete` (single or batch) | none — line-item delete only | — | — | universal `confirmDelete` only (Ground Rule #9) | `server/mcp/tools/tasks/delete-elapsed-time.ts` ✅ shipped in PR-B |
-| `tasks.task.result.delete` (single) | none — single result, parent task untouched | — | — | universal `confirmDelete` only (Ground Rule #9) | `server/mcp/tools/tasks/delete-task-result.ts` ✅ shipped — universal gate retrofit landed in PR-B-retrofit |
+| `tasks.task.result.delete` (single) | none — single result, parent task untouched | — | — | universal `confirmDelete` only (Ground Rule #9) | `server/mcp/tools/tasks/delete-task-result.ts` ✅ shipped — universal gate retrofit landed in PR #31 |
 | `sonet_group.delete` *(future)* | every task / file / discussion in the workgroup | the workgroup id itself | `sonet_group.get { ID }` + `tasks.task.list { GROUP_ID }` | `confirmDeleteWorkgroup` | not implemented |
 | `tasks.task.delete` *(future)* | every comment / checklist item / time entry / result / dependency on the task | the task id itself | `tasks.task.get` (cheap) | `confirmDeleteTask` | not implemented; consider deferring — Bitrix24 UI hides hard-delete behind a per-portal toggle |
 | `crm.deal.delete` *(post-pilot)* | every activity / quote / invoice linked to the deal | the deal id itself | `crm.activity.list { OWNER_TYPE_ID, OWNER_ID }` | `confirmDeleteDeal` | post-pilot |
