@@ -4,6 +4,7 @@ import type { TaskResultListEnvelope } from '~/server/types/bitrix24'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import { callV3 } from '~/server/utils/sdk-helpers'
 import { toTaskResultShort, type TaskResultShort } from '~/server/utils/task-results'
+import { toV3Filter } from '~/server/utils/v3-filter'
 
 /**
  * List all results recorded on a Bitrix24 task.
@@ -45,8 +46,9 @@ export default defineMcpTool({
       'tasks.task.result.list',
       {
         // v3 filter is an array-of-conditions; the docs specifically require
-        // a taskId condition for this endpoint.
-        filter: [['taskId', taskId]],
+        // a taskId condition for this endpoint. `toV3Filter` handles the
+        // shape so we keep one contract across every v3 list endpoint.
+        filter: toV3Filter({ taskId }),
         order: { [sort.field]: sort.direction.toUpperCase() },
         select: ['id', 'taskId', 'text', 'authorId', 'createdAt', 'updatedAt', 'status', 'messageId'],
         pagination: { limit: limit ?? 50, offset: offset ?? 0 },
