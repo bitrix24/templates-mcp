@@ -9,7 +9,7 @@ import {
   idOrIdArraySchema,
   mapBatchRows,
 } from '~/server/utils/define-action-tool'
-import { Bitrix24ToolError } from '~/server/utils/errors'
+import { Bitrix24ErrorCode, Bitrix24ToolError } from '~/server/utils/errors'
 import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
 import { pick, toBool, toNumber } from '~/server/utils/wire-coerce'
 import type { BitrixChecklistItemRaw } from '~/server/types/bitrix24'
@@ -284,7 +284,7 @@ async function assertNotHeading(b24: Parameters<typeof callV2>[0], taskId: numbe
   if ((toNumber(target.parentId ?? target.PARENT_ID) ?? 0) === 0) {
     throw new Bitrix24ToolError(
       `Item ${itemId} is a checklist HEADING on task ${taskId}; deleting it wipes the whole checklist (heading + all children) with no undo. Re-call \`bitrix24_delete_checklist_item\` with BOTH \`confirmDelete: true\` (Rule #9) AND \`confirmDeleteHeading: true\` (Rule #10) after the operator has agreed.`,
-      'HEADING_DELETE_NEEDS_CONFIRM',
+      Bitrix24ErrorCode.HEADING_DELETE_NEEDS_CONFIRM,
     )
   }
 }
@@ -309,7 +309,7 @@ async function assertBatchNoHeadings(
   if (headingHits.length > 0) {
     throw new Bitrix24ToolError(
       `Batch refused: ${headingHits.join(', ')} ${headingHits.length === 1 ? 'is a checklist heading' : 'are checklist headings'} on task ${taskId}. Deleting a heading wipes the whole checklist with no undo. Re-call with BOTH \`confirmDelete: true\` (Rule #9) AND \`confirmDeleteHeading: true\` (Rule #10) after the operator has agreed, or split the batch.`,
-      'HEADING_DELETE_NEEDS_CONFIRM',
+      Bitrix24ErrorCode.HEADING_DELETE_NEEDS_CONFIRM,
     )
   }
 }

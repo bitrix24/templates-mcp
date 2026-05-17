@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Bitrix24ErrorCode } from '../../../../server/utils/errors'
 import type { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
@@ -68,12 +69,12 @@ describe('bitrix24_delete_checklist_item', () => {
     // `undefined` and explicit `false` paths must refuse.
     await expect(tool.handler({ taskId: 13, itemId: 475 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       message: expect.stringMatching(/checklist item 475 on task 13/) as unknown as string,
     })
     await expect(tool.handler({ taskId: 13, itemId: 475, confirmDelete: false })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
     })
     expect(fake.v2Call).not.toHaveBeenCalled()
   })
@@ -87,7 +88,7 @@ describe('bitrix24_delete_checklist_item', () => {
       tool.handler({ taskId: 13, itemId: 431, confirmDeleteHeading: true }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
     })
     expect(fake.v2Call).not.toHaveBeenCalled()
   })
@@ -95,7 +96,7 @@ describe('bitrix24_delete_checklist_item', () => {
   it('refuses batch delete without confirmDelete: true (Ground Rule #9)', async () => {
     await expect(tool.handler({ taskId: 13, itemId: [475, 433] })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       message: expect.stringMatching(/2 checklist item\(s\) \[475, 433\] on task 13/) as unknown as string,
     })
     expect(fake.v2Call).not.toHaveBeenCalled()
@@ -109,7 +110,7 @@ describe('bitrix24_delete_checklist_item', () => {
     // (cascade) stacks on top, requiring confirmDeleteHeading as well.
     await expect(tool.handler({ taskId: 13, itemId: 431, confirmDelete: true })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'HEADING_DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.HEADING_DELETE_NEEDS_CONFIRM,
     })
     // Only the pre-flight call should have run — never the destructive delete.
     expect(fake.v2Call).toHaveBeenCalledTimes(1)
@@ -154,7 +155,7 @@ describe('bitrix24_delete_checklist_item', () => {
       tool.handler({ taskId: 13, itemId: [433, 431, 475], confirmDelete: true }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'HEADING_DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.HEADING_DELETE_NEEDS_CONFIRM,
     })
     // batchV2 must NOT have been called — we refuse before destructive work.
     expect(fake.v2Batch).not.toHaveBeenCalled()
@@ -194,7 +195,7 @@ describe('bitrix24_delete_checklist_item', () => {
     const ids = Array.from({ length: 51 }, (_, i) => i + 1)
 
     await expect(tool.handler({ taskId: 1, itemId: ids })).rejects.toMatchObject({
-      code: 'BATCH_TOO_LARGE',
+      code: Bitrix24ErrorCode.BATCH_TOO_LARGE,
     })
 
     // With force=true the cap clears; now the confirm gate fires.
@@ -202,7 +203,7 @@ describe('bitrix24_delete_checklist_item', () => {
       tool.handler({ taskId: 1, itemId: ids, force: true }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
     })
 
     // No wire call in either refusal path.

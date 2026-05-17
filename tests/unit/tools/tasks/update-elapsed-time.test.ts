@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Bitrix24ErrorCode } from '../../../../server/utils/errors'
 import type { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
@@ -80,7 +81,7 @@ describe('bitrix24_update_elapsed_time', () => {
   it('refuses an update with no changes (NO_CHANGES error code)', async () => {
     await expect(tool.handler({ taskId: 691, itemId: 5 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'NO_CHANGES',
+      code: Bitrix24ErrorCode.NO_CHANGES,
     })
     // The handler short-circuits — no wire call should have been made.
     expect(fake.v2Call).not.toHaveBeenCalled()

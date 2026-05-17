@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Bitrix24ErrorCode } from '../../../../server/utils/errors'
 import type { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
@@ -109,7 +110,7 @@ describe('bitrix24_remove_task_dependency', () => {
   it('refuses single removal without confirmDelete: true and names the target in the message (Ground Rule #9)', async () => {
     await expect(tool.handler({ taskIdTo: 100, taskIdFrom: 50 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       // Message must name the pair so the operator sees exactly which
       // link they're agreeing to remove.
       message: expect.stringMatching(/dependency link 50 → task 100/) as unknown as string,
@@ -118,7 +119,7 @@ describe('bitrix24_remove_task_dependency', () => {
       tool.handler({ taskIdTo: 100, taskIdFrom: 50, confirmDelete: false }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
     })
     expect(fake.v2Call).not.toHaveBeenCalled()
   })
@@ -128,7 +129,7 @@ describe('bitrix24_remove_task_dependency', () => {
       tool.handler({ taskIdTo: 100, taskIdFrom: [5, 7, 9] }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       message: expect.stringMatching(/3 dependency link\(s\) \[5, 7, 9\] → task 100/) as unknown as string,
     })
     expect(fake.v2Batch).not.toHaveBeenCalled()
@@ -149,7 +150,7 @@ describe('bitrix24_remove_task_dependency', () => {
       tool.handler({ taskIdTo: 100, taskIdFrom: ids, confirmDelete: true }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'BATCH_TOO_LARGE',
+      code: Bitrix24ErrorCode.BATCH_TOO_LARGE,
     })
     expect(fake.v2Batch).not.toHaveBeenCalled()
 
@@ -239,13 +240,13 @@ describe('bitrix24_remove_task_dependency', () => {
 
     await expect(
       tool.handler({ taskIdTo: 100, taskIdFrom: ids }),
-    ).rejects.toMatchObject({ code: 'BATCH_TOO_LARGE' })
+    ).rejects.toMatchObject({ code: Bitrix24ErrorCode.BATCH_TOO_LARGE })
 
     await expect(
       tool.handler({ taskIdTo: 100, taskIdFrom: ids, force: true }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
     })
 
     expect(fake.v2Batch).not.toHaveBeenCalled()

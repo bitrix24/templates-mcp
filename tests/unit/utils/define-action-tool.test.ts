@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Bitrix24ErrorCode } from '../../../server/utils/errors'
 import { z } from 'zod'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
@@ -139,7 +140,7 @@ describe('defineActionTool', () => {
 
     await expect(tool.handler({ id: [1, 2, 3] })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'BATCH_TOO_LARGE',
+      code: Bitrix24ErrorCode.BATCH_TOO_LARGE,
     })
     expect(runBatch).not.toHaveBeenCalled()
 
@@ -377,7 +378,7 @@ describe('assertConfirmedDelete', () => {
     ).toThrow(
       expect.objectContaining({
         name: 'Bitrix24ToolError',
-        code: 'DELETE_NEEDS_CONFIRM',
+        code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       }) as unknown as Error,
     )
   })
@@ -388,7 +389,7 @@ describe('assertConfirmedDelete', () => {
     ).toThrow(
       expect.objectContaining({
         name: 'Bitrix24ToolError',
-        code: 'DELETE_NEEDS_CONFIRM',
+        code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       }) as unknown as Error,
     )
   })
@@ -409,7 +410,7 @@ describe('assertConfirmedDelete', () => {
     }
     expect(captured).toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       message: expect.stringContaining('Refusing to delete 3 widgets [5, 7, 9] on board 12') as unknown as string,
     })
     expect(captured).toMatchObject({

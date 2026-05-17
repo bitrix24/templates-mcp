@@ -7,7 +7,7 @@ import {
   idOrIdArraySchema,
   mapBatchRows,
 } from '~/server/utils/define-action-tool'
-import { Bitrix24ToolError } from '~/server/utils/errors'
+import { Bitrix24ErrorCode, Bitrix24ToolError } from '~/server/utils/errors'
 import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
 
 /**
@@ -124,7 +124,7 @@ function assertNoSelfLoop(taskIdTo: number, taskIdFrom: number | number[]): void
     `Refusing to create a self-loop on task ${taskIdTo} — a task cannot be its own predecessor. `
       + `Offending taskIdFrom ${offenders.length === 1 ? 'value' : 'values'}: ${offenders.join(', ')}. `
       + `Drop the offending id(s) and re-call.`,
-    'INVALID_INPUT',
+    Bitrix24ErrorCode.INVALID_INPUT,
   )
 }
 

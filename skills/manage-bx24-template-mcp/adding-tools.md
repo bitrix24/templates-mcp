@@ -223,6 +223,12 @@ Reference implementations: `server/utils/task-lifecycle.ts` (factory-style, uses
 ## Errors and logging
 
 - **Errors**: always go through `toToolError(err, fallback)` from `~/server/utils/errors`. It special-cases `AjaxError` and `SdkError` (preserves `.code` and `.status`) and falls back to a generic wrap for plain `Error`.
+- **Error codes**: when throwing `Bitrix24ToolError` directly with a project-defined code (refusal gates, schema-passing-but-semantically-invalid input, batch-cap exceeded, …), use the `Bitrix24ErrorCode` registry from `~/server/utils/errors` — not raw strings. `Bitrix24ErrorCode.BATCH_TOO_LARGE` is typo-safe; `'BATCH_TO_LARGE'` compiles and silently bypasses every catch block matching the correct code. SDK-passed codes (Bitrix24's own `QUERY_LIMIT_EXCEEDED`, `ACCESS_DENIED`, etc.) flow through `toToolError` as strings — don't enumerate them.
+  - **Adding a new project code**:
+    1. Append a `KEY: 'VALUE'` line to `Bitrix24ErrorCode` in `errors.ts` with a JSDoc one-liner explaining when to throw it.
+    2. Reference it at the throw site: `new Bitrix24ToolError(msg, Bitrix24ErrorCode.KEY)`.
+    3. Reference it in test assertions: `expect(...).rejects.toMatchObject({ code: Bitrix24ErrorCode.KEY })`.
+    4. Update the registry-completeness test in `tests/unit/errors.test.ts` — its failure is the deliberate "you added a code" signal, not noise.
 - **Logging**: don't import `console` directly. The shared logger is `useLogger()` from `~/server/utils/logger`. The SDK's internal events (retry, rate-limit) already flow through it because `useBitrix24()` calls `client.setLogger(useLogger())` on construction.
 
 ```ts

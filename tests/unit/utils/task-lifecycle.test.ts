@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Bitrix24ErrorCode } from '../../../server/utils/errors'
 import { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../_helpers/bitrix24-mock'
 
@@ -174,7 +175,7 @@ describe('defineTaskLifecycleTool', () => {
 
     await expect(tool.handler({ taskId: ids })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'BATCH_TOO_LARGE',
+      code: Bitrix24ErrorCode.BATCH_TOO_LARGE,
     })
     expect(fake.v3Batch).not.toHaveBeenCalled()
 

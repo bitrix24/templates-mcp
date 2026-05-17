@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import type { AjaxResult } from '@bitrix24/b24jssdk'
-import { Bitrix24ToolError } from '~/server/utils/errors'
+import { Bitrix24ErrorCode, Bitrix24ToolError } from '~/server/utils/errors'
 
 /**
  * Generic single-or-batch action factory used by every action-tool family.
@@ -143,7 +143,7 @@ export function assertConfirmedDelete(
   if (confirmed) return
   throw new Bitrix24ToolError(
     `Refusing to delete ${targetDescription} without confirmation. Re-call \`${toolName}\` with \`confirmDelete: true\` only after the operator has explicitly agreed to the deletion (SKILL.md Ground Rule #9).`,
-    'DELETE_NEEDS_CONFIRM',
+    Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
   )
 }
 
@@ -239,7 +239,7 @@ export function defineActionTool<TInput extends ActionToolInput, TBatchRow exten
       if (target.length > spec.batchCap && !force) {
         throw new Bitrix24ToolError(
           `Batch of ${target.length} exceeds the default cap of ${spec.batchCap}. Pass force=true to override, or split into multiple calls.`,
-          'BATCH_TOO_LARGE',
+          Bitrix24ErrorCode.BATCH_TOO_LARGE,
         )
       }
       const rows = await spec.runBatch(input, target)

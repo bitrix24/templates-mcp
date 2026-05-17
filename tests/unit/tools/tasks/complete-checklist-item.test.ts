@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Bitrix24ErrorCode } from '../../../../server/utils/errors'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
@@ -117,7 +118,7 @@ describe('bitrix24_complete_checklist_item', () => {
     const ids = Array.from({ length: 51 }, (_, i) => i + 1)
     await expect(tool.handler({ taskId: 1, itemId: ids })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'BATCH_TOO_LARGE',
+      code: Bitrix24ErrorCode.BATCH_TOO_LARGE,
     })
   })
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Bitrix24ErrorCode } from '../../../../server/utils/errors'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
@@ -89,14 +90,14 @@ describe('bitrix24_delete_elapsed_time', () => {
   it('refuses single delete without confirmDelete: true and names the target in the message (Ground Rule #9)', async () => {
     await expect(tool.handler({ taskId: 1, itemId: 5 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       // Single-mode message must name the target so the operator sees
       // exactly which entry they're agreeing to delete.
       message: expect.stringMatching(/elapsed-time entry 5 on task 1/) as unknown as string,
     })
     await expect(tool.handler({ taskId: 1, itemId: 5, confirmDelete: false })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
     })
     // No wire call should have fired in either refusal path.
     expect(fake.v2Call).not.toHaveBeenCalled()
@@ -105,7 +106,7 @@ describe('bitrix24_delete_elapsed_time', () => {
   it('refuses batch delete without confirmDelete: true (Ground Rule #9)', async () => {
     await expect(tool.handler({ taskId: 1, itemId: [5, 7, 9] })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       // Message must name the targets so the operator sees what they're confirming.
       message: expect.stringMatching(/3 elapsed-time entries \[5, 7, 9\] on task 1/) as unknown as string,
     })
@@ -117,7 +118,7 @@ describe('bitrix24_delete_elapsed_time', () => {
 
     await expect(tool.handler({ taskId: 1, itemId: ids, confirmDelete: true })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'BATCH_TOO_LARGE',
+      code: Bitrix24ErrorCode.BATCH_TOO_LARGE,
     })
     expect(fake.v2Batch).not.toHaveBeenCalled()
 
@@ -186,7 +187,7 @@ describe('bitrix24_delete_elapsed_time', () => {
 
     // Step 1: no force, no confirm → BATCH_TOO_LARGE (cap check runs first)
     await expect(tool.handler({ taskId: 1, itemId: ids })).rejects.toMatchObject({
-      code: 'BATCH_TOO_LARGE',
+      code: Bitrix24ErrorCode.BATCH_TOO_LARGE,
     })
 
     // Step 2: force=true overrides cap, but confirm is still missing →
@@ -195,7 +196,7 @@ describe('bitrix24_delete_elapsed_time', () => {
       tool.handler({ taskId: 1, itemId: ids, force: true }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
     })
 
     expect(fake.v2Batch).not.toHaveBeenCalled()

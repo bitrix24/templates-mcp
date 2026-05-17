@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError } from '~/server/utils/errors'
+import { Bitrix24ErrorCode, Bitrix24ToolError } from '~/server/utils/errors'
 import { batchV3, callV3 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 
@@ -114,7 +114,7 @@ async function runBatch(taskIds: number[], rating: Rating, mark: Mark, force: bo
   if (taskIds.length > DEFAULT_BATCH_CAP && !force) {
     throw new Bitrix24ToolError(
       `Batch of ${taskIds.length} exceeds the default cap of ${DEFAULT_BATCH_CAP}. Pass force=true to override, or split into multiple calls.`,
-      'BATCH_TOO_LARGE',
+      Bitrix24ErrorCode.BATCH_TOO_LARGE,
     )
   }
 

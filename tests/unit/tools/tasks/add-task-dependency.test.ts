@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Bitrix24ErrorCode } from '../../../../server/utils/errors'
 import type { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
@@ -117,7 +118,7 @@ describe('bitrix24_add_task_dependency', () => {
       tool.handler({ taskIdTo: 100, taskIdFrom: ids, linkType: 2 }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'BATCH_TOO_LARGE',
+      code: Bitrix24ErrorCode.BATCH_TOO_LARGE,
     })
     expect(fake.v2Batch).not.toHaveBeenCalled()
 
@@ -186,7 +187,7 @@ describe('bitrix24_add_task_dependency', () => {
       tool.handler({ taskIdTo: 100, taskIdFrom: 100, linkType: 2 }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'INVALID_INPUT',
+      code: Bitrix24ErrorCode.INVALID_INPUT,
       message: expect.stringMatching(/self-loop on task 100/) as unknown as string,
     })
     expect(fake.v2Call).not.toHaveBeenCalled()
@@ -197,7 +198,7 @@ describe('bitrix24_add_task_dependency', () => {
       tool.handler({ taskIdTo: 100, taskIdFrom: [5, 100, 9, 100], linkType: 2 }),
     ).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'INVALID_INPUT',
+      code: Bitrix24ErrorCode.INVALID_INPUT,
       // Offenders listed so the operator knows which ids to drop without
       // having to reason from a generic ACTION_NOT_ALLOWED.
       message: expect.stringMatching(/Offending taskIdFrom values: 100, 100/) as unknown as string,

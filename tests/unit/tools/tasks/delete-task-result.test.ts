@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Bitrix24ErrorCode } from '../../../../server/utils/errors'
 import type { z } from 'zod'
 import { fakeOk, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
@@ -41,14 +42,14 @@ describe('bitrix24_delete_task_result', () => {
   it('refuses without confirmDelete: true and names the target in the message (Ground Rule #9)', async () => {
     await expect(tool.handler({ resultId: 42 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       message: expect.stringMatching(/task result 42/) as unknown as string,
     })
     // Explicit `false` path must produce the same error shape (name +
     // code + message format) — pins symmetry vs. `undefined`.
     await expect(tool.handler({ resultId: 42, confirmDelete: false })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
-      code: 'DELETE_NEEDS_CONFIRM',
+      code: Bitrix24ErrorCode.DELETE_NEEDS_CONFIRM,
       message: expect.stringMatching(/task result 42/) as unknown as string,
     })
     // No wire call should have fired in either refusal path.

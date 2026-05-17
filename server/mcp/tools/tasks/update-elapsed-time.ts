@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { Bitrix24ToolError } from '~/server/utils/errors'
+import { Bitrix24ErrorCode, Bitrix24ToolError } from '~/server/utils/errors'
 import { callV2 } from '~/server/utils/sdk-helpers'
 
 /**
@@ -60,7 +60,7 @@ export default defineMcpTool({
       // surface the schema-level confusion early instead of a silent no-op.
       throw new Bitrix24ToolError(
         `Update on elapsed-time entry ${itemId} (task ${taskId}) has no changes — pass at least one of \`seconds\`, \`comment\`, \`userId\`.`,
-        'NO_CHANGES',
+        Bitrix24ErrorCode.NO_CHANGES,
       )
     }
 
