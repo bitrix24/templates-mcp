@@ -23,22 +23,24 @@ import { toNumber } from '~/server/utils/wire-coerce'
  * an array of predecessor task IDs — it does NOT surface the per-link
  * `linkType` (SS / SF / FS / FF) that `task.dependence.add` accepts.
  * Operators wanting to inspect the link types would need to do that
- * through the Bitrix24 UI. If a future Bitrix24 release exposes the
- * richer shape (e.g. via a v3 endpoint or a `tasks.task.get` select
- * field), this tool's response can grow `linkType` per row in a
- * backward-compatible way without breaking callers that only read
- * `dependsOn`.
+ * through the Bitrix24 UI. Tracked as #34 (post-pilot revisit). If a
+ * future Bitrix24 release exposes the richer shape (e.g. via a v3
+ * endpoint or a `tasks.task.get` select field), this tool's response
+ * can grow `linkType` per row in a backward-compatible way without
+ * breaking callers that only read `dependsOn`.
  *
  * Returns successor-direction info too? No — `task.item.getdependson`
  * is one-way (predecessors of the given task). The inverse — "tasks
  * that depend ON this one" — would need a separate endpoint /
  * `tasks.task.list` filter; out of scope for the pilot.
  *
- * TODO(live): verify `task.item.getdependson` still responds on a live
- * Bitrix24 portal (the endpoint is deprecated; the apidocs page may
- * survive longer than the actual server-side route). Confirm during
- * pilot smoke or once integration tests grow a fixture with at least
- * one dependency wired.
+ * TODO(live) #33: verify `task.item.getdependson` still responds on a
+ * live Bitrix24 portal. The endpoint is deprecated; the apidocs page
+ * may survive longer than the actual server-side route. The tool's
+ * defensive "empty array on unrecognised shape" path means a silently-
+ * decommissioned endpoint returns `dependsOn: []` rather than an
+ * error — passing the live smoke is a hard prerequisite to declaring
+ * Phase 2 pilot-ready.
  */
 
 export default defineMcpTool({
