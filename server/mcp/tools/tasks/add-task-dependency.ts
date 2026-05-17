@@ -1,0 +1,141 @@
+import { z } from 'zod'
+import { useBitrix24 } from '~/server/utils/bitrix24'
+import {
+  type ActionToolInput,
+  defineActionTool,
+  forceFlagSchema,
+  idOrIdArraySchema,
+  mapBatchRows,
+} from '~/server/utils/define-action-tool'
+import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
+
+/**
+ * Create a dependency between two Bitrix24 tasks. Single or batch.
+ *
+ * A "dependency" links a predecessor task (`taskIdFrom`) to a dependent
+ * task (`taskIdTo`) — the same "Предыдущие задачи" relationship the
+ * Bitrix24 task form exposes. The `linkType` encodes the schedule
+ * relationship between the predecessor and dependent (start-start,
+ * finish-start, …); Bitrix24 itself uses these for Gantt-style
+ * scheduling.
+ *
+ * Bitrix24 REST: task.dependence.add (v2 — no v3 equivalent)
+ *   https://apidocs.bitrix24.com/api-reference/tasks/task-dependence-add.html
+ *
+ * The user-prompt brief expected `tasks.task.dependence.add` (v3); a v3
+ * dependence namespace does not exist as of 2026-05. Bitrix24 surfaces
+ * dependence-modification through the v2 `task.dependence.*` family
+ * only.
+ *
+ * Operator path: "сделай так, чтобы задача 100 шла после задач 5, 7, 9" →
+ * fix `taskIdTo: 100` + `linkType: 2` (FS), pass `taskIdFrom: [5, 7, 9]`
+ * in batch mode. The batch shape mirrors `delete_elapsed_time` — one
+ * fixed parent id (`taskIdTo`) plus an id-or-array varying field
+ * (`taskIdFrom`). One `linkType` per batch is sufficient for the common
+ * pattern; heterogeneous batches (varying `linkType` per pair) would
+ * need a different shape and are out of scope for the pilot.
+ *
+ * Built atop `defineActionTool` — single-vs-batch dispatch, batch-cap
+ * check, and summary projection live in the shared scaffold.
+ */
+
+const DEFAULT_BATCH_CAP = 50
+const USAGE_NOTES =
+  ` Accepts a single \`taskIdFrom\` OR an array of ids (batch mode, up to ${DEFAULT_BATCH_CAP} — pass \`force: true\` to override). All items in a batch share the same \`taskIdTo\` and \`linkType\` (one schedule relationship type per batch). Batch mode goes through one HTTP round-trip and returns a \`{ batch, total, ok, failed, results }\` summary; per-pair errors (e.g. ILLEGAL_NEW_LINK when a link already exists) do not abort the batch.`
+
+interface AddTaskDependencyInput extends ActionToolInput {
+  taskIdTo: number
+  taskIdFrom: number | number[]
+  linkType: number
+}
+
+interface AddTaskDependencyBatchRow {
+  taskIdFrom: number
+  ok: boolean
+  error?: string
+}
+
+export default defineActionTool<AddTaskDependencyInput, AddTaskDependencyBatchRow>({
+  name: 'bitrix24_add_task_dependency',
+  description:
+    'Create a "previous task" dependency between two Bitrix24 tasks — the dependent task (`taskIdTo`) is scheduled relative to the predecessor (`taskIdFrom`) according to `linkType`. Use this to wire the "Предыдущие задачи" relationship that the Bitrix24 task form exposes (commonly for Gantt-style scheduling). Bitrix24 rejects with ILLEGAL_NEW_LINK if the same `(taskIdFrom, taskIdTo)` pair already has a link, and with ACTION_NOT_ALLOWED if the resulting graph would be invalid (e.g. a cycle, or insufficient rights on one of the tasks). NOT a delete — does not require `confirmDelete`. To remove a link, use `bitrix24_remove_task_dependency`; to read existing predecessors, use `bitrix24_list_task_dependencies`.',
+  usageNotes: USAGE_NOTES,
+  pastTense: 'linked',
+  batchCap: DEFAULT_BATCH_CAP,
+  inputSchema: {
+    taskIdTo: z
+      .number()
+      .int()
+      .positive()
+      .describe(
+        'The DEPENDENT task — the one whose schedule depends on `taskIdFrom`. In Bitrix24 UI terms, this is the task whose "Предыдущие задачи" field gets the new entry. Fixed for the whole call (single or batch).',
+      ),
+    taskIdFrom: idOrIdArraySchema.describe(
+      'The PREDECESSOR task id (the task the dependent waits on), or an array of predecessor ids for batch mode. Pass a number for single-pair semantics; even a one-element array (e.g. [5]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one predecessor.',
+    ),
+    linkType: z
+      .number()
+      .int()
+      .min(0)
+      .max(3)
+      .describe(
+        'Schedule relationship between predecessor (`taskIdFrom`) and dependent (`taskIdTo`). One value per call (single OR batch). Choices: 0 = start-start (both tasks start together) | 1 = start-finish (dependent finishes when predecessor starts; rarely useful) | 2 = finish-start (dependent starts when predecessor finishes — the DEFAULT operator intent for "сделай B после A") | 3 = finish-finish (both tasks finish together). When the operator says "после" / "потом" / "вслед за" with no further detail, use 2 (FS).',
+      ),
+    force: forceFlagSchema(DEFAULT_BATCH_CAP),
+  },
+  extractIds: (input) => input.taskIdFrom,
+  runOne: (input, taskIdFrom) => runOne(input.taskIdTo, taskIdFrom, input.linkType),
+  runBatch: (input, ids) => runBatch(input.taskIdTo, ids, input.linkType),
+  // Carry `taskIdTo` and `linkType` into the batch summary so the agent
+  // sees at a glance what the result rows describe (same idiom as the
+  // checklist + elapsed-time factories that pin `taskId`).
+  batchSummaryExtras: (input) => ({ taskIdTo: input.taskIdTo, linkType: input.linkType }),
+})
+
+async function runOne(taskIdTo: number, taskIdFrom: number, linkType: number) {
+  const b24 = useBitrix24()
+  await callV2<unknown>(
+    b24,
+    'task.dependence.add',
+    { taskIdFrom, taskIdTo, linkType },
+    `Failed to link Bitrix24 task ${taskIdTo} to predecessor ${taskIdFrom}`,
+  )
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          linked: true,
+          taskIdTo,
+          taskIdFrom,
+          linkType,
+        }),
+      },
+    ],
+  }
+}
+
+async function runBatch(
+  taskIdTo: number,
+  taskIdFroms: number[],
+  linkType: number,
+): Promise<AddTaskDependencyBatchRow[]> {
+  const b24 = useBitrix24()
+  const rows = await batchV2<unknown>(
+    b24,
+    taskIdFroms.map((from) => ['task.dependence.add', { taskIdFrom: from, taskIdTo, linkType }]),
+    `Failed to link a batch of ${taskIdFroms.length} predecessor(s) to Bitrix24 task ${taskIdTo}`,
+  )
+
+  return mapBatchRows(rows, taskIdFroms, 'taskIdFrom', ({ id, ok, errorMessages }) => {
+    if (!ok) {
+      return {
+        taskIdFrom: id,
+        ok: false,
+        error: errorMessages.join('; ') || `Failed to link predecessor ${id} to Bitrix24 task ${taskIdTo}`,
+      }
+    }
+    return { taskIdFrom: id, ok: true }
+  })
+}

@@ -126,6 +126,12 @@ import updateElapsedTime from '~/server/mcp/tools/tasks/update-elapsed-time'
 // eslint-disable-next-line import/first
 import deleteElapsedTime from '~/server/mcp/tools/tasks/delete-elapsed-time'
 // eslint-disable-next-line import/first
+import addTaskDependency from '~/server/mcp/tools/tasks/add-task-dependency'
+// eslint-disable-next-line import/first
+import removeTaskDependency from '~/server/mcp/tools/tasks/remove-task-dependency'
+// eslint-disable-next-line import/first
+import listTaskDependencies from '~/server/mcp/tools/tasks/list-task-dependencies'
+// eslint-disable-next-line import/first
 import submitFeedback from '~/server/mcp/tools/meta/submit-feedback'
 
 interface McpToolDef {
@@ -162,6 +168,9 @@ const ALL_TOOLS: McpToolDef[] = [
   listElapsedTime as unknown as McpToolDef,
   updateElapsedTime as unknown as McpToolDef,
   deleteElapsedTime as unknown as McpToolDef,
+  addTaskDependency as unknown as McpToolDef,
+  removeTaskDependency as unknown as McpToolDef,
+  listTaskDependencies as unknown as McpToolDef,
   submitFeedback as unknown as McpToolDef,
 ]
 
@@ -513,6 +522,33 @@ const CASES: Case[] = [
     input: 'Удали записи 7, 8, 9 на задаче 691 — это были миссклики.',
     expected: 'bitrix24_delete_elapsed_time',
     notes: 'Batch delete — array of ids, destructive, must NOT route to delete_task_result.',
+  },
+
+  // ── task.dependence.* (PR-C — task dependencies) ───────────────────────
+  {
+    input: 'Сделай так, чтобы задача 100 шла после задачи 50 — пока 50 не закроют, 100 не стартует.',
+    expected: 'bitrix24_add_task_dependency',
+    notes: 'Add single dependency, FS semantics. taskIdTo=100 depends on taskIdFrom=50; "после" → linkType=2.',
+  },
+  {
+    input: 'Поставь задачу 100 после задач 5, 7 и 9 — все три должны закрыться раньше.',
+    expected: 'bitrix24_add_task_dependency',
+    notes: 'Batch add — three predecessors against one fixed dependent, default FS. Must NOT route to list/remove.',
+  },
+  {
+    input: 'Покажи от каких задач зависит задача 100.',
+    expected: 'bitrix24_list_task_dependencies',
+    notes: 'Read predecessors — must NOT route to list_tasks (no filter) or list_task_results.',
+  },
+  {
+    input: 'Убери зависимость задачи 100 от задачи 50 — она больше не нужна.',
+    expected: 'bitrix24_remove_task_dependency',
+    notes: 'Single remove. Destructive — requires confirmDelete; must NOT route to delete_* on other entities.',
+  },
+  {
+    input: 'Сними у задачи 100 связи с задачами 5, 7, 9 — это всё устарело.',
+    expected: 'bitrix24_remove_task_dependency',
+    notes: 'Batch remove — array of predecessors. Destructive; must NOT route to delete_task_result.',
   },
 
   // ── Multilingual / non-Latin (i18n probe — ≥ 3 cases per language) ─────
