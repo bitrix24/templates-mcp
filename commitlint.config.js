@@ -26,6 +26,8 @@ export default {
         'lint',
         'types',
         'test',
+        // app/* — Nuxt frontend (landing page, future client UI).
+        'app',
         // server/utils/* — shared helpers (sdk-helpers, wire-coerce,
         // v3-filter, define-action-tool, task-lifecycle, checklist, …)
         // get their own scope. Submodule-level scopes (sdk-helpers etc.)
