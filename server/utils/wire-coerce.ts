@@ -20,13 +20,26 @@
  * returns `5`, not `null` — an explicit nullish camelCase value falls
  * through to UPPERCASE. This matches the intent (Bitrix24 sometimes ships
  * `null` for fields it has no data for, and the legacy UPPERCASE value
- * is the meaningful payload).
+ * is the meaningful payload). The `Object.hasOwn` guard below does not
+ * change this — an own `null` at `lower` is still own, still becomes
+ * `null` in `lowerVal`, and still falls through `null ?? upperVal`.
  *
  * Order is `lower` (camelCase) first, then `upper` (UPPER_SNAKE) — v3
  * responses are camelCase and we prefer them.
+ *
+ * **Own-property only.** `hasOwn` guards both lookups so inherited prototype
+ * properties never surface as wire values. Every current callsite passes
+ * string literals for `lower` / `upper`, but the guard is cheap and removes
+ * an entire class of future bug where an attacker-controlled key reaches
+ * this helper through a Zod-validated `Record<string, unknown>`. Issue #22.
  */
 export function pick<T>(obj: Record<string, unknown>, lower: string, upper: string): T | null {
-  const v = obj[lower] ?? obj[upper]
+  // Lookup-then-coalesce, but each branch goes through `hasOwn` so a
+  // prototype-resident value never enters `v`. Preserves the `??` asymmetry
+  // documented above: an own `null` at `lower` still falls through to `upper`.
+  const lowerVal = Object.hasOwn(obj, lower) ? obj[lower] : undefined
+  const upperVal = Object.hasOwn(obj, upper) ? obj[upper] : undefined
+  const v = lowerVal ?? upperVal
   return v === undefined ? null : (v as T)
 }
 

@@ -24,6 +24,36 @@ describe('pick', () => {
     // UPPERCASE field carries the meaningful payload.
     expect(pick({ id: null, ID: 9 }, 'id', 'ID')).toBe(9)
   })
+
+  describe('own-property hardening (issue #22)', () => {
+    it('ignores a value reached via the prototype chain', () => {
+      // If someone constructs the payload with `Object.create(maliciousProto)`,
+      // a lookup that's not own-property-guarded would surface the prototype
+      // value as a real wire field.
+      const tainted = Object.create({ id: 'evil' }) as Record<string, unknown>
+      expect(pick(tainted, 'id', 'ID')).toBeNull()
+    })
+
+    it('ignores `__proto__` reached via the prototype chain', () => {
+      // `pick(obj, '__proto__', 'X')` against an object with no own
+      // `__proto__` would otherwise return `Object.prototype` itself — leaks
+      // the prototype object into the response.
+      expect(pick({}, '__proto__', 'X')).toBeNull()
+    })
+
+    it('still returns the value when the lookup key is an own property', () => {
+      // Sanity-check the hardening did not break the happy path —
+      // `Object.hasOwn` returns true for the only-own case.
+      expect(pick({ id: 1 }, 'id', 'ID')).toBe(1)
+    })
+
+    it('falls through to UPPERCASE when the camelCase key sits on the prototype but UPPERCASE is own', () => {
+      // The lower lookup must not pick up the prototype value; the upper
+      // own-property must win.
+      const tainted = Object.assign(Object.create({ id: 'evil' }), { ID: 9 }) as Record<string, unknown>
+      expect(pick(tainted, 'id', 'ID')).toBe(9)
+    })
+  })
 })
 
 describe('toNumber', () => {

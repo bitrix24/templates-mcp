@@ -49,6 +49,13 @@
  *
  * Order in the output is the insertion order of the input object (per ES
  * spec for string keys), which keeps test fixtures stable.
+ *
+ * **Safe against LLM-controlled keys.** Keys named `__proto__`, `constructor`,
+ * or `prototype` are silently dropped (both as raw keys and as stripped field
+ * names after operator-prefix removal). These are JavaScript-special
+ * identifiers that should never reach Bitrix24's REST wire as field names;
+ * blocking them at this seam prevents an LLM-routed JSON.parse'd filter from
+ * smuggling them into the request payload. Issue #22.
  */
 
 /**
@@ -82,9 +89,19 @@ const OPERATOR_PREFIX_RE = (() => {
   return new RegExp(`^(${prefixes.join('|')})?(.+)$`)
 })()
 
+/** Reserved JS identifiers that must never appear as field names on the v3
+ *  wire — see file-level JSDoc and issue #22. The check applies to both the
+ *  raw key and the stripped field name after operator-prefix removal. */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
 export function toV3Filter(filter: Record<string, unknown>): V3FilterCondition[] {
   const out: V3FilterCondition[] = []
   for (const [key, value] of Object.entries(filter)) {
+    // `Object.entries` only walks own enumerable properties, but JSON.parse
+    // makes `__proto__` an own property in modern V8 — so an LLM-routed
+    // `{"__proto__": ...}` reaches us as a normal key, not a prototype hop.
+    // Block it explicitly here so it never makes it to the wire payload.
+    if (FORBIDDEN_KEYS.has(key)) continue
     const match = OPERATOR_PREFIX_RE.exec(key)
     // Regex matches every non-empty key (the `.+` requires ≥1 char after
     // the optional prefix). The `!match` branch handles the only failure
@@ -96,6 +113,9 @@ export function toV3Filter(filter: Record<string, unknown>): V3FilterCondition[]
     }
     const prefix = match[1] ?? ''
     const field = match[2] ?? key
+    // The stripped field name is also a wire identifier; block forbidden
+    // keys that hide behind an operator prefix, e.g. `!__proto__`.
+    if (FORBIDDEN_KEYS.has(field)) continue
     if (!prefix) {
       out.push([field, value])
       continue
