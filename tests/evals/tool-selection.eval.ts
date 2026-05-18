@@ -130,8 +130,6 @@ import addTaskDependency from '~/server/mcp/tools/tasks/add-task-dependency'
 // eslint-disable-next-line import/first
 import removeTaskDependency from '~/server/mcp/tools/tasks/remove-task-dependency'
 // eslint-disable-next-line import/first
-import listTaskDependencies from '~/server/mcp/tools/tasks/list-task-dependencies'
-// eslint-disable-next-line import/first
 import submitFeedback from '~/server/mcp/tools/meta/submit-feedback'
 
 interface McpToolDef {
@@ -170,7 +168,6 @@ const ALL_TOOLS: McpToolDef[] = [
   deleteElapsedTime as unknown as McpToolDef,
   addTaskDependency as unknown as McpToolDef,
   removeTaskDependency as unknown as McpToolDef,
-  listTaskDependencies as unknown as McpToolDef,
   submitFeedback as unknown as McpToolDef,
 ]
 
@@ -524,7 +521,7 @@ const CASES: Case[] = [
     notes: 'Batch delete — array of ids, destructive, must NOT route to delete_task_result.',
   },
 
-  // ── task.dependence.* (PR-C — task dependencies) ───────────────────────
+  // ── task.dependence.* (PR-C — task dependencies; no read tool, see #33) ─
   {
     input: 'Сделай так, чтобы задача 100 шла после задачи 50 — пока 50 не закроют, 100 не стартует.',
     expected: 'bitrix24_add_task_dependency',
@@ -534,11 +531,6 @@ const CASES: Case[] = [
     input: 'Поставь задачу 100 после задач 5, 7 и 9 — все три должны закрыться раньше.',
     expected: 'bitrix24_add_task_dependency',
     notes: 'Batch add — three predecessors against one fixed dependent, default FS. Must NOT route to list/remove.',
-  },
-  {
-    input: 'Покажи от каких задач зависит задача 100.',
-    expected: 'bitrix24_list_task_dependencies',
-    notes: 'Read predecessors — must NOT route to list_tasks (no filter) or list_task_results.',
   },
   {
     input: 'Убери зависимость задачи 100 от задачи 50 — она больше не нужна.',
@@ -564,11 +556,6 @@ const CASES: Case[] = [
     input: 'Make task 100 wait for tasks 5, 7, 9 to finish before it can start.',
     expected: 'bitrix24_add_task_dependency',
     notes: 'EN batch add, finish-start. Covers the most common dependency operator path in English so dependency family is not RU-only in the eval coverage.',
-  },
-  {
-    input: 'Show me which tasks task 100 depends on.',
-    expected: 'bitrix24_list_task_dependencies',
-    notes: 'EN read. Must NOT route to list_tasks. Pins that the description steers correctly in English too.',
   },
   {
     input: 'Entferne die Abhängigkeit von Aufgabe 100 zu Aufgabe 50 — sie wird nicht mehr gebraucht.',

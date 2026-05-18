@@ -57,7 +57,7 @@ interface RemoveTaskDependencyBatchRow {
 export default defineActionTool<RemoveTaskDependencyInput, RemoveTaskDependencyBatchRow>({
   name: 'bitrix24_remove_task_dependency',
   description:
-    'Remove a "previous task" dependency between two Bitrix24 tasks — wipes the predecessor link from `taskIdFrom` to `taskIdTo`. REQUIRES `confirmDelete: true` (SKILL.md Ground Rule #9, universal) after the operator has explicitly agreed to the removal. Bitrix24 rejects with ILLEGAL_NEW_LINK if the link does not exist (same code as "already exists" on add — disambiguate by reading the error message). To CREATE a link, use `bitrix24_add_task_dependency`; to read existing predecessors, use `bitrix24_list_task_dependencies`.',
+    'Remove a "previous task" dependency between two Bitrix24 tasks — wipes the predecessor link from `taskIdFrom` to `taskIdTo`. REQUIRES `confirmDelete: true` (SKILL.md Ground Rule #9, universal) after the operator has explicitly agreed to the removal. Bitrix24 rejects with ILLEGAL_NEW_LINK if the link does not exist (same code as "already exists" on add — disambiguate by reading the error message). To CREATE a link, use `bitrix24_add_task_dependency`. There is no read-back tool — Bitrix24 deprecated `task.item.getdependson` server-side with no v3 replacement (verified against a live portal); operators inspect existing dependencies via the Bitrix24 UI.',
   usageNotes: USAGE_NOTES,
   pastTense: 'unlinked',
   batchCap: DEFAULT_BATCH_CAP,

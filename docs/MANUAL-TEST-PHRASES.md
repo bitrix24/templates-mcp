@@ -254,15 +254,15 @@ Trade-off recorded for the future: seven separate tools (one per verb) rather th
 
 ---
 
-## 11. Task linking (dependencies / related) ⏳ — NEEDS NEW TOOLS
+## 11. Task linking (dependencies / related) ⏳ — partial (add/remove ✅, read ❌)
 
-**Status:** partial. Bitrix24 has `DEPENDS_ON` field and `tasks.task.dependence.*` (predecessor/successor). "Related" / "similar" is **not** a Bitrix24 concept — it's a search.
+**Status:** partial. Write tools (`add_task_dependency`, `remove_task_dependency`) shipped in PR #35 over `tasks.task.dependence.*`. The read tool was removed in PR #43 — Bitrix24 silently decommissioned the only documented read endpoint (`task.item.getdependson`); see row 11.3 and issue #33. "Related" / "similar" is **not** a Bitrix24 concept — it's a search.
 
 | # | Phrase | What we want to see |
 |---|---|---|
 | 11.1 | Свяжи задачу 123 с задачей 89, 123 зависит от 89. | ⏳ `add_task_dependency { taskId: 123, dependsOnId: 89 }` |
 | 11.2 | Найди задачи похожие на 123 по названию и тегам. | 🧠 `list_tasks` with `%TITLE` filter using keywords extracted from 123's title; agent does the matching |
-| 11.3 | Список зависимостей задачи 123 — от чего она зависит. | ⏳ `list_task_dependencies { taskId: 123 }` |
+| 11.3 | Список зависимостей задачи 123 — от чего она зависит. | ❌ No tool — Bitrix24 deprecated `task.item.getdependson` server-side with no v3 replacement (#33 live-smoke confirmed). Agent must direct the operator to the Bitrix24 UI. |
 
 **Proposed tools:**
 - `bitrix24_add_task_dependency` — `{ taskId, dependsOnId }`
@@ -342,7 +342,7 @@ Roughly in order of value-for-effort:
 | ✅ | **`feat(tools): task checklist`** (PR #17) | `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` |
 | 1 | **`feat(tools): list task comments + subtask parentId`** | `list_task_comments` (new tool, filters service messages by default); schema bump on `create_task` to accept `parentId` |
 | 2 | **`feat(tools): task time tracking`** | `add_elapsed_time`, `list_elapsed_time` |
-| 3 | **`feat(tools): task dependencies`** | `add_task_dependency`, `remove_task_dependency`, `list_task_dependencies` |
+| 3 | **`feat(tools): task dependencies`** | `add_task_dependency`, `remove_task_dependency` (read-back removed — see #33 / row 11.3) |
 | 4 | **(retire `task.commentitem.add` → `tasks.task.chat.message.send`)** | Migrate `add_task_comment` to the modern endpoint; this also fixes "deprecated" warning |
 
 After all of those land, sections 5–10 of this doc flip from ⏳ to ✅ and the analytics queries in section 11 become realistic.
