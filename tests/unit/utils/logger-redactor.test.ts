@@ -3,10 +3,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { makeRedactingLogger, redactString, redactValue } from '~/server/utils/logger-redactor'
 
 /**
- * Unit tests for the webhook-URL redactor (issue #26). The redactor is the
- * primary defence against the Bitrix24 SDK leaking the webhook secret into
- * log sinks via its `getLogger().info('post/send', { method: <fullUrl> })`
- * callsites in `core/http/abstract-http.mjs`.
+ * Unit tests for the webhook-URL redactor (issue #26, upstream tracker #38).
+ * The redactor was the primary defence against SDK 1.1.1's `post/send` URL
+ * leak; SDK 1.1.2 (PR `bitrix24/b24jssdk#40`) fixed the leak at source and
+ * the redactor is now defence in depth. These unit tests still pin its
+ * behaviour so a future bump that re-introduces a URL anywhere in the
+ * logger surface is caught by the runtime regression suite
+ * (`sdk-logger-leak.test.ts`) which builds on this redactor.
  *
  * Coverage:
  *  - `redactString` — direct string redaction with v2 / v3 URL shapes, multiple
@@ -196,9 +199,9 @@ describe('makeRedactingLogger', () => {
 
   it('redacts via the generic log(level, message, context) entry point', async () => {
     // `log(level, msg, ctx)` is the LoggerInterface "arbitrary level" entry —
-    // SDK 1.1.1 doesn't use it, but we wrap it for completeness so a future
-    // SDK callsite via `getLogger().log(LogLevel.INFO, url, {})` is also
-    // covered.
+    // current SDK callsites use the level-named methods, but we wrap it for
+    // completeness so a future SDK callsite via
+    // `getLogger().log(LogLevel.INFO, url, {})` is also covered.
     const inner = { log: vi.fn().mockResolvedValue(undefined) } as unknown as LoggerInterface
     Object.assign(inner, {
       debug: vi.fn(),

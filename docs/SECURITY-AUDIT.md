@@ -19,6 +19,51 @@ error, in a debug message — the secret leaks to whatever sink the logger is wi
 to (stdout, file, log aggregator). For a self-hosted MCP the impact is bounded;
 for a hosted multi-tenant MCP it would be a serious credential disclosure.
 
+### Audit pass — SDK 1.1.2 (2026-05)
+
+**Upstream status**: the 1.1.1 leak documented below was reported upstream as
+[`bitrix24/b24jssdk#39`][upstream-39] (our tracker: [#38][downstream-38]) and
+fixed in [PR `bitrix24/b24jssdk#40`][upstream-40], shipped in SDK
+**1.1.2** (2026-05-18). We bumped `@bitrix24/b24jssdk` and
+`@bitrix24/b24jssdk-nuxt` from `^1.1.1` to `^1.1.2` in this PR.
+
+[upstream-39]: https://github.com/bitrix24/b24jssdk/issues/39
+[upstream-40]: https://github.com/bitrix24/b24jssdk/pull/40
+[downstream-38]: https://github.com/bitrix24/templates-mcp/issues/38
+
+**What 1.1.2 changed**:
+
+1. The `post/send` callsite in `core/http/abstract-http.mjs` now logs
+   `method` (the bare REST method name, e.g. `tasks.task.get`) instead of
+   `methodFormatted` (which embedded the full webhook URL). No URL, no
+   secret enters the logger context on the success path.
+2. A new helper `core/http/redact.mjs` (`redactSensitiveParams`) walks the
+   serialised `params` blob and replaces values under known credential-bearing
+   keys (`auth`, `password`, `token`, `secret`, `access_token`, `refresh_token`)
+   with `***REDACTED***`. Applied at `post/send` and at `post/catchError` so
+   future portal responses that embed credentials in error bodies are also
+   scrubbed. Depth-2 walk covers batch-shaped payloads (`cmd[i].params.<key>`).
+3. The unused `url` field was removed from `AjaxError`'s `requestInfo` typing
+   and error rendering, eliminating a latent re-introduction path.
+
+**Verification**: `tests/unit/utils/sdk-logger-leak.test.ts` was updated to
+flip the BASELINE assertion. It now wires a RAW logger (no downstream
+redactor) into a real `B24Hook`, exercises an API call against a stubbed
+axios, and asserts the sentinel secret does NOT appear in captured records.
+This pins the upstream fix as a regression guard — if a future SDK bump
+re-introduces a URL in the logger context, the baseline test fails
+immediately. Static scan unchanged (still enumerates all `_logger.*` /
+`getLogger().*` callsites and asserts no URL-shaped literals near them).
+
+**Downstream redactor (`makeRedactingLogger`)**: kept wired in
+`server/utils/bitrix24.ts` as defence in depth. The wrapper is no longer the
+primary defence — SDK ≥1.1.2 is — but the cost is negligible and SDK release
+notes don't always call out logger-surface regressions on every bump. A
+dedicated "defence in depth" test asserts the wrapper still scrubs URL-shaped
+values regardless of what the SDK does. The `useBitrix24()` malformed-URL
+rewrap also keeps running `redactString(reason)` on the SDK parse error
+message (still relevant — that path doesn't go through the SDK logger).
+
 ### Audit pass — SDK 1.1.1 (2026-05)
 
 **Method**: enumerated every `_logger.*`, `getLogger().*`, and direct `console.*`
@@ -114,11 +159,13 @@ interpolating the SDK parse-error message into the operator-facing error.
 
 **Upstream fix** — Bitrix24 should redact at the SDK level: the audit
 found that `getLogger().info('post/send', { method: methodFormatted })`
-logs the full URL on every call. We are reporting this upstream; once
-they ship the fix our `makeRedactingLogger` becomes belt-and-suspenders
-rather than the primary defence. We keep it regardless: redundant
-credential protection is cheap, and we don't trust SDK release notes to
-call out logger surface regressions on every bump.
+logs the full URL on every call. We reported this upstream as
+[`bitrix24/b24jssdk#39`][upstream-39] (downstream tracker
+[#38][downstream-38]) and the fix shipped in SDK 1.1.2
+([PR #40][upstream-40]) — see the "Audit pass — SDK 1.1.2" section
+above. `makeRedactingLogger` stays wired as defence in depth:
+redundant credential protection is cheap, and we don't trust SDK
+release notes to call out logger surface regressions on every bump.
 
 ### Regression test
 

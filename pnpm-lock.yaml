@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@bitrix24/b24jssdk':
-        specifier: ^1.1.1
-        version: 1.1.1
+        specifier: ^1.1.2
+        version: 1.1.2
       '@bitrix24/b24jssdk-nuxt':
-        specifier: ^1.1.1
-        version: 1.1.1(magicast@0.5.3)
+        specifier: ^1.1.2
+        version: 1.1.2(magicast@0.5.3)
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
@@ -236,11 +236,11 @@ packages:
     resolution: {integrity: sha512-JeSVu/m8x/zpp4CLjYHVNXuhEyOkhPXuxM8YOXjh6L4LlvQNKuUNOTo5KdBuKAcTDHw8DquToTaEkhsBqPXOaA==}
     engines: {node: ^22.18.0 || >=24.11.0}
 
-  '@bitrix24/b24jssdk-nuxt@1.1.1':
-    resolution: {integrity: sha512-U4wksIuLTAkvUUUSYKtod8MtA2hW8OCUDgEEF3GcoQTz2NeGAB1jjyInZjOX7x35UhgZz4LkP8L3bMr4/wyA6Q==}
+  '@bitrix24/b24jssdk-nuxt@1.1.2':
+    resolution: {integrity: sha512-oRZzvJrtH9uvea6QgTc/eEQhHX323D+Vbtn1f+WLEG8yVgK+EIdNfe7+1MibG/IAGG+LKOOuDpdrcs1aP6u3Ig==}
 
-  '@bitrix24/b24jssdk@1.1.1':
-    resolution: {integrity: sha512-N+ua+t/hO378jwHx+/L/dAH3aprF3OUYbHwa4xdWDI+2FPpjtrWW2ibOjEABld+kSK9I+WAJ5vs6YmIFR0x+8g==}
+  '@bitrix24/b24jssdk@1.1.2':
+    resolution: {integrity: sha512-q2+Wa4PhwG/9dHXw464Cm909NfV+fwkJOz8jjJYOqC0KqfWRwNQccY0vaJK3UuSm3p3PHIMXScRhWOuKfbk1qw==}
     engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
 
   '@bomb.sh/tab@0.0.15':
@@ -946,6 +946,10 @@ packages:
 
   '@nuxt/kit@4.4.5':
     resolution: {integrity: sha512-J0BpoOomzd3iVZozYlZJ7AwAVliXRgeChZnAkQLfg8d0h/Q+aMK9kkHuhwFULASaRn5idiD4BIhOUz7/uoLbSw==}
+    engines: {node: '>=18.12.0'}
+
+  '@nuxt/kit@4.4.6':
+    resolution: {integrity: sha512-AzsqBJeG7b3whIciyzkz4nBossEotM314KzKAptc8kH07ORBIR8Qh3QYKepo2YZwtxiDP2Y9aqzAztwpSEDHtw==}
     engines: {node: '>=18.12.0'}
 
   '@nuxt/nitro-server@4.4.5':
@@ -5584,10 +5588,10 @@ snapshots:
       '@babel/helper-string-parser': 8.0.0-rc.5
       '@babel/helper-validator-identifier': 8.0.0-rc.5
 
-  '@bitrix24/b24jssdk-nuxt@1.1.1(magicast@0.5.3)':
+  '@bitrix24/b24jssdk-nuxt@1.1.2(magicast@0.5.3)':
     dependencies:
-      '@bitrix24/b24jssdk': 1.1.1
-      '@nuxt/kit': 4.4.5(magicast@0.5.3)
+      '@bitrix24/b24jssdk': 1.1.2
+      '@nuxt/kit': 4.4.6(magicast@0.5.3)
       axios: 1.16.1
       luxon: 3.7.2
       qs-esm: 8.0.1
@@ -5596,7 +5600,7 @@ snapshots:
       - magicast
       - supports-color
 
-  '@bitrix24/b24jssdk@1.1.1':
+  '@bitrix24/b24jssdk@1.1.2':
     dependencies:
       '@types/luxon': 3.7.1
       axios: 1.16.1
@@ -6350,6 +6354,31 @@ snapshots:
       - vite
 
   '@nuxt/kit@4.4.5(magicast@0.5.3)':
+    dependencies:
+      c12: 3.3.4(magicast@0.5.3)
+      consola: 3.4.2
+      defu: 6.1.7
+      destr: 2.0.5
+      errx: 0.1.0
+      exsolve: 1.0.8
+      ignore: 7.0.5
+      jiti: 2.7.0
+      klona: 2.0.6
+      mlly: 1.8.2
+      ohash: 2.0.11
+      pathe: 2.0.3
+      pkg-types: 2.3.1
+      rc9: 3.0.1
+      scule: 1.3.0
+      semver: 7.8.0
+      tinyglobby: 0.2.16
+      ufo: 1.6.4
+      unctx: 2.5.0
+      untyped: 2.0.0
+    transitivePeerDependencies:
+      - magicast
+
+  '@nuxt/kit@4.4.6(magicast@0.5.3)':
     dependencies:
       c12: 3.3.4(magicast@0.5.3)
       consola: 3.4.2

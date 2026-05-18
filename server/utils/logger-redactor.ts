@@ -1,10 +1,10 @@
 import type { LoggerInterface, LogLevel } from '@bitrix24/b24jssdk'
 
 /**
- * Defence against the Bitrix24 SDK leaking the webhook secret into log
- * sinks (issue #26).
+ * Defence-in-depth against the Bitrix24 SDK leaking the webhook secret
+ * into log sinks (issue #26, upstream tracker #38 / `bitrix24/b24jssdk` #39).
  *
- * Background — the SDK's HTTP layer (`core/http/abstract-http.mjs`) logs
+ * History — SDK 1.1.1's HTTP layer (`core/http/abstract-http.mjs`) logged
  * the full request URL on every call:
  *
  *   this.getLogger().info('post/send', { requestId, method: methodFormatted, params })
@@ -15,22 +15,19 @@ import type { LoggerInterface, LogLevel } from '@bitrix24/b24jssdk'
  *   https://<portal>.bitrix24.<tld>/rest/<userId>/<SECRET>          (v2)
  *   https://<portal>.bitrix24.<tld>/rest/api/<userId>/<SECRET>      (v3)
  *
- * Without redaction, every Bitrix24 API call writes the secret to every
- * destination our logger ships to (stdout, file, log aggregator). For a
- * single-tenant self-hosted MCP the blast radius is "every operator with
- * log access"; for a hosted multi-tenant MCP this would be a credential
- * disclosure.
+ * SDK 1.1.2 (PR bitrix24/b24jssdk#40) fixed it: the `post/send` callsite
+ * now logs the bare REST method name (e.g. `tasks.task.get`) instead of
+ * the formatted URL, and the SDK also redacts a handful of credential-
+ * bearing param keys (`auth`, `password`, `token`, `secret`,
+ * `access_token`, `refresh_token`) via its own `redactSensitiveParams`.
  *
- * The redactor wraps our `useLogger()` instance with one that scrubs
- * URL-shaped values out of every log message and context object BEFORE
- * the inner logger sees them. Wired up in `server/utils/bitrix24.ts`
- * before `client.setLogger(...)`.
- *
- * Upstream tracking: Bitrix24 should redact at SDK level — once they
- * ship that fix, this wrapper becomes belt-and-suspenders, not the
- * primary defence. We keep it anyway: redundant credential protection
- * is cheap, and we don't trust SDK release notes to call out logger
- * surface regressions in future bumps.
+ * This wrapper is no longer the primary defence — SDK ≥1.1.2 is — but it
+ * stays wired in `server/utils/bitrix24.ts` as defence in depth. It scrubs
+ * URL-shaped values out of every log message + context object BEFORE the
+ * inner logger sees them, so any future SDK regression that re-introduces
+ * a URL anywhere in the logger surface is still caught. Redundant
+ * credential protection is cheap; SDK release notes don't always call out
+ * logger-surface regressions on every bump.
  */
 
 /**

@@ -76,16 +76,16 @@ export function useBitrix24(): B24Hook {
   // Wire the SDK's internal events (retry, rate-limit, errors) into the
   // project-wide structured logger. One sink for app + SDK events.
   //
-  // SECURITY (#26): the SDK's HTTP layer logs the full request URL on
-  // every call (`post/send`, `post/response`, retry paths in
-  // `core/http/abstract-http.mjs`). That URL is the webhook URL itself
-  // — `https://<portal>/rest/<userId>/<SECRET>` — so an unwrapped
-  // `setLogger(useLogger())` would write the secret to every log sink
-  // on every API call. We wrap our logger in `makeRedactingLogger` to
-  // scrub URL-shaped values out of `message` + `context` before they
-  // reach the inner logger. Upstream Bitrix24 SDK should redact at
-  // source; until they do, this is the primary defence (see
-  // `server/utils/logger-redactor.ts` + `docs/SECURITY-AUDIT.md`).
+  // SECURITY (#26 / upstream #38 / `bitrix24/b24jssdk` #39): SDK 1.1.1's
+  // HTTP layer logged the full request URL — `https://<portal>/rest/<userId>/<SECRET>`
+  // — on every call via `getLogger().info('post/send', ...)` in
+  // `core/http/abstract-http.mjs`, leaking the webhook secret to every
+  // sink the logger ships to. SDK 1.1.2 (PR #40) fixed it at source by
+  // logging the bare REST method name instead. We still wrap with
+  // `makeRedactingLogger` as defence in depth: any future regression that
+  // re-introduces a URL anywhere in the logger surface is scrubbed before
+  // it reaches the inner logger. See `server/utils/logger-redactor.ts` and
+  // `docs/SECURITY-AUDIT.md` (with the dependency-bump procedure).
   client.setLogger(makeRedactingLogger(useLogger()))
 
   return client
