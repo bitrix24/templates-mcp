@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { ApiVersion, B24Hook, Logger, type LogRecord, LogLevel, MemoryHandler } from '@bitrix24/b24jssdk'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeRedactingLogger } from '~/server/utils/logger-redactor'
 
 /**
@@ -188,6 +188,68 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
     const SENTINEL_SECRET = 'XYZsentinel999LEAKCANARY'
     const FAKE_WEBHOOK = `https://example.bitrix24.ru/rest/1/${SENTINEL_SECRET}/`
 
+    // The `useBitrix24() rewrap` test below uses `vi.stubGlobal` for
+    // `useRuntimeConfig`. Vitest does NOT auto-restore stubGlobals between
+    // tests (unlike spies / mocks under `restoreMocks`). Without this
+    // cleanup the stub would leak into any subsequent test in the same
+    // worker that imports `useBitrix24` and silently bypass the real
+    // runtime config. Cheap insurance.
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    /**
+     * Resolve the `AxiosError` class through the SDK's own dep path so
+     * the `error instanceof AxiosError` check inside
+     * `core/http/abstract-http.mjs` matches the errors this test forges.
+     * Direct `import 'axios'` fails because axios is a transitive dep
+     * (pnpm strict resolution); adding it as a direct devDep just to
+     * satisfy `instanceof` would be heavier than the resolve dance.
+     *
+     * CRITICAL — must load axios via its **ESM** entry (`index.js`),
+     * NOT via `require.resolve('axios')` (which picks
+     * `dist/node/axios.cjs` per axios's `exports.default.require`
+     * condition). Axios's ESM and CJS bundles produce **separate**
+     * `AxiosError` class identities — instances of one fail
+     * `instanceof` checks against the other. The SDK's
+     * `dist/esm/core/http/abstract-http.mjs` does
+     * `import { AxiosError } from 'axios'`, which under vitest's
+     * Vite-style resolver picks the ESM entry; we mirror that path so
+     * our forged errors actually trip the `instanceof AxiosError`
+     * branch at SDK lines 216 and 309.
+     *
+     * If the SDK ever ships an `exports` map that doesn't expose
+     * `package.json`, or axios drops the `index.js` ESM entry, the
+     * chain throws — we wrap with a clear actionable message so the
+     * test failure points the maintainer at the resolve chain, not at
+     * an unrelated import error.
+     */
+    async function resolveAxiosErrorOrThrow(): Promise<new (msg: string) => Error> {
+      try {
+        const projReq = createRequire(import.meta.url)
+        const sdkReq = createRequire(projReq.resolve('@bitrix24/b24jssdk/package.json'))
+        // Resolve axios's package.json to find its install directory,
+        // then load the ESM entry (`index.js`) explicitly — see CRITICAL
+        // note above on why we can't use `sdkReq.resolve('axios')`.
+        const axiosPkgPath = sdkReq.resolve('axios/package.json')
+        const axiosDir = axiosPkgPath.replace(/\/package\.json$/, '')
+        const axiosEsm = await import(`${axiosDir}/index.js`) as {
+          AxiosError?: new (msg: string) => Error
+          default?: { AxiosError: new (msg: string) => Error }
+        }
+        const cls = axiosEsm.AxiosError ?? axiosEsm.default?.AxiosError
+        if (!cls) throw new Error('axios ESM module loaded but AxiosError export missing')
+        return cls
+      } catch (err) {
+        throw new Error(
+          `Failed to resolve axios.AxiosError (ESM) through @bitrix24/b24jssdk dep path: `
+          + `${(err as Error).message}. The SDK's package layout or axios export shape changed; `
+          + `update the createRequire chain in tests/unit/utils/sdk-logger-leak.test.ts. `
+          + `See docs/SECURITY-AUDIT.md.`,
+        )
+      }
+    }
+
     /**
      * Build a fresh logger backed by `MemoryHandler` so the test can inspect
      * every record the SDK or our wrapper produces. `DEBUG` level captures
@@ -312,26 +374,20 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
       assertNoSecretLeak(handler.getRecords(), 'post/send with auth-key param')
     })
 
-    it('SDK ≥1.1.2: post/catchError redacts sensitive keys in error response body', async () => {
-      // SDK 1.1.2 also runs `redactSensitiveParams` on `error.response.data`
-      // in the `post/catchError` branch (the comment in
+    it('SDK ≥1.1.2: post/catchError redacts every key in the sensitive-keys whitelist', async () => {
+      // SDK 1.1.2 runs `redactSensitiveParams` on `error.response.data` in
+      // the `post/catchError` branch (the comment in
       // `core/http/abstract-http.mjs` reads: "Redact in case a future
       // portal response embeds credentials in the error body"). Stub
       // `_clientAxios.post` to reject with an `AxiosError` whose response
-      // body carries the sentinel under a sensitive key — verify the
-      // logger context does not leak it.
-      //
-      // We resolve `AxiosError` through the SDK's own dep path so the
-      // `error instanceof AxiosError` check inside the SDK matches.
-      // Direct `import 'axios'` doesn't work because axios is a
-      // transitive dep (pnpm strict resolution) — adding it as a direct
-      // devDep just to satisfy `instanceof` would be heavier than the
-      // 3-line resolution dance.
-      const projReq = createRequire(import.meta.url)
-      const sdkReq = createRequire(projReq.resolve('@bitrix24/b24jssdk/package.json'))
-      const axiosMod = await import(sdkReq.resolve('axios')) as { default?: { AxiosError: new (msg: string) => Error }, AxiosError?: new (msg: string) => Error }
-      const AxiosError = (axiosMod.default?.AxiosError ?? axiosMod.AxiosError)!
-
+      // body carries the sentinel under EVERY key in the SDK's
+      // `SENSITIVE_PARAM_KEYS` whitelist (`auth`, `password`, `token`,
+      // `secret`, `access_token`, `refresh_token`). If a future SDK bump
+      // drops any of them from the whitelist, this test fails — at which
+      // point the maintainer either re-adds it (defensive) or refuses the
+      // bump. The OAuth-flow keys (`access_token` / `refresh_token`) are
+      // the realistic risk surface in Bitrix24 portal error bodies.
+      const AxiosError = await resolveAxiosErrorOrThrow()
       const { logger, handler } = makeMemoryLogger()
       const hook = B24Hook.fromWebhookUrl(FAKE_WEBHOOK)
       hook.setLogger(logger)
@@ -340,15 +396,37 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
         _clientAxios: { post: (...args: unknown[]) => Promise<unknown> }
       }
       httpV3._clientAxios.post = () => {
-        const err = new AxiosError('Request failed with status 500') as Error & {
+        const err = new AxiosError('Request failed with status 400') as Error & {
           status?: number
+          code?: string
           response?: unknown
         }
-        err.status = 500
+        err.status = 400
+        // `ERR_BAD_REQUEST` is in the SDK's `BUILT_IN_HARD_ERROR_CODES`
+        // list (see `core/http/limiters/manager.mjs`). Setting it makes
+        // `RestrictionManager.handleError` return 0 (no retry wait), so
+        // the SDK throws immediately after logging — the test finishes
+        // in milliseconds instead of waiting through exponential backoff.
+        // The log content we're verifying is identical regardless of
+        // hard vs soft classification.
+        err.code = 'ERR_BAD_REQUEST'
+        // Don't include a top-level `error` key in `data` — SDK's
+        // `_convertAxiosErrorToAjaxError` overrides `errorCode` from
+        // `responseData.error` when present (lines 245–261), which would
+        // erase our `ERR_BAD_REQUEST` hard-code and re-trigger the retry
+        // loop with backoff. We only need the sensitive-keyed fields to
+        // exercise `redactSensitiveParams`.
         err.response = {
-          status: 500,
-          statusText: 'Internal Server Error',
-          data: { auth: SENTINEL_SECRET, error: 'something_failed' },
+          status: 400,
+          statusText: 'Bad Request',
+          data: {
+            auth: SENTINEL_SECRET,
+            password: SENTINEL_SECRET,
+            token: SENTINEL_SECRET,
+            secret: SENTINEL_SECRET,
+            access_token: SENTINEL_SECRET,
+            refresh_token: SENTINEL_SECRET,
+          },
           headers: {},
           config: {},
         }
@@ -356,14 +434,32 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
       }
 
       // SDK re-throws after logging — the actions call will reject. We
-      // don't care about the rejection, only that the logger captured a
-      // redacted record.
+      // don't care about the rejection itself, only what the logger
+      // captured.
       await expect(
         hook.actions.v3.call.make({ method: 'tasks.task.get', params: { taskId: 1 } }),
       ).rejects.toBeDefined()
 
-      assertNoSecretLeak(handler.getRecords(), 'post/catchError with auth in response body')
+      const records = handler.getRecords()
+      // Sanity: SDK must have entered the `error instanceof AxiosError`
+      // branch (otherwise we're not actually testing what we think — e.g.
+      // if axios changes its instance shape and the SDK's `instanceof`
+      // misses our forged error). Without this assertion, an
+      // axios-internals shift could turn the secret-leak assertion below
+      // into a vacuous pass.
+      expect(
+        records.some((r) => r.message === 'post/catchError'),
+        'SDK did not log post/catchError — `instanceof AxiosError` branch was not reached, test setup is broken',
+      ).toBe(true)
+
+      assertNoSecretLeak(records, 'post/catchError with every sensitive-key in response body')
     })
+
+    it.todo(
+      'KNOWN SDK GAP: post/response should redact sensitive keys in response.data.result '
+      + '(SDK 1.1.2 does NOT — see docs/SECURITY-AUDIT.md "Known SDK gap". '
+      + 'Convert to an active `not.toContain` assertion when SDK closes the gap.)',
+    )
 
     it('defence in depth: `makeRedactingLogger` actively scrubs a URL when invoked directly', async () => {
       // After the SDK upstream fix, the integration-style baseline and

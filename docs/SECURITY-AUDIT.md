@@ -72,14 +72,29 @@ logged as-is. If a Bitrix24 portal endpoint ever returns a credential under a
 sensitive key (`auth` / `token` / …) in its happy-path `result`, that value
 reaches the logger context unredacted. No current REST method in this MCP's
 tool surface returns such fields; documented here so a future auditor knows
-where to look first.
+where to look first. Tracked as `it.todo` in
+`tests/unit/utils/sdk-logger-leak.test.ts` so the gap stays visible on
+every test run until SDK closes it or we extend `makeRedactingLogger`
+with key-based redaction.
 
-### Operator action required (deployments on SDK 1.1.0–1.1.1)
+Note on `makeRedactingLogger` coverage of the gap: the wrapper runs on
+every `logger.<level>(...)` call (including `post/response`) and does
+catch **URL-shaped** strings inside the `result` payload — so if a
+portal somehow embedded a webhook URL in a result body, the secret
+segment would still be scrubbed. The wrapper does NOT redact by key
+name today; that's the dimension the SDK gap is on, and the dimension
+this MCP would need to add if a sensitive-keyed result ever entered a
+tool's surface.
 
-If any deployment of this MCP ran on `@bitrix24/b24jssdk` between 1.1.0 and
-1.1.1 inclusive, the webhook URL — including the secret path segment — was
-written to every log sink wired via `setLogger(...)` on **every** Bitrix24
-API call. Before treating this PR as "done":
+### Operator action required (deployments on SDK 1.1.x ≤ 1.1.1)
+
+If any deployment of this MCP ran on `@bitrix24/b24jssdk` 1.1.1 (and very
+likely 1.1.0 — same HTTP-layer callsite was present, but not separately
+verified by this audit; treat 1.1.0 as in-scope unless you can prove
+otherwise from `node_modules/@bitrix24/b24jssdk/dist/esm/core/http/abstract-http.mjs`
+at that version), the webhook URL — including the secret path segment —
+was written to every log sink wired via `setLogger(...)` on **every**
+Bitrix24 API call. Before treating this PR as "done":
 
 1. **Audit log sinks.** Grep historical log retention (stdout capture, file
    archives, aggregator queries) for the pattern `/rest/<digits>/` or the
@@ -96,6 +111,15 @@ API call. Before treating this PR as "done":
 4. **Tighten log access.** As a follow-up, review who has read access to log
    sinks that retained historical entries during the affected window —
    credential disclosure scope = "everyone with log access".
+5. **Review retention and consult your DPO if regulated.** If historical
+   log entries containing the webhook URL survived to disk / aggregator,
+   assess whether your retention policy and applicable regulations
+   (GDPR Art. 33, CCPA, sector-specific frameworks) require purging the
+   affected records or notifying a Data Protection Officer / regulator.
+   For on-prem deployments, truncate the relevant log-file window; for
+   aggregators (Datadog, Elastic, Splunk), use their targeted-deletion
+   / PII-scrubbing APIs. This section is not legal advice — escalate to
+   your DPO / counsel for jurisdiction-specific requirements.
 
 This guidance mirrors the upstream 1.1.2 release notes recommendation
 ("audit historical log sinks … rotate the corresponding credentials").
