@@ -38,7 +38,12 @@ async function main() {
   })
 
   for (const tool of tools) {
-    registerToolFromDefinition(server, tool)
+    // The toolkit's `McpToolDefinition` is generic over the input/output Zod
+    // shapes; our minimal `ToolDefinition` is the structural projection the
+    // stdio register helper actually consumes. The cast widens away the
+    // unused generics — Zod has already validated wire input upstream of the
+    // handler boundary.
+    registerToolFromDefinition(server, tool as Parameters<typeof registerToolFromDefinition>[1])
   }
 
   const transport = new StdioServerTransport()

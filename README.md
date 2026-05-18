@@ -98,11 +98,83 @@ The 8 task-mutation tools above (`start_task` / `pause_task` / `complete_task` /
 
 ## Connecting Claude
 
+### Remote MCP — production server (Claude.ai web)
+
 1. Claude.ai → Settings → Connectors → Add custom connector.
 2. Name: `Bitrix24 (b24-mcp)`.
 3. URL: `https://prod.example.com/mcp`.
 4. Advanced → Custom header: `Authorization: Bearer <NUXT_MCP_AUTH_TOKEN>`.
 5. Save, enable in chat, ask "Show me my Bitrix24 current user".
+
+### Local MCP — your own machine (Claude Desktop, Cursor, Cline, Continue, …)
+
+No public domain or TLS required. Run the same Nuxt build on `localhost` and point a desktop AI client at it.
+
+```bash
+git clone https://github.com/bitrix24/templates-mcp.git
+cd templates-mcp
+cp .env.example .env
+# In .env: set NUXT_BITRIX24_WEBHOOK_URL, generate NUXT_MCP_AUTH_TOKEN with
+#   openssl rand -hex 32
+pnpm install
+pnpm build
+pnpm start
+# → server listening on http://localhost:3000/mcp
+```
+
+Health check while it's up:
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+Then add an MCP server entry to your client's config.
+
+**Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) / `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "bx24": {
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "Authorization": "Bearer <NUXT_MCP_AUTH_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+**Cursor** — Settings → MCP Servers → Add:
+
+```json
+{
+  "bx24": {
+    "url": "http://localhost:3000/mcp",
+    "headers": { "Authorization": "Bearer <NUXT_MCP_AUTH_TOKEN>" }
+  }
+}
+```
+
+**Cline / Continue / any other HTTP-MCP client** — same shape: URL + Bearer header.
+
+Restart the client, ask *"Show me my Bitrix24 current user"* — you should see the operator behind the webhook.
+
+Run it once with `pnpm start` in a terminal, or daemonise with `pm2 start ".output/server/index.mjs"` / `launchd` / `systemd --user` if you want it always-on.
+
+### Desktop Extension — Claude Desktop, one file, two clicks
+
+For users who don't want to run a server at all, this project also builds as a [`.dxt`](https://www.anthropic.com/news/desktop-extensions) bundle — a single file Claude Desktop installs natively over **stdio**. The Bitrix24 webhook stays on the device, in Claude Desktop's encrypted user-config storage; no port, no Bearer token, no public URL.
+
+```bash
+pnpm install
+pnpm build:dxt
+# → dist/bx24-template-mcp.dxt
+```
+
+In Claude Desktop: *Settings → Extensions → Install from file → pick the `.dxt`*. Paste your Bitrix24 webhook URL when prompted. Done.
+
+Pre-built `.dxt` files are attached to every [GitHub release](https://github.com/bitrix24/templates-mcp/releases). See [`mcp-stdio/README.md`](./mcp-stdio/README.md) for build/runtime details.
 
 ## Repository layout
 

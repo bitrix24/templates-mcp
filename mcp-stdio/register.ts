@@ -14,7 +14,11 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
 interface ToolDefinition {
-  name: string
+  // The toolkit's type allows `name` to be undefined because the HTTP build
+  // auto-derives it from the filename. The stdio bundle doesn't run that
+  // discovery, so every tool MUST set `name` explicitly. We accept the
+  // wider type here and fail loudly at registration time below.
+  name?: string
   title?: string
   description?: string
   inputSchema?: unknown
@@ -60,6 +64,12 @@ function normalizeErrorToResult(error: unknown): ToolResult {
 }
 
 export function registerToolFromDefinition(server: McpServer, tool: ToolDefinition) {
+  if (!tool.name) {
+    throw new Error(
+      'Stdio bundle requires every tool to declare an explicit `name` — '
+        + 'filename-based discovery is not wired in this transport.',
+    )
+  }
   const options = {
     title: tool.title,
     description: tool.description,
@@ -84,5 +94,5 @@ export function registerToolFromDefinition(server: McpServer, tool: ToolDefiniti
 
   return (server as unknown as {
     registerTool: (name: string, options: unknown, handler: typeof normalizedHandler) => unknown
-  }).registerTool(tool.name, options, normalizedHandler)
+  }).registerTool(tool.name!, options, normalizedHandler)
 }

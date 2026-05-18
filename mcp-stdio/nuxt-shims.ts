@@ -12,7 +12,16 @@
  * frames. The Bitrix24 SDK's `ConsoleHandler` writes via `console.log` /
  * `console.info`, which would corrupt the protocol stream. We re-bind those
  * to stderr here, before any tool import resolves and pulls the logger in.
+ *
+ * Zod init: zod 4 declares `"sideEffects": false`, so esbuild lazy-inits
+ * its schema classes via `__esm({})` wrappers. The MCP SDK's `types.js`
+ * evaluates `z.custom(...)` at module top level — if SDK init fires before
+ * any zod init wrapper has run, `ZodCustom` is still `undefined` and
+ * `_custom` throws `Class<N> is not a constructor`. Touching `z.string()`
+ * below schedules `init_schemas2()` before any consumer top-level code
+ * runs (this module is imported first by `server.ts`).
  */
+import { z } from 'zod'
 
 interface RuntimeConfig {
   bitrix24WebhookUrl: string
@@ -36,8 +45,15 @@ const runtimeConfig: RuntimeConfig = {
   runtimeConfig
 
 // Re-bind stdout-writing console methods to stderr so the SDK logger (or
-// any stray `console.log`) cannot corrupt the JSON-RPC frame stream.
+// any stray `console.log`) cannot corrupt the JSON-RPC frame stream. The
+// eslint `no-console` rule (warn/error only) is satisfied by the targets;
+// the assignments themselves are the redirect mechanism.
+/* eslint-disable no-console */
 console.log = console.error.bind(console)
 console.info = console.error.bind(console)
 console.debug = console.error.bind(console)
 console.warn = console.error.bind(console)
+/* eslint-enable no-console */
+
+// Force zod init — see header comment.
+void z.string()
