@@ -28,10 +28,21 @@ Requires Node 22 and a system `zip` binary (`apt install zip` / preinstalled on 
 
 1. Open Claude Desktop → Settings → Extensions.
 2. Drag the `.dxt` file onto the window, or click *Install from file*.
-3. When prompted, paste your Bitrix24 webhook URL (`https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/`). Optionally set the GitHub feedback PAT.
-4. Enable the extension. Ask the assistant: *"Show me my Bitrix24 current user."*
+3. When prompted, paste your Bitrix24 webhook URL. The URL pattern is:
+   - **Cloud:** `https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/` — any TLD (`.com` / `.ru` / `.com.br` / `.es` / `.de` / …).
+   - **Self-Hosted (on-prem):** `https://<your-internal-host>/rest/<user_id>/<secret>/` — same shape, any domain.
+4. Optionally set the GitHub feedback PAT (enables `bx24mcp_submit_feedback`).
+5. Enable the extension. Ask the assistant: *"Show me my Bitrix24 current user."*
 
-The webhook secret is stored in Claude Desktop's encrypted user_config; it never leaves the device.
+The webhook secret is stored in Claude Desktop's OS-backed encrypted user_config (macOS Keychain / Windows DPAPI / Linux libsecret); it never leaves the device.
+
+**Self-Hosted with a private CA?** Set `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` in your shell **before launching Claude Desktop** so the spawned extension process inherits the variable.
+
+**Localised step-by-step guides:**
+- 🇷🇺 [`INSTALL.ru.md`](./INSTALL.ru.md)
+- 🇧🇷 [`INSTALL.pt-BR.md`](./INSTALL.pt-BR.md)
+
+**Privacy / data residency:** no outbound calls except your Bitrix24 portal and (optionally) the GitHub Issues API. Webhook URL is redacted from every log sink via `makeRedactingLogger`. Full details in the root README's *Data residency, telemetry, LGPD / GDPR* section.
 
 ## Local dry-run (without Claude Desktop)
 

@@ -1,5 +1,16 @@
-# Local development compose — runs the MCP server alone, bound to host port 3000.
-# For production (behind nginx-proxy on the shared proxy-net network) use docker-compose.yml.
+# Local / single-host compose — runs the MCP server alone, bound to host port
+# 3000. Use this as a base when you terminate TLS yourself (Caddy, Traefik,
+# plain nginx + certbot) — see docs/REVERSE-PROXY.md for snippets.
+#
+# The shared docker-compose.yml is opinionated: it assumes the
+# nginx-proxy + acme-companion stack on a `proxy-net` network. If you don't
+# use that combo (most BR/LatAm hosts, many EU/US shops on Caddy/Traefik),
+# this file is what you want.
+#
+# Every required env var has a safe default so `docker compose -f
+# docker-compose.example.yml up` works even without a populated `.env`. The
+# webhook URL stays unset — the server will refuse to start until it's
+# supplied, which is the desired failure mode.
 services:
   bx24-template-mcp:
     build:
@@ -8,15 +19,29 @@ services:
     container_name: bx24-template-mcp-local
     restart: unless-stopped
     # Port mapping: <host>:<container>. The container side MUST match NITRO_PORT
-    # below (and what the Dockerfile exposes). If you change NITRO_PORT, change
-    # both the right-hand side here AND the Dockerfile EXPOSE/HEALTHCHECK.
+    # (and what the Dockerfile exposes). If you change NITRO_PORT, change BOTH
+    # the right-hand side here AND the Dockerfile EXPOSE/HEALTHCHECK.
     ports:
-      - '3000:3000'
+      - '${HOST_PORT:-3000}:${NITRO_PORT:-3000}'
     environment:
+      # Required — no default. Server bails on startup if missing.
       NUXT_BITRIX24_WEBHOOK_URL: ${NUXT_BITRIX24_WEBHOOK_URL}
+      # Required for HTTP transport — clients send `Authorization: Bearer …`.
+      # If you ever expose this beyond localhost, treat the absence of a
+      # value as a deploy-blocker (mcp-auth middleware returns 503).
       NUXT_MCP_AUTH_TOKEN: ${NUXT_MCP_AUTH_TOKEN}
+      # Optional — disables `bx24mcp_submit_feedback` when empty.
       NUXT_GITHUB_FEEDBACK_TOKEN: ${NUXT_GITHUB_FEEDBACK_TOKEN:-}
       NUXT_GITHUB_FEEDBACK_REPO: ${NUXT_GITHUB_FEEDBACK_REPO:-bitrix24/templates-mcp}
       NUXT_LOG_LEVEL: ${NUXT_LOG_LEVEL:-info}
-      NITRO_PORT: ${NITRO_PORT}
-      NODE_ENV: ${NODE_ENV}
+      NITRO_PORT: ${NITRO_PORT:-3000}
+      NODE_ENV: ${NODE_ENV:-production}
+      # Self-hosted Bitrix24 with a private/self-signed CA: mount the bundle
+      # and point Node at it. Leave unset for cloud portals (the Mozilla CA
+      # list bundled with Node 22 covers every `*.bitrix24.<tld>` certificate).
+      NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
+    # Uncomment to mount a private CA bundle from the host. Adjust the
+    # source path; the target must match NODE_EXTRA_CA_CERTS above.
+    # volumes:
+    #   - ./bitrix-internal-ca.pem:/etc/ssl/certs/bitrix-internal-ca.pem:ro
+
