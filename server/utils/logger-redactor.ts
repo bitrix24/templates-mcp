@@ -92,8 +92,15 @@ function redactContext(context?: Record<string, unknown>): Record<string, unknow
  *
  * The `log(level, message, context)` variant exists because the SDK's
  * `LoggerInterface` includes it as the "log with arbitrary level" entry
- * point — covered here for completeness even though SDK 1.1.1's own
+ * point — covered here for completeness even though current SDK
  * callsites use the level-named methods (`debug`/`info`/`warning`/`error`).
+ *
+ * Note on typing: the SDK's `LoggerInterface` declares `context?:
+ * Record<string, any>`. We narrow to `Record<string, unknown>` here to
+ * satisfy this project's `no-explicit-any` lint rule and to keep the
+ * walker's input statically opaque. `unknown` is structurally a subset
+ * of `any` so passing our wrapper into anything expecting the SDK's
+ * `LoggerInterface` is variance-safe.
  */
 export function makeRedactingLogger(inner: LoggerInterface): LoggerInterface {
   const wrapLevel = <K extends keyof Pick<LoggerInterface, 'debug' | 'info' | 'notice' | 'warning' | 'error' | 'critical' | 'alert' | 'emergency'>>(

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { ApiVersion, B24Hook, Logger, type LogRecord, LogLevel, MemoryHandler } from '@bitrix24/b24jssdk'
 import { describe, expect, it, vi } from 'vitest'
@@ -121,17 +122,18 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
     it('finds the expected order-of-magnitude of SDK files + callsites (sanity vs SDK layout drift)', () => {
       // A bare `> 0` check would pass even if the SDK moved most of its
       // code somewhere we don't scan. We sanity-check against the
-      // SDK 1.1.2 baseline: ~100 .mjs files in dist/esm and ~90 logger
-      // callsites (8 `_logger.*` in the action layer + ~85 `getLogger().*`
-      // across HTTP / pull / frame / helper). If the numbers drop
-      // dramatically, the scanner has gone blind to a chunk of the SDK —
-      // fail loud so the maintainer updates the matcher.
+      // SDK 1.1.2 baseline: ~107 .mjs files in dist/esm and ~81 logger
+      // callsites (8 `_logger.*` in the action layer + ~73 `getLogger().*`
+      // across HTTP / pull / frame / helper). Thresholds set ~25% below
+      // the measured 1.1.2 baseline so a minor SDK reshuffle passes but a
+      // dramatic drop (scanner gone blind to a whole subtree) fails loud.
+      // Retune on every SDK bump per `docs/SECURITY-AUDIT.md` step 4.
       let filesScanned = 0
       for (const _ of walkSdkSources(SDK_ROOT)) filesScanned++
-      expect(filesScanned, 'SDK file count fell below baseline — layout changed?').toBeGreaterThan(50)
+      expect(filesScanned, 'SDK file count fell below baseline — layout changed?').toBeGreaterThan(80)
 
       const callsites = findLoggerCallsites()
-      expect(callsites.length, 'logger callsite count fell below baseline — matcher pattern may have gone blind').toBeGreaterThan(30)
+      expect(callsites.length, 'logger callsite count fell below baseline — matcher pattern may have gone blind').toBeGreaterThan(60)
     })
 
     it('every logger callsite logs only safe identifiers (method / requestId / messages) — no URL or secret', () => {
@@ -283,6 +285,107 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
       await hook.actions.v3.call.make({ method: 'tasks.task.get', params: { taskId: 1 } })
 
       assertNoSecretLeak(handler.getRecords(), 'HTTP call through redacting logger')
+    })
+
+    it('SDK ≥1.1.2: post/send redacts sensitive params (auth key in outbound params)', async () => {
+      // SDK 1.1.2's `redactSensitiveParams` (PR bitrix24/b24jssdk#40)
+      // scrubs values under credential-bearing keys before
+      // `JSON.stringify`-ing them into the `params:` field of the
+      // `post/send` log entry. Pin that behaviour: if a future SDK bump
+      // removes the redaction or drops `auth` from the whitelist, this
+      // test fails immediately.
+      const { logger, handler } = makeMemoryLogger()
+      const hook = B24Hook.fromWebhookUrl(FAKE_WEBHOOK)
+      hook.setLogger(logger)
+      await hook.init()
+      const httpV3 = hook.getHttpClient(ApiVersion.v3) as unknown as {
+        _clientAxios: { post: (...args: unknown[]) => Promise<unknown> }
+      }
+      httpV3._clientAxios.post = () =>
+        Promise.resolve({ status: 200, data: { result: { ok: true }, time: {} } })
+
+      await hook.actions.v3.call.make({
+        method: 'tasks.task.get',
+        params: { auth: SENTINEL_SECRET, taskId: 1 },
+      })
+
+      assertNoSecretLeak(handler.getRecords(), 'post/send with auth-key param')
+    })
+
+    it('SDK ≥1.1.2: post/catchError redacts sensitive keys in error response body', async () => {
+      // SDK 1.1.2 also runs `redactSensitiveParams` on `error.response.data`
+      // in the `post/catchError` branch (the comment in
+      // `core/http/abstract-http.mjs` reads: "Redact in case a future
+      // portal response embeds credentials in the error body"). Stub
+      // `_clientAxios.post` to reject with an `AxiosError` whose response
+      // body carries the sentinel under a sensitive key — verify the
+      // logger context does not leak it.
+      //
+      // We resolve `AxiosError` through the SDK's own dep path so the
+      // `error instanceof AxiosError` check inside the SDK matches.
+      // Direct `import 'axios'` doesn't work because axios is a
+      // transitive dep (pnpm strict resolution) — adding it as a direct
+      // devDep just to satisfy `instanceof` would be heavier than the
+      // 3-line resolution dance.
+      const projReq = createRequire(import.meta.url)
+      const sdkReq = createRequire(projReq.resolve('@bitrix24/b24jssdk/package.json'))
+      const axiosMod = await import(sdkReq.resolve('axios')) as { default?: { AxiosError: new (msg: string) => Error }, AxiosError?: new (msg: string) => Error }
+      const AxiosError = (axiosMod.default?.AxiosError ?? axiosMod.AxiosError)!
+
+      const { logger, handler } = makeMemoryLogger()
+      const hook = B24Hook.fromWebhookUrl(FAKE_WEBHOOK)
+      hook.setLogger(logger)
+      await hook.init()
+      const httpV3 = hook.getHttpClient(ApiVersion.v3) as unknown as {
+        _clientAxios: { post: (...args: unknown[]) => Promise<unknown> }
+      }
+      httpV3._clientAxios.post = () => {
+        const err = new AxiosError('Request failed with status 500') as Error & {
+          status?: number
+          response?: unknown
+        }
+        err.status = 500
+        err.response = {
+          status: 500,
+          statusText: 'Internal Server Error',
+          data: { auth: SENTINEL_SECRET, error: 'something_failed' },
+          headers: {},
+          config: {},
+        }
+        return Promise.reject(err)
+      }
+
+      // SDK re-throws after logging — the actions call will reject. We
+      // don't care about the rejection, only that the logger captured a
+      // redacted record.
+      await expect(
+        hook.actions.v3.call.make({ method: 'tasks.task.get', params: { taskId: 1 } }),
+      ).rejects.toBeDefined()
+
+      assertNoSecretLeak(handler.getRecords(), 'post/catchError with auth in response body')
+    })
+
+    it('defence in depth: `makeRedactingLogger` actively scrubs a URL when invoked directly', async () => {
+      // After the SDK upstream fix, the integration-style baseline and
+      // defence tests above both pass for the same reason (SDK no longer
+      // leaks). Without an independent self-proof, the wrapper could
+      // silently regress (e.g. regex broken) and CI would stay green.
+      // This test calls the wrapper directly with a leak-shaped payload
+      // — proves the wrapper is alive and scrubs the SECRET segment
+      // regardless of what the SDK does.
+      //
+      // We don't reuse `assertNoSecretLeak` here because that helper
+      // also fails on any `/rest/<digits>/` substring, while our
+      // redactor intentionally preserves the path prefix (host + userId)
+      // for debugging — only the secret segment is scrubbed.
+      const { logger, handler } = makeMemoryLogger()
+      const wrapped = makeRedactingLogger(logger)
+
+      await wrapped.info('manual probe', { method: FAKE_WEBHOOK, requestId: 'probe-1' })
+
+      const dump = JSON.stringify(handler.getRecords())
+      expect(dump, 'wrapper failed to scrub the secret on direct invocation').not.toContain(SENTINEL_SECRET)
+      expect(dump, 'wrapper did not produce the <REDACTED> marker — regex may be broken').toContain('<REDACTED>')
     })
 
     it('useBitrix24() wires the redacting logger so a non-URL env var value cannot leak via the rewrapped error', async () => {

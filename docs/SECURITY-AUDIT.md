@@ -64,6 +64,44 @@ values regardless of what the SDK does. The `useBitrix24()` malformed-URL
 rewrap also keeps running `redactString(reason)` on the SDK parse error
 message (still relevant — that path doesn't go through the SDK logger).
 
+**Known SDK gap (out of scope for this PR)**: SDK 1.1.2's `redactSensitiveParams`
+is applied to outbound `params` (in `post/send`) and to error response bodies
+(in `post/catchError`), but **not** to successful response bodies in
+`post/response` — `result: JSON.stringify(response.data.result, null, 0)` is
+logged as-is. If a Bitrix24 portal endpoint ever returns a credential under a
+sensitive key (`auth` / `token` / …) in its happy-path `result`, that value
+reaches the logger context unredacted. No current REST method in this MCP's
+tool surface returns such fields; documented here so a future auditor knows
+where to look first.
+
+### Operator action required (deployments on SDK 1.1.0–1.1.1)
+
+If any deployment of this MCP ran on `@bitrix24/b24jssdk` between 1.1.0 and
+1.1.1 inclusive, the webhook URL — including the secret path segment — was
+written to every log sink wired via `setLogger(...)` on **every** Bitrix24
+API call. Before treating this PR as "done":
+
+1. **Audit log sinks.** Grep historical log retention (stdout capture, file
+   archives, aggregator queries) for the pattern `/rest/<digits>/` or the
+   `<portal>.bitrix24.<tld>` host of the affected webhook. Any match is the
+   secret in plaintext.
+2. **Rotate the webhook.** In the Bitrix24 portal admin (Applications →
+   Webhooks), revoke the leaked incoming webhook and issue a new one. Update
+   `NUXT_BITRIX24_WEBHOOK_URL` in every environment (`.env`, secrets manager,
+   deployment platform) to point at the new URL. The old secret is
+   compromised the moment a log sink with retention has seen it.
+3. **Notify downstream consumers.** If this MCP's webhook was shared with
+   other internal services or operators, tell them the secret rotated and
+   provide the new URL through a non-logged channel.
+4. **Tighten log access.** As a follow-up, review who has read access to log
+   sinks that retained historical entries during the affected window —
+   credential disclosure scope = "everyone with log access".
+
+This guidance mirrors the upstream 1.1.2 release notes recommendation
+("audit historical log sinks … rotate the corresponding credentials").
+Deployments that always ran on ≤1.0.x or that never wired a logger via
+`setLogger` are not affected by this specific leak.
+
 ### Audit pass — SDK 1.1.1 (2026-05)
 
 **Method**: enumerated every `_logger.*`, `getLogger().*`, and direct `console.*`
@@ -177,24 +215,32 @@ release notes to call out logger surface regressions on every bump.
   literals or URL-component identifiers (`url`, `webhook`, `secret`,
   inline `https://`, `/rest/`). **This is a heuristic** — it catches
   SDK regressions where new callsites name the URL explicitly, but
-  does NOT catch the existing `methodFormatted` variable-routed leak
-  (the variable name doesn't match any leak pattern). The runtime tests
-  below carry the real load.
-  - Sanity baselines: ≥50 SDK files scanned, ≥30 logger callsites
-    found. If either drops sharply, the matcher has gone blind to a
+  does NOT catch a variable-routed leak (like SDK 1.1.1's
+  `methodFormatted` — the variable name didn't match any leak pattern).
+  The runtime tests below carry the real load.
+  - Sanity baselines (as of SDK 1.1.2): ≥50 SDK files scanned (~107
+    actual), ≥60 logger callsites found (~81 actual — 8 `_logger.*` in
+    the action layer + ~73 `getLogger().*` across HTTP / pull / frame /
+    helper). If either drops sharply, the matcher has gone blind to a
     chunk of the SDK — fail loud so the maintainer extends the pattern.
 
 - **Runtime tests** — these prove the defence works end-to-end:
-  - **BASELINE**: wire a RAW logger (no redaction) into a real `B24Hook`,
-    intercept the internal axios POST, trigger an API call, assert the
-    sentinel secret DOES appear in captured logs. This proves the
-    leak we're defending against is real; if it ever STOPS finding
-    the leak, SDK upstream fixed it (update this doc).
-  - **DEFENCE**: same setup but with `makeRedactingLogger` wrapping
-    the logger. Assert the sentinel does NOT appear in captured logs.
+  - **BASELINE** (SDK ≥1.1.2 upstream fix): wire a RAW logger (no
+    redaction) into a real `B24Hook`, intercept the internal axios POST,
+    trigger an API call, assert the sentinel secret does **NOT** appear
+    in captured logs. This pins the upstream fix as a regression guard;
+    if a future SDK bump re-introduces a URL in the logger context,
+    this test fails immediately.
+  - **DEFENCE**: same setup but with `makeRedactingLogger` wrapping the
+    logger. Assert the sentinel does not appear in captured logs.
+  - **SDK SENSITIVE-PARAM REDACTION**: pass `params: { auth: SENTINEL }`
+    on `post/send` and trigger an `AxiosError` with
+    `response.data = { auth: SENTINEL }` on `post/catchError`; assert
+    SDK's `redactSensitiveParams` keeps the sentinel out of captured
+    logs in both paths.
   - **WRAPPER REWRAP**: load `useBitrix24` against a malformed env-var
-    URL bearing the sentinel; assert the thrown error does not
-    contain the sentinel (covers the `redactString(reason)` path).
+    URL bearing the sentinel; assert the thrown error does not contain
+    the sentinel (covers the `redactString(reason)` path).
 
 `tests/unit/utils/logger-redactor.test.ts` separately unit-tests the
 redactor itself: regex coverage for v2 and v3 URL shapes, deep-walk
@@ -203,22 +249,35 @@ wrapped.
 
 ### Dependency-bump procedure
 
-When bumping `@bitrix24/b24jssdk` (`package.json` change):
+When bumping `@bitrix24/b24jssdk` or `@bitrix24/b24jssdk-nuxt`
+(`package.json` change — both packages share the underlying HTTP /
+logger surface, so a bump to either triggers this procedure):
 
 1. Run `pnpm test --run tests/unit/utils/sdk-logger-leak.test.ts` and
    `pnpm test --run tests/unit/utils/logger-redactor.test.ts` — must
    pass. If the static scan fails, read the offending file:line and
    prove the match is a false positive (refine the pattern) OR refuse
    the bump.
-2. If the **BASELINE** test starts FAILING (the sentinel no longer
-   appears in captured logs), SDK upstream may have fixed the leak.
-   Re-audit by hand; if confirmed, update this doc and consider
-   downgrading `makeRedactingLogger` to belt-and-suspenders status
-   (but keep it — defence in depth).
-3. Update the "Audit pass" section above with the new SDK version,
+2. If the **BASELINE** test starts FAILING (the sentinel **appears** in
+   captured logs with a raw logger), the SDK regressed — a code path
+   re-introduced a URL or other secret-bearing value into the logger
+   context. Do **not** silently flip the assertion back to "expect leak"
+   to make CI green. Either fix the regression upstream (report on
+   `bitrix24/b24jssdk`) and refuse the bump until the next patch, or
+   extend `makeRedactingLogger` to cover the new shape and document the
+   gap here. The wrapper is defence in depth; SDK source is the
+   primary defence.
+3. If new sensitive-key shapes appear in SDK release notes (e.g. SDK
+   adds a new param name to its `redactSensitiveParams` whitelist),
+   mirror the addition in the **SDK SENSITIVE-PARAM REDACTION** runtime
+   tests so any future removal from the SDK whitelist is caught.
+4. Update the "Audit pass" section above with the new SDK version,
    the new callsite count per surface, and a one-line description of
-   each new callsite that touches a URL-shaped field.
-4. Re-run the integration suite (`tests/integration/`) against a live
+   each new callsite that touches a URL-shaped field. If callsite count
+   shifted >25% from the previous baseline, retune the sanity
+   thresholds in `sdk-logger-leak.test.ts` so dramatic drops still
+   fail loud.
+5. Re-run the integration suite (`tests/integration/`) against a live
    portal to confirm no behaviour regressions.
 
 Skipping the audit on a bump means trusting the SDK maintainers'

@@ -81,6 +81,18 @@ describe('redactString', () => {
     const out = redactString(`http://example.bitrix24.ru/rest/1/${V2_SECRET}/x`)
     expect(out).not.toContain(V2_SECRET)
   })
+
+  it('passes through the SDK 1.1.2 `***REDACTED***` placeholder unchanged', () => {
+    // SDK 1.1.2's `redactSensitiveParams` writes `***REDACTED***` in place
+    // of values under credential-bearing keys. When that pre-redacted
+    // string flows through our wrapper (e.g. inside a JSON.stringify'd
+    // `params:` field on `post/send`), our URL-only redactor must not
+    // mangle it. Pinned so a future regex change that accidentally
+    // matches the placeholder gets caught.
+    expect(redactString('***REDACTED***')).toBe('***REDACTED***')
+    expect(redactString('params: {"auth":"***REDACTED***","taskId":1}'))
+      .toBe('params: {"auth":"***REDACTED***","taskId":1}')
+  })
 })
 
 describe('redactValue', () => {
