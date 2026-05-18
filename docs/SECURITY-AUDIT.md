@@ -77,24 +77,38 @@ where to look first. Tracked as `it.todo` in
 every test run until SDK closes it or we extend `makeRedactingLogger`
 with key-based redaction.
 
-Note on `makeRedactingLogger` coverage of the gap: the wrapper runs on
-every `logger.<level>(...)` call (including `post/response`) and does
-catch **URL-shaped** strings inside the `result` payload — so if a
-portal somehow embedded a webhook URL in a result body, the secret
-segment would still be scrubbed. The wrapper does NOT redact by key
-name today; that's the dimension the SDK gap is on, and the dimension
-this MCP would need to add if a sensitive-keyed result ever entered a
-tool's surface.
+#### Partial mitigation via URL-pattern scrubbing
+
+`makeRedactingLogger` does **not** close the key-dimension gap above —
+it only knows about URL-shaped strings. If a future SDK / portal
+combination places a non-URL credential (a bare `access_token` value, a
+password string) under a sensitive key in `response.data.result`, our
+wrapper passes it through unmodified.
+
+The wrapper *does* run on every `logger.<level>(...)` call (including
+`post/response`), so if a portal somehow embedded a full webhook URL
+inside `result`, the secret segment of that URL would still be
+scrubbed. This is incidental coverage, not the defence the gap calls
+for. The fix when the gap matters: either upstream-redact at SDK
+level, or extend `makeRedactingLogger` with key-based scrubbing
+mirroring SDK's `SENSITIVE_PARAM_KEYS`.
 
 ### Operator action required (deployments on SDK 1.1.x ≤ 1.1.1)
 
-If any deployment of this MCP ran on `@bitrix24/b24jssdk` 1.1.1 (and very
-likely 1.1.0 — same HTTP-layer callsite was present, but not separately
-verified by this audit; treat 1.1.0 as in-scope unless you can prove
-otherwise from `node_modules/@bitrix24/b24jssdk/dist/esm/core/http/abstract-http.mjs`
-at that version), the webhook URL — including the secret path segment —
-was written to every log sink wired via `setLogger(...)` on **every**
-Bitrix24 API call. Before treating this PR as "done":
+If any deployment of this MCP ran on `@bitrix24/b24jssdk` 1.1.1 — or on
+1.1.0 [^1.1.0-scope] — the webhook URL, including the secret path
+segment, was written to every log sink wired via `setLogger(...)` on
+**every** Bitrix24 API call. Before treating this PR as "done":
+
+[^1.1.0-scope]:
+    1.1.0 included by inspection: the same `post/send` callsite with
+    `method: methodFormatted` existed in that release. The audit
+    didn't separately install and exercise 1.1.0, so verification is
+    by reasoning, not by run. Operators with a historical lockfile
+    pinning 1.1.0 (`pnpm-lock.yaml`, `package-lock.json`,
+    `yarn.lock`) should treat the deployment as in-scope unless they
+    can confirm from that lockfile's resolved SDK source that the
+    leaky callsite was absent.
 
 1. **Audit log sinks.** Grep historical log retention (stdout capture, file
    archives, aggregator queries) for the pattern `/rest/<digits>/` or the

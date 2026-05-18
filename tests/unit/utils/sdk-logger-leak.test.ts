@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { ApiVersion, B24Hook, Logger, type LogRecord, LogLevel, MemoryHandler } from '@bitrix24/b24jssdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeRedactingLogger } from '~/server/utils/logger-redactor'
@@ -225,29 +225,40 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
      * an unrelated import error.
      */
     async function resolveAxiosErrorOrThrow(): Promise<new (msg: string) => Error> {
+      let axiosDir: string
       try {
         const projReq = createRequire(import.meta.url)
         const sdkReq = createRequire(projReq.resolve('@bitrix24/b24jssdk/package.json'))
         // Resolve axios's package.json to find its install directory,
         // then load the ESM entry (`index.js`) explicitly — see CRITICAL
         // note above on why we can't use `sdkReq.resolve('axios')`.
+        // `dirname()` is path-separator-agnostic (regex-stripping
+        // `/package.json` would silently fail on Windows backslashes).
         const axiosPkgPath = sdkReq.resolve('axios/package.json')
-        const axiosDir = axiosPkgPath.replace(/\/package\.json$/, '')
-        const axiosEsm = await import(`${axiosDir}/index.js`) as {
-          AxiosError?: new (msg: string) => Error
-          default?: { AxiosError: new (msg: string) => Error }
-        }
-        const cls = axiosEsm.AxiosError ?? axiosEsm.default?.AxiosError
-        if (!cls) throw new Error('axios ESM module loaded but AxiosError export missing')
-        return cls
+        axiosDir = dirname(axiosPkgPath)
       } catch (err) {
         throw new Error(
-          `Failed to resolve axios.AxiosError (ESM) through @bitrix24/b24jssdk dep path: `
-          + `${(err as Error).message}. The SDK's package layout or axios export shape changed; `
+          `Failed to resolve axios package via @bitrix24/b24jssdk dep path: `
+          + `${(err as Error).message}. The SDK's package layout changed; `
           + `update the createRequire chain in tests/unit/utils/sdk-logger-leak.test.ts. `
           + `See docs/SECURITY-AUDIT.md.`,
         )
       }
+      // Dynamic import is outside the resolve-chain try/catch so that a
+      // `throw new Error('AxiosError export missing')` from inside isn't
+      // re-wrapped (and stack-stripped) by the outer catch.
+      const axiosEsm = await import(`${axiosDir}/index.js`) as {
+        AxiosError?: new (msg: string) => Error
+        default?: { AxiosError: new (msg: string) => Error }
+      }
+      const cls = axiosEsm.AxiosError ?? axiosEsm.default?.AxiosError
+      if (!cls) {
+        throw new Error(
+          `axios ESM module loaded from ${axiosDir}/index.js but AxiosError export is missing. `
+          + `Axios's export shape changed; update the resolver in tests/unit/utils/sdk-logger-leak.test.ts.`,
+        )
+      }
+      return cls
     }
 
     /**
@@ -349,13 +360,15 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
       assertNoSecretLeak(handler.getRecords(), 'HTTP call through redacting logger')
     })
 
-    it('SDK ≥1.1.2: post/send redacts sensitive params (auth key in outbound params)', async () => {
+    it('SDK ≥1.1.2: post/send redacts every key in the sensitive-keys whitelist', async () => {
       // SDK 1.1.2's `redactSensitiveParams` (PR bitrix24/b24jssdk#40)
       // scrubs values under credential-bearing keys before
       // `JSON.stringify`-ing them into the `params:` field of the
-      // `post/send` log entry. Pin that behaviour: if a future SDK bump
-      // removes the redaction or drops `auth` from the whitelist, this
-      // test fails immediately.
+      // `post/send` log entry. Symmetric with the `post/catchError` test
+      // below: cover every key in `SENSITIVE_PARAM_KEYS` (`auth`,
+      // `password`, `token`, `secret`, `access_token`, `refresh_token`)
+      // so a future SDK bump that drops any one of them from the
+      // whitelist on the outbound path fails immediately.
       const { logger, handler } = makeMemoryLogger()
       const hook = B24Hook.fromWebhookUrl(FAKE_WEBHOOK)
       hook.setLogger(logger)
@@ -368,10 +381,28 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
 
       await hook.actions.v3.call.make({
         method: 'tasks.task.get',
-        params: { auth: SENTINEL_SECRET, taskId: 1 },
+        params: {
+          auth: SENTINEL_SECRET,
+          password: SENTINEL_SECRET,
+          token: SENTINEL_SECRET,
+          secret: SENTINEL_SECRET,
+          access_token: SENTINEL_SECRET,
+          refresh_token: SENTINEL_SECRET,
+          taskId: 1,
+        },
       })
 
-      assertNoSecretLeak(handler.getRecords(), 'post/send with auth-key param')
+      const records = handler.getRecords()
+      // Sanity: prove the `post/send` callsite was actually exercised.
+      // Without this, a future SDK that renames the message would let
+      // `assertNoSecretLeak` pass vacuously (no records → no leak).
+      // NOTE: depends on the literal string the SDK logs — update if SDK
+      // ever renames `post/send` to something else.
+      expect(
+        records.some((r) => r.message === 'post/send'),
+        'SDK did not emit a post/send log record — message renamed or callsite removed?',
+      ).toBe(true)
+      assertNoSecretLeak(records, 'post/send with every sensitive-key in outbound params')
     })
 
     it('SDK ≥1.1.2: post/catchError redacts every key in the sensitive-keys whitelist', async () => {
@@ -446,7 +477,11 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
       // if axios changes its instance shape and the SDK's `instanceof`
       // misses our forged error). Without this assertion, an
       // axios-internals shift could turn the secret-leak assertion below
-      // into a vacuous pass.
+      // into a vacuous pass — this is exactly what bit round-1 of this
+      // PR's review, where the CJS-resolved `AxiosError` failed the
+      // SDK's `instanceof` check silently.
+      // NOTE: depends on the literal string the SDK logs — update if SDK
+      // ever renames `post/catchError` to something else.
       expect(
         records.some((r) => r.message === 'post/catchError'),
         'SDK did not log post/catchError — `instanceof AxiosError` branch was not reached, test setup is broken',
@@ -457,8 +492,10 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
 
     it.todo(
       'KNOWN SDK GAP: post/response should redact sensitive keys in response.data.result '
-      + '(SDK 1.1.2 does NOT — see docs/SECURITY-AUDIT.md "Known SDK gap". '
-      + 'Convert to an active `not.toContain` assertion when SDK closes the gap.)',
+      + '(SDK 1.1.2 does NOT — see docs/SECURITY-AUDIT.md "Known SDK gap"). '
+      + 'When SDK closes the gap, mirror the post/catchError pattern: assertNoSecretLeak '
+      + 'PLUS a `records.some(r => r.message === "post/response")` sanity check — '
+      + 'a bare not.toContain would re-introduce the CJS/ESM-style vacuous-pass risk.',
     )
 
     it('defence in depth: `makeRedactingLogger` actively scrubs a URL when invoked directly', async () => {
