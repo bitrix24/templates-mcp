@@ -1,0 +1,70 @@
+{
+  "dxt_version": "0.1",
+  "name": "bx24-template-mcp",
+  "display_name": "Bitrix24 (b24-mcp)",
+  "version": "0.1.0",
+  "description": "Bitrix24 MCP server — tasks, checklists, elapsed time, dependencies, and feedback. Local stdio bundle.",
+  "long_description": "Gives AI assistants direct access to a Bitrix24 portal via an incoming webhook. Tasks (CRUD + 8 lifecycle actions + rating), checklist items, task results, elapsed time, dependencies, user search, plus a meta-tool to file structured feedback as a GitHub issue. Runs entirely on your machine — no server to operate, no public URL, no Bearer token. Webhook secret stays in Claude Desktop's secure user_config storage.",
+  "author": {
+    "name": "Bitrix24",
+    "url": "https://github.com/bitrix24/templates-mcp"
+  },
+  "homepage": "https://github.com/bitrix24/templates-mcp",
+  "documentation": "https://github.com/bitrix24/templates-mcp#readme",
+  "support": "https://github.com/bitrix24/templates-mcp/issues",
+  "license": "MIT",
+  "keywords": ["bitrix24", "tasks", "crm", "productivity", "mcp"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.mjs"],
+      "env": {
+        "BITRIX24_WEBHOOK_URL": "${user_config.webhook_url}",
+        "GITHUB_FEEDBACK_TOKEN": "${user_config.github_feedback_token}",
+        "GITHUB_FEEDBACK_REPO": "${user_config.github_feedback_repo}",
+        "LOG_LEVEL": "${user_config.log_level}",
+        "NODE_ENV": "production"
+      }
+    }
+  },
+  "user_config": {
+    "webhook_url": {
+      "type": "string",
+      "title": "Bitrix24 incoming webhook URL",
+      "description": "Full URL like https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/. Create one under Developer resources → Other → Inbound webhook. The secret stays on your device.",
+      "sensitive": true,
+      "required": true
+    },
+    "github_feedback_token": {
+      "type": "string",
+      "title": "GitHub feedback token (optional)",
+      "description": "Fine-grained PAT with Issues: read/write on bitrix24/templates-mcp. Enables the bx24mcp_submit_feedback tool so the assistant can file structured issues when something is unclear. Leave empty to disable.",
+      "sensitive": true,
+      "required": false,
+      "default": ""
+    },
+    "github_feedback_repo": {
+      "type": "string",
+      "title": "Feedback repository",
+      "description": "owner/repo for the feedback tool. Defaults to the upstream project.",
+      "required": false,
+      "default": "bitrix24/templates-mcp"
+    },
+    "log_level": {
+      "type": "string",
+      "title": "Log level",
+      "description": "Logs go to stderr (Claude Desktop's extension log panel), never stdout.",
+      "required": false,
+      "default": "info"
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=22.0.0"
+    }
+  }
+}

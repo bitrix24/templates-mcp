@@ -54,6 +54,9 @@ importers:
       ai:
         specifier: ^6.0.0
         version: 6.0.184(zod@4.4.3)
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.0
       eslint:
         specifier: ^10.4.0
         version: 10.4.0(jiti@2.7.0)
