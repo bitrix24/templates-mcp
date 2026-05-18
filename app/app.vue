@@ -8,7 +8,7 @@ useHead({
     {
       name: 'description',
       content:
-        'Model Context Protocol server for Bitrix24 — gives AI assistants access to tasks, deals, contacts, and more through a single Bearer-protected /mcp endpoint.',
+        'Model Context Protocol server for Bitrix24. Gives AI assistants access to tasks, deals, contacts, and more — through a single Bearer-protected /mcp endpoint.',
     },
     { name: 'theme-color', content: '#0382ff' },
   ],
@@ -18,7 +18,7 @@ useHead({
 <template>
   <div class="page">
     <main class="hero">
-      <svg viewBox="0 0 174 33" xmlns="http://www.w3.org/2000/svg" fill="currentColor" class="logo" aria-label="Bitrix24">
+      <svg viewBox="0 0 174 33" xmlns="http://www.w3.org/2000/svg" fill="currentColor" class="logo" role="img" aria-label="Bitrix24">
         <path d="M 0 27.1L 18.7 27.1L 18.7 23L 6.3 23C 8 16.2 18.4 14.7 18.4 7.1C 18.4 3 15.6 0 9.8 0C 6.1 0 3 1.1 0.8 2.2L 2.1 6C 4.1 5.1 6.3 4.2 9 4.2C 11.2 4.2 13.2 5.1 13.2 7.6C 13.3 13.2 1.1 13.6 0 27.1Z" transform="translate(106.8 5.3)" />
         <path d="M 10.4 20.8C 4.7 20.8 0 16.1 0 10.4C 0 4.7 4.7 0 10.4 0C 16.1 0 20.8 4.7 20.8 10.4C 20.8 16.1 16.1 20.8 10.4 20.8ZM 10.4 1.9C 5.7 1.9 1.9 5.7 1.9 10.4C 1.9 15.1 5.7 18.9 10.4 18.9C 15.1 18.9 18.9 15.1 18.9 10.4C 18.9 5.7 15.1 1.9 10.4 1.9Z" transform="translate(152.5 5.9)" />
         <path d="M 6.6 5.2L 1.4 5.2L 1.4 0L 0 0L 0 6.6L 6.6 6.6L 6.6 5.2Z" transform="translate(162.2 11.1)" />
@@ -31,12 +31,12 @@ useHead({
         <path d="M 16.8 16.6L 16.8 0L 13.3 0L 0 17.3L 0 20.6L 12 20.6L 12 27.2L 16.8 27.2L 16.8 20.6L 20.8 20.6L 20.8 16.6L 16.8 16.6ZM 12 12.7L 12 16.5L 8.8 16.5C 7.8 16.5 6 16.6 5.4 16.6L 12.2 7.4C 12.2 8.2 12 10.6 12 12.7Z" transform="translate(126.1 5.3)" />
       </svg>
 
-      <p class="kicker">MCP server</p>
+      <h1 class="kicker">MCP server</h1>
 
       <p class="lede">
-        Model Context Protocol server for Bitrix24. Connect Claude (or any
-        MCP-compatible client) to a Bitrix24 portal through a single
-        Bearer-protected <code>/mcp</code> endpoint.
+        Model Context Protocol server for Bitrix24. Gives AI assistants access
+        to tasks, deals, contacts, and more — through a single Bearer-protected
+        <code>/mcp</code> endpoint.
       </p>
 
       <nav class="links" aria-label="Project links">
@@ -44,16 +44,16 @@ useHead({
           class="link link--primary"
           href="https://github.com/bitrix24/templates-mcp"
           target="_blank"
-          rel="noopener"
+          rel="noopener noreferrer"
         >
           README on GitHub
           <span class="sr-only">(opens in new tab)</span>
         </a>
-        <a class="link" href="/api/health">/api/health</a>
+        <a class="link" href="/api/health" aria-label="Check server health at /api/health">/api/health</a>
       </nav>
     </main>
 
-    <footer class="footer">MIT &middot; bitrix24/templates-mcp</footer>
+    <footer class="footer">MIT &middot; Pre-release &middot; bitrix24/templates-mcp</footer>
   </div>
 </template>
 
