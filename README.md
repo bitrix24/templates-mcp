@@ -31,12 +31,18 @@ Off-the-shelf Bitrix24 MCP servers are either toy demos or vendor-locked. This p
 git clone https://github.com/bitrix24/templates-mcp.git
 cd templates-mcp
 cp .env.example .env
-# edit .env: set NUXT_BITRIX24_WEBHOOK_URL (from the step above)
+# edit .env: set NUXT_BITRIX24_WEBHOOK_URL (from the prerequisite above)
 #            and NUXT_MCP_AUTH_TOKEN (generate via: openssl rand -hex 32)
 corepack enable    # if pnpm is not installed
 pnpm install
+# If npmjs.com is unreachable from your network (e.g. some corporate or
+# regional setups), point pnpm at a mirror first:
+#   pnpm config set registry https://registry.npmmirror.com
 pnpm dev
 ```
+
+The official walkthrough for adding an inbound webhook lives at
+[apidocs.bitrix24.com → How to add an inbound webhook](https://apidocs.bitrix24.com/api-reference/how-to-call-rest-api/how-to-add-inbound-webhook.html).
 
 Verify the health endpoint:
 
@@ -113,6 +119,10 @@ The 8 task-mutation tools above (`start_task` / `pause_task` / `complete_task` /
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md) — commits, PRs, CI gates.
 - [`docs/`](./docs/) — architecture, deployment, runbook, testing, security, feedback (stubs land alongside MVP).
 - [`skills/manage-bx24-template-mcp/SKILL.md`](./skills/manage-bx24-template-mcp/SKILL.md) — entry point for AI agents.
+
+## Support
+
+GitHub Issues only — open one at [bitrix24/templates-mcp/issues](https://github.com/bitrix24/templates-mcp/issues). There is no Discord, Slack, or Telegram channel for this template. The `bx24mcp_submit_feedback` meta-tool (see [`docs/FEEDBACK.md`](./docs/FEEDBACK.md)) lets the AI agent itself file structured issues directly from a Claude / Cursor / Windsurf session.
 
 ## License
 
