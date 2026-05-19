@@ -18,6 +18,7 @@ import './nuxt-shims.js'
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { redactString } from '~/server/utils/logger-redactor'
 import { registerToolFromDefinition } from './register.js'
 
 const { tools } = await import('./tools.js')
@@ -51,6 +52,12 @@ async function main() {
 }
 
 main().catch((err) => {
-  process.stderr.write(`Fatal MCP stdio error: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`)
+  // Defence-in-depth: pass the raw stack/message through `redactString` before
+  // it reaches Claude Desktop's extension log panel. The `useBitrix24()`
+  // wrapper already scrubs webhook-parse errors (see sdk-logger-leak test),
+  // but any future SDK throw with a URL in `.message`/`.stack` bypasses that
+  // path and would land here unredacted.
+  const raw = err instanceof Error ? err.stack ?? err.message : String(err)
+  process.stderr.write(`Fatal MCP stdio error: ${redactString(raw)}\n`)
   process.exit(1)
 })
