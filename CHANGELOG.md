@@ -1,0 +1,46 @@
+# Changelog
+
+All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) — pre-1.0 minor bumps may break the API contract, see [`PROJECT-BRIEF.md`](./PROJECT-BRIEF.md).
+
+## [Unreleased]
+
+## [0.1.0-alpha.1] — 2026-05-19
+
+The first tagged release. Cuts a baseline anchor that ships every tool, every contract, and every operator-facing surface the template offers on day one. Footer of the landing now links here.
+
+### Added
+
+- **24 Bitrix24 MCP tools + 1 meta-tool** under `server/mcp/tools/`:
+  - Users (2): `bitrix24_current_user`, `bitrix24_find_user` — connectivity probe and the operator-name-to-id resolver every other tool depends on.
+  - Tasks lifecycle (8): `bitrix24_create_task`, `bitrix24_list_tasks`, `bitrix24_update_task`, `bitrix24_add_task_comment`, plus `start_task` / `pause_task` / `complete_task` / `approve_task` / `disapprove_task` / `defer_task` / `renew_task` / `rate_task`.
+  - Tasks checklist (5): `bitrix24_add_checklist_item`, `_list_`, `_complete_`, `_renew_`, `_delete_`.
+  - Tasks results (4): `_add_`, `_list_`, `_update_`, `_delete_task_result`.
+  - Tasks elapsed time (4) and task dependencies (2).
+  - CRM deals (1, reference impl): `bitrix24_find_deal` — read-only search by title or structured filters, the canonical "first tool to fork".
+  - Meta (1): `bx24mcp_submit_feedback` — the AI agent can file a structured GitHub issue against this repo when something is unclear.
+- **Bearer auth** on `/mcp` via `NUXT_MCP_AUTH_TOKEN`.
+- **Public `/api/health` probe** (status / service / timestamp only — no fingerprintable version).
+- **Bitrix24 SDK** wired via the official [`@bitrix24/b24jssdk-nuxt`](https://www.npmjs.com/package/@bitrix24/b24jssdk-nuxt) with `RestrictionManager` (50 burst, 2 req/sec drain, 3 retries on transient errors) and a webhook-URL redactor at the logger boundary.
+- **Test scaffolding**: 379 unit tests across 45 files, an integration suite against a live test portal (`tests/integration/`), and Evalite + DeepSeek tool-selection evals (`tests/evals/`).
+- **CI**: lint, typecheck, unit, integration, build, commit-message lint — all gated on every PR.
+- **Renovate** for automated dependency updates with explicit policy for `@bitrix24/*` and UI deps.
+- **Production deployment** via Docker + `nginx-proxy` + `acme-companion` (hands-off TLS).
+- **Railway one-click deploy** — `railway.toml` + a "Deploy on Railway" button in the README for evaluators who want to skip self-host.
+- **Landing page** (`app.vue`) on `@bitrix24/b24ui-nuxt`'s `B24App` + `B24Button` primitives, with a `ProsePrompt`-driven "Add my first tool" prompt that copies / Cursor-deeplinks / Windsurf-deeplinks the full prompt to the operator's IDE.
+- **Agent skill** `skills/manage-bx24-template-mcp/` — primary entry-point for AI agents working on this repo (ground rules, when-to-do-X recipes, the new "When asked to do UI / frontend work" section pointing at b24ui's upstream llms.txt and skill).
+- **Documentation**: `README.md`, `PROJECT-BRIEF.md` (project spec / source of truth), `docs/FEEDBACK.md` (LGPD / GDPR PII warning + sanitisation + operator setup), `docs/SECURITY-AUDIT.md` (webhook-URL leak audit pass for SDK 1.1.2, supply-chain audit for b24ui-nuxt 2.7.1).
+
+### Security
+
+- SDK webhook URL redactor at the logger boundary (`makeRedactingLogger` in `server/utils/bitrix24.ts`) — defence in depth against accidental credential disclosure in operator logs. Pinned by `tests/unit/utils/sdk-logger-leak.test.ts` and `tests/unit/utils/logger-redactor.test.ts`, both CI gates.
+- `bx24mcp_submit_feedback` tool description and Zod `.describe()` carry an LGPD / GDPR PII warning — the destination GitHub repo is public; agents are instructed to report technical faults, not the data that triggered them. Documented at length in `docs/FEEDBACK.md`.
+- `/api/health` returns `status` / `service` / `timestamp` only — no `version` / `build` / `commit` fingerprinting surface.
+- Toolset filter / pick helpers (`toV3Filter`, defensive against LLM-controlled keys) hardened in the round preceding this release (PR #41).
+
+### Notes
+
+- Pre-1.0 — the public contract (tool names, input schemas, response shapes) may shift before `v0.1.0` final. Subsequent alpha tags will document breaking shifts in their own changelog sections.
+- The README will be rewritten for end-users at `v0.1.0` (non-alpha). Until then it serves contributors and forkers.
+
+[Unreleased]: https://github.com/bitrix24/templates-mcp/compare/v0.1.0-alpha.1...HEAD
+[0.1.0-alpha.1]: https://github.com/bitrix24/templates-mcp/releases/tag/v0.1.0-alpha.1
