@@ -1,5 +1,9 @@
 # Runbook
 
+> **Status: DRAFT — operational placeholders (`TODO(team)`) pending.** Procedures and rollback flows are accurate against the workflow at the time of writing; on-call schedule, paging path, and escalation contacts are still being finalised.
+>
+> **Placeholders:** every literal `prod.example.com` below is your production host — substitute the value of GitHub Actions variable `PROD_HOST`. Every `/opt/bx24-template-mcp` is your `DEPLOY_PATH` (set as a repo variable, defaults shown).
+
 Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.md`](./DEPLOYMENT.md) (how the system is set up) and [`SECURITY.md`](./SECURITY.md) (incidents that require disclosure).
 
 ## On-call basics

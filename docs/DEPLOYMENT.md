@@ -1,5 +1,7 @@
 # Deployment
 
+> **Status: DRAFT — operational placeholders (`TODO(team)`) pending.** The procedure and CI flow are accurate against the workflow at the time of writing; approval policy, FQDN, and a few similar values are still being finalised.
+
 Production deploy procedure for `bitrix24/templates-mcp`. Stack: GHCR image + `docker compose` on a single Linux host, fronted by a reverse proxy you choose. CI runs in `.github/workflows/deploy.yml`.
 
 For TLS terminator alternatives (Caddy / Traefik / plain nginx + certbot), see [`REVERSE-PROXY.md`](./REVERSE-PROXY.md). The default shipped `docker-compose.yml` assumes nginx-proxy + acme-companion on a shared `proxy-net` network.
@@ -63,7 +65,7 @@ This triggers `.github/workflows/deploy.yml`:
 1. **test** — `pnpm lint && pnpm typecheck && pnpm test:unit`.
 2. **build** — Docker buildx → push `ghcr.io/bitrix24/templates-mcp:{0.1.0, 0.1, latest}`.
 3. **dxt** — bundles `.dxt` and attaches it to the GitHub Release.
-4. **deploy** — SSH to `SSH_HOST`, captures current image digest into `rollback.env`, `docker compose pull && up -d`, runs ten 3-second health-check retries against `https://prod.example.com/api/health`. On failure, re-pulls the previous digest via `BX24_IMAGE=<prev>` override and re-ups.
+4. **deploy** — SSH to `SSH_HOST`, captures current image digest into `rollback.env`, `docker compose pull && up -d`, then probes `https://prod.example.com/api/health` up to ten times, sleeping 3 s between failed attempts (each curl has a 5 s timeout — worst-case ~80 s before declaring failure, typical success within the first attempt). On failure, re-pulls the previous digest via `BX24_IMAGE=<prev>` override and re-ups.
 
 A manual deploy of any ref is available via Actions → Deploy → Run workflow → `ref`.
 

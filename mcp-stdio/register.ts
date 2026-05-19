@@ -13,6 +13,12 @@
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
+// Tool callback shape from the SDK: `(args, extra) => result | Promise<result>`.
+// We treat both args and extra as opaque — every tool already validates `args`
+// against its own zod schema before consuming it, and `extra` (sessionId,
+// progress token, …) is passed through untouched.
+type ToolHandler = (args: Record<string, unknown>, extra?: unknown) => unknown
+
 interface ToolDefinition {
   // The toolkit's type allows `name` to be undefined because the HTTP build
   // auto-derives it from the filename. The stdio bundle doesn't run that
@@ -28,7 +34,7 @@ interface ToolDefinition {
   group?: string
   tags?: string[]
   inputExamples?: unknown
-  handler: (...args: unknown[]) => unknown
+  handler: ToolHandler
 }
 
 interface ToolResult {
@@ -84,15 +90,22 @@ export function registerToolFromDefinition(server: McpServer, tool: ToolDefiniti
     },
   }
 
-  const normalizedHandler = async (...args: unknown[]) => {
+  const normalizedHandler: ToolHandler = async (args, extra) => {
     try {
-      return normalizeToolResult(await tool.handler(...args))
+      return normalizeToolResult(await tool.handler(args, extra))
     } catch (error) {
       return normalizeErrorToResult(error)
     }
   }
 
-  return (server as unknown as {
-    registerTool: (name: string, options: unknown, handler: typeof normalizedHandler) => unknown
-  }).registerTool(tool.name!, options, normalizedHandler)
+  // `McpServer.registerTool` is the public registration API; the SDK's
+  // signature is intentionally broad (options bag, callback). Cast the
+  // options to keep our local typing local — every field above maps 1:1 to
+  // the SDK's expected shape, but the SDK's exported types are not stable
+  // enough across minors to depend on directly.
+  return server.registerTool(
+    tool.name,
+    options as Parameters<McpServer['registerTool']>[1],
+    normalizedHandler as Parameters<McpServer['registerTool']>[2],
+  )
 }

@@ -44,10 +44,12 @@ const runtimeConfig: RuntimeConfig = {
 ;(globalThis as unknown as { useRuntimeConfig: () => RuntimeConfig }).useRuntimeConfig = () =>
   runtimeConfig
 
-// Re-bind stdout-writing console methods to stderr so the SDK logger (or
-// any stray `console.log`) cannot corrupt the JSON-RPC frame stream. The
-// eslint `no-console` rule (warn/error only) is satisfied by the targets;
-// the assignments themselves are the redirect mechanism.
+// Re-bind stdout-writing console methods (`log`/`info`/`debug`) to stderr so
+// the SDK logger or any stray `console.log` cannot corrupt the JSON-RPC frame
+// stream. `console.warn` already writes to stderr in Node — re-binding it
+// here is a uniformity / defence-in-depth measure: third-party `console.warn`
+// shims in transitive deps may route to stdout, and the cost of pinning the
+// target is one line.
 /* eslint-disable no-console */
 console.log = console.error.bind(console)
 console.info = console.error.bind(console)

@@ -15,11 +15,12 @@
  *
  * Run via `pnpm build:dxt`.
  */
+import { ZipArchive } from 'archiver'
 import { build } from 'esbuild'
+import { createWriteStream } from 'node:fs'
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawn } from 'node:child_process'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(__dirname, '..')
@@ -91,19 +92,24 @@ await zipDirectory(outDir, dxtPath)
 
 console.error('[dxt] done')
 
-// Uses the system `zip` binary — universal on macOS/Linux runners, avoids
-// pulling a Node zip lib for one step. CI (ubuntu-latest, macos-latest)
-// ships `zip` by default.
+// Zip via the `archiver` npm package rather than shelling out to the system
+// `zip` binary. The npm path is platform-portable (Windows dev machines
+// don't ship `zip`), avoids a PATH-hijack vector at build time, and surfaces
+// errors with actionable stack traces instead of bare exit codes.
+/**
+ * @param {string} srcDir
+ * @param {string} outPath
+ * @returns {Promise<void>}
+ */
 function zipDirectory(srcDir, outPath) {
   return new Promise((resolveZip, rejectZip) => {
-    const child = spawn('zip', ['-rq', outPath, '.'], {
-      cwd: srcDir,
-      stdio: ['ignore', 'inherit', 'inherit'],
-    })
-    child.on('error', rejectZip)
-    child.on('exit', (code) => {
-      if (code === 0) resolveZip()
-      else rejectZip(new Error(`zip exited with code ${code}`))
-    })
+    const output = createWriteStream(outPath)
+    const archive = new ZipArchive({ zlib: { level: 9 } })
+    output.on('close', () => resolveZip())
+    output.on('error', rejectZip)
+    archive.on('error', rejectZip)
+    archive.pipe(output)
+    archive.directory(srcDir, false)
+    archive.finalize()
   })
 }

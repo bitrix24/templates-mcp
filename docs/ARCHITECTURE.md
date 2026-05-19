@@ -38,7 +38,7 @@ Same handler code, same `useBitrix24()` singleton, same logger redaction. Only t
 - **Nuxt/Nitro** — `useRuntimeConfig`, file routing, opinionated build; `.output` runs anywhere. Cost: Nuxt-isms leak into tool code → DXT needs shims.
 - **`@nuxtjs/mcp-toolkit`** — HTTP transport plumbing for free. `defineMcpTool` is a passthrough we depend on. Cost: barrel pulls Nitro virtuals; bypassed for stdio.
 - **zod 4** — required by SDK 1.29 + b24jssdk. Cost: `sideEffects:false` breaks esbuild lazy init in DXT bundle → one-line preload in `mcp-stdio/nuxt-shims.ts`.
-- **DXT shims (not refactor)** — alternative was rewriting 30 tool files to not use `useRuntimeConfig`. Two 5-line shims won.
+- **DXT shims (not refactor)** — alternative was rewriting 30 tool files to not use `useRuntimeConfig`. Two 5-line shims won. **Exit criterion:** drop both shims when `@nuxtjs/mcp-toolkit` ships a build that doesn't pull Nitro virtual modules from its `/server` barrel (tracked at `nuxt-modules/mcp-toolkit`), OR when this project moves off Nuxt entirely.
 - **Singleton `B24Hook`** — `RestrictionManager` keeps in-process rate-limit state; two clients would race against Bitrix24's leaky bucket.
 
 ## Hot spots (audit on every PR that touches them)

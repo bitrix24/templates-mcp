@@ -6,7 +6,9 @@
  *
  * Adding a new tool: add it under `server/mcp/tools/**` for the HTTP server
  * (auto-discovery) AND append it here for the stdio bundle. The two
- * registries are checked against each other by `tests/unit/tools.parity.spec.ts`.
+ * registries are checked against each other by
+ * `tests/unit/mcp-stdio/tools.parity.test.ts` — CI will fail if either
+ * registry drifts.
  */
 import users_currentUser from '~/server/mcp/tools/users/current-user'
 import users_findUser from '~/server/mcp/tools/users/find-user'
