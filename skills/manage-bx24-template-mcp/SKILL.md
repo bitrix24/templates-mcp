@@ -114,6 +114,22 @@ Skipping the audit means trusting the SDK maintainers' judgement about credentia
 
 Full template — including v3 `actions.call.make` usage, `AjaxError` handling, the `useLogger()` recipe, batch-tool conventions, and a copy-paste unit-test skeleton — lives in [`adding-tools.md`](./adding-tools.md).
 
+## When asked to do UI / frontend work
+
+The project ships with `@bitrix24/b24ui-nuxt` — the same Vue component system Bitrix24 uses internally (Reka UI + Tailwind CSS + Tailwind Variants). Use it for `app.vue`, any new pages under `pages/`, and any future client-facing surface (OAuth setup wizard, admin panels for managing connectors). Don't introduce parallel UI libs (Headless UI / shadcn-vue / PrimeVue) — the b24ui system is the chosen primitive and the brand pass relies on its semantic tokens.
+
+**Load these before writing any UI** — they replace guesswork:
+
+1. **Component API reference** — https://bitrix24.github.io/b24ui/llms.txt. Machine-readable index of every component, prop, slot, and event. Fetch when you need to know what a component accepts.
+2. **UI patterns skill** — https://github.com/bitrix24/b24ui/tree/main/skills/b24-ui-nuxt. Teaches *when to use which component* (decision matrices for Modal vs Slideover, Select vs SelectMenu, Toast vs Alert), conventions, semantic colors, layout patterns, accessibility rules. Read its `SKILL.md` plus the `references/` files relevant to the task at hand.
+
+Hard rules that override personal taste:
+
+- **Wrap the root in `<B24App>`** — required for toasts, tooltips, programmatic overlays.
+- **Use semantic color tokens** (`bg-elevated`, `text-description`, `border-muted`, `air-primary`, `air-secondary-no-accent`, …) — never raw Tailwind palette colors like `text-gray-500`. The brand pass rebrands semantics centrally; raw colors leak past it and drift.
+- **One solid primary button per view.** Everything else uses lower visual weight (`air-secondary-no-accent`, ghost, link).
+- **Icons come from `@bitrix24/b24icons-vue`** with subpath imports — `import { GitHubIcon } from '@bitrix24/b24icons-vue/social'`. Don't pull arbitrary icon packs.
+
 ## When asked to upgrade dependencies
 
 Renovate handles routine updates. For manual upgrades:

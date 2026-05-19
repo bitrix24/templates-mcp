@@ -4,7 +4,7 @@
 
 ## Goal
 
-Build a Model Context Protocol (MCP) server that gives AI assistants (Claude and equivalents) access to Bitrix24 operations — tasks, deals, contacts, etc. The server must be production-ready, testable, extensible, and easy to maintain. Start small, grow incrementally.
+Build a **starter template** for Model Context Protocol (MCP) servers on top of Bitrix24, so anyone forking the repo gets a production-grade Nuxt + Nitro project with the auth, throttling, logging, and test scaffolding already wired up. Ship a small, honest set of example tools (tasks, users, meta) — and the structure to add their own. The template itself must stay production-ready, testable, extensible, and easy to maintain. Start small, grow incrementally.
 
 ## Project coordinates
 
@@ -23,6 +23,9 @@ Build a Model Context Protocol (MCP) server that gives AI assistants (Claude and
 | MCP toolkit | `@nuxtjs/mcp-toolkit` ^0.15 | File-based discovery, Inspector, Evalite, Agent Skills, Code Mode |
 | MCP SDK | `@modelcontextprotocol/sdk` ^1.23 | Pulled in by the toolkit, current transport |
 | Bitrix24 client | `@bitrix24/b24jssdk-nuxt` | Official Nuxt wrapper around `@bitrix24/b24jssdk` |
+| UI components | `@bitrix24/b24ui-nuxt` | Vue component system Bitrix24 uses internally (Reka UI + Tailwind + Tailwind Variants). Powers the landing page and any future client-facing surface (OAuth setup, admin panels). |
+| Icons | `@bitrix24/b24icons-vue` | Tree-shakeable icon set, subpath imports (`/social`, `/solid`, `/outline`, …) |
+| CSS engine | Tailwind CSS 4 | Required by `@bitrix24/b24ui-nuxt`. Use semantic tokens (`bg-elevated`, `text-description`, `air-primary`, `air-secondary-no-accent`) — never raw palette like `text-gray-500`. |
 | Validation | Zod | Used by toolkit for input schemas |
 | Package manager | pnpm 9.x | Idiomatic for Nuxt, fast, disk-efficient |
 | Tests | Vitest + Evalite + `@ai-sdk/mcp` | Unit + AI-evaluation, as recommended by the toolkit |
@@ -33,6 +36,19 @@ Build a Model Context Protocol (MCP) server that gives AI assistants (Claude and
 | Dependency updates | Renovate Bot | Automated PRs, grouping, patch auto-merge |
 | CI/CD | GitHub Actions | Free for public repos, tests + build + deploy |
 | License | MIT | Per requirement |
+
+## Agent skills
+
+Agent-facing guidance lives under `skills/`. Each directory is a self-contained skill — a `SKILL.md` entry point plus supporting markdown:
+
+- **`skills/manage-bx24-template-mcp/`** — primary skill for any agent working on this repo: ground rules, code-review personas, when-to-do-X recipes, things-not-to-do, links to `adding-tools.md` and `feedback.md`.
+
+Skills are exposed to connected AI clients at runtime by [`@nuxtjs/mcp-toolkit`'s Agent Skills feature](https://mcp-toolkit.nuxt.dev/getting-started/agent-skills) — the MCP server publishes each `SKILL.md` to the connected client so the agent can pull the skill on demand instead of guessing about project conventions.
+
+For UI / frontend work, additionally consult **upstream** skills and docs that live in the `@bitrix24/b24ui` repo:
+
+- **Component API reference**: https://bitrix24.github.io/b24ui/llms.txt — machine-readable index of every component prop / slot / event.
+- **UI patterns skill**: https://github.com/bitrix24/b24ui/tree/main/skills/b24-ui-nuxt — when to use which component, semantic colors, layout recipes, accessibility rules.
 
 ## Repository layout
 
