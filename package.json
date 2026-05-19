@@ -2,7 +2,7 @@
   "name": "bx24-template-mcp",
   "version": "0.1.0",
   "private": true,
-  "description": "Bitrix24 MCP server — gives AI assistants access to tasks, deals, contacts, and other Bitrix24 operations.",
+  "description": "Starter template for building Model Context Protocol servers on Bitrix24 — example tools for tasks and users, plus the auth, throttling, and test scaffolding to fork and extend with your own.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -25,11 +25,14 @@
     "test:evals": "evalite"
   },
   "dependencies": {
+    "@bitrix24/b24icons-vue": "^2.0.7",
     "@bitrix24/b24jssdk": "^1.1.2",
     "@bitrix24/b24jssdk-nuxt": "^1.1.2",
+    "@bitrix24/b24ui-nuxt": "^2.7.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nuxtjs/mcp-toolkit": "^0.16.1",
     "nuxt": "^4.4.5",
+    "tailwindcss": "^4.3.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
