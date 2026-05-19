@@ -7,7 +7,7 @@ import { HeartIcon } from '@bitrix24/b24icons-vue/solid'
 // Cursor / Windsurf deeplink that ProsePrompt builds from the slot.
 const firstToolPrompt = `You are working on a Bitrix24 MCP server based on this starter template. Before writing anything, read \`skills/manage-bx24-template-mcp/SKILL.md\` and \`skills/manage-bx24-template-mcp/adding-tools.md\` — the project has strict rules about which SDK helpers to call and where tools live.
 
-Add a new MCP tool \`bitrix24_find_deal\` that searches CRM deals by title or by associated contact name. Create \`server/mcp/tools/deals/find-deal.ts\` (the directory does not exist yet — that's the explicit "fork and extend" path the template is designed around).
+Add a new MCP tool \`bitrix24_find_deal\` that searches CRM deals by title or by associated contact name. In Bitrix24, a "deal" is the CRM entity for a sales opportunity (similar to a Salesforce Opportunity; called "Negociação" in the Brazilian Portuguese UI). Create \`server/mcp/tools/deals/find-deal.ts\` (the directory does not exist yet — that's the explicit "fork and extend" path the template is designed around).
 
 Hard rules:
 - Use \`callV3\` from \`server/utils/sdk-helpers.ts\` to hit \`crm.deal.list\`. Never call \`b24.actions.*\` directly.
@@ -49,11 +49,12 @@ useHead({
         </svg>
 
         <h1 class="kicker">MCP server template</h1>
+        <p class="strapline">An official starter by the Bitrix24 team</p>
 
         <p class="lede">
-          A starter template for building Model Context Protocol servers on
-          Bitrix24. Ships example tools for tasks and users — plus the auth,
-          throttling, and test scaffolding to fork and extend with your own.
+          A starter template for building <a class="lede__link" href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a>
+          servers on Bitrix24. Ships example tools for tasks and users — plus the
+          auth, throttling, and test scaffolding to fork and extend with your own.
         </p>
 
         <nav class="links" aria-label="Project links">
@@ -80,11 +81,20 @@ useHead({
         </nav>
 
         <div class="prompt">
-          <p class="prompt__label">Forked it? Paste this into Claude or your IDE:</p>
+          <p class="prompt__label">Forked it? Paste this into Claude, Cursor, Windsurf, or your IDE:</p>
           <ProsePrompt
             description="Add my first tool to the Bitrix24 MCP"
             :actions="['copy', 'cursor', 'windsurf']"
           >{{ firstToolPrompt }}</ProsePrompt>
+          <p class="prompt__fallback">
+            Using VS Code? See the
+            <a
+              class="prompt__fallback-link"
+              href="https://docs.continue.dev/customize/deep-dives/mcp"
+              target="_blank"
+              rel="noopener noreferrer"
+            >Continue.dev MCP setup</a>.
+          </p>
         </div>
       </main>
 
@@ -96,7 +106,7 @@ useHead({
           rel="noopener noreferrer"
         >MIT</a>
         <span class="footer__sep" aria-hidden="true">&middot;</span>
-        <span class="footer__badge">Pre-release</span>
+        <span class="footer__badge">Beta</span>
         <span class="footer__sep" aria-hidden="true">&middot;</span>
         <a
           class="footer__link"
@@ -145,19 +155,36 @@ useHead({
 }
 
 .kicker {
-  margin: 0 0 18px;
+  margin: 0 0 6px;
   font-size: 13px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   font-weight: 600;
-  opacity: 0.78;
+  opacity: 0.92;
+}
+
+.strapline {
+  margin: 0 0 22px;
+  font-size: 13px;
+  opacity: 0.82;
 }
 
 .lede {
   margin: 0 0 32px;
   font-size: 17px;
   line-height: 1.6;
-  opacity: 0.92;
+  opacity: 0.96;
+}
+
+.lede__link {
+  color: inherit;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+.lede__link:hover,
+.lede__link:focus-visible {
+  border-bottom-color: rgba(255, 255, 255, 0.95);
 }
 
 .links {
@@ -176,15 +203,33 @@ useHead({
 .prompt__label {
   margin: 0 0 10px;
   font-size: 13px;
-  opacity: 0.78;
+  opacity: 0.92;
   text-align: center;
+}
+
+.prompt__fallback {
+  margin: 10px 0 0;
+  font-size: 12px;
+  opacity: 0.82;
+  text-align: center;
+}
+
+.prompt__fallback-link {
+  color: inherit;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+.prompt__fallback-link:hover,
+.prompt__fallback-link:focus-visible {
+  border-bottom-color: rgba(255, 255, 255, 0.9);
 }
 
 .footer {
   padding: 22px 24px 28px;
   text-align: center;
   font-size: 13px;
-  opacity: 0.7;
+  opacity: 0.85;
 }
 
 .footer__link,
