@@ -5,15 +5,15 @@ import { HeartIcon } from '@bitrix24/b24icons-vue/solid'
 // Kept as a JS string (not inline slot text) so the line breaks survive
 // Vue's template-whitespace collapse and land verbatim in the clipboard /
 // Cursor / Windsurf deeplink that ProsePrompt builds from the slot.
-const firstToolPrompt = `You are working on a Bitrix24 MCP server based on this starter template. Before writing anything, read \`skills/manage-bx24-template-mcp/SKILL.md\` and \`skills/manage-bx24-template-mcp/adding-tools.md\` — the project has strict rules about which SDK helpers to call and where tools live.
+const firstToolPrompt = `You're connected to my Bitrix24 portal via this MCP. Pull the risk picture for my team right now. No questions, no permissions — call the tools and ship the report.
 
-Add a new MCP tool \`bitrix24_find_deal\` that searches CRM deals by title or by associated contact name. In Bitrix24, a "deal" is the CRM entity for a sales opportunity (similar to a Salesforce Opportunity; called "Negociação" in the Brazilian Portuguese UI). Create \`server/mcp/tools/deals/find-deal.ts\` (the directory does not exist yet — that's the explicit "fork and extend" path the template is designed around).
+1. **Overdue or imminent tasks** — every task with deadline within the next 48 hours OR already overdue, status not "Completed (5)". Use \`bitrix24_list_tasks\` with \`{ "<=deadline": "<ISO 48h from now>", "!status": 5 }\`. Resolve each \`responsibleId\` to a name once via \`bitrix24_find_user\`. Columns: title, deadline, days_overdue (negative if upcoming), responsible.
 
-Hard rules:
-- Use \`callV3\` from \`server/utils/sdk-helpers.ts\` to hit \`crm.deal.list\`. Never call \`b24.actions.*\` directly.
-- Every Zod field must have a \`.describe()\` — the LLM reads it at runtime.
-- Ship a unit test at \`tests/unit/tools/find-deal.test.ts\` with \`useBitrix24\` mocked.
-- Run \`pnpm lint && pnpm typecheck && pnpm test\` before committing.`
+2. **Stalled CRM deals** — every open deal idle for 14+ days. \`bitrix24_find_deal\` with \`closedOnly: false\`; keep matches where \`dateModify\` is older than 14 days from today. Columns: title, stage, opportunity_with_currency, assigned_to (resolved name), days_idle.
+
+3. **Headline** — total count for each list and the single oldest item in each, with the responsible person's name.
+
+Output: one markdown report. Three headline sentences on top, then two tables. No commentary, no caveats, no "let me know if you'd like more detail". The reader is a manager who'll forward this to me with red ink on whatever's missing — so just the data.`
 
 useHead({
   htmlAttrs: { lang: 'en' },
@@ -81,9 +81,9 @@ useHead({
         </nav>
 
         <div class="prompt">
-          <p class="prompt__label">Forked it? Paste this into Claude, Cursor, Windsurf, or your IDE:</p>
+          <p class="prompt__label">Try it on your portal — paste this into Claude, Cursor, Windsurf, or your IDE:</p>
           <ProsePrompt
-            description="Add my first tool to the Bitrix24 MCP"
+            description="Show me what needs attention across my portal — right now"
             :actions="['copy', 'cursor', 'windsurf']"
           >{{ firstToolPrompt }}</ProsePrompt>
           <p class="prompt__fallback">
