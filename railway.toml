@@ -1,0 +1,23 @@
+# Railway deployment manifest. Railway builds from the repo's Dockerfile,
+# which already targets the same production image we ship via the
+# nginx-proxy / acme-companion stack — there is no Railway-specific build.
+#
+# Required environment variables (set in the Railway dashboard at deploy
+# time; the one-click "Deploy on Railway" button prompts for them):
+#   - NUXT_BITRIX24_WEBHOOK_URL  : your portal's inbound webhook URL
+#   - NUXT_MCP_AUTH_TOKEN        : openssl rand -hex 32
+#   - NUXT_GITHUB_FEEDBACK_TOKEN : optional; enables bx24mcp_submit_feedback
+#   - NUXT_GITHUB_FEEDBACK_REPO  : optional; defaults to bitrix24/templates-mcp
+#
+# Health check: Railway hits /api/health (unauthenticated) and rolls back on
+# non-200. The endpoint is intentionally lightweight — see
+# server/api/health.get.ts.
+
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
