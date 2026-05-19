@@ -2,6 +2,19 @@
 import { GitHubIcon } from '@bitrix24/b24icons-vue/social'
 import { HeartIcon } from '@bitrix24/b24icons-vue/solid'
 
+// Kept as a JS string (not inline slot text) so the line breaks survive
+// Vue's template-whitespace collapse and land verbatim in the clipboard /
+// Cursor / Windsurf deeplink that ProsePrompt builds from the slot.
+const firstToolPrompt = `You are working on a Bitrix24 MCP server based on this starter template. Before writing anything, read \`skills/manage-bx24-template-mcp/SKILL.md\` and \`skills/manage-bx24-template-mcp/adding-tools.md\` — the project has strict rules about which SDK helpers to call and where tools live.
+
+Add a new MCP tool \`bitrix24_find_deal\` that searches CRM deals by title or by associated contact name. Create \`server/mcp/tools/deals/find-deal.ts\` (the directory does not exist yet — that's the explicit "fork and extend" path the template is designed around).
+
+Hard rules:
+- Use \`callV3\` from \`server/utils/sdk-helpers.ts\` to hit \`crm.deal.list\`. Never call \`b24.actions.*\` directly.
+- Every Zod field must have a \`.describe()\` — the LLM reads it at runtime.
+- Ship a unit test at \`tests/unit/tools/find-deal.test.ts\` with \`useBitrix24\` mocked.
+- Run \`pnpm lint && pnpm typecheck && pnpm test\` before committing.`
+
 useHead({
   htmlAttrs: { lang: 'en' },
   title: 'Bitrix24 MCP server template',
@@ -65,6 +78,14 @@ useHead({
             /api/health
           </B24Button>
         </nav>
+
+        <div class="prompt">
+          <p class="prompt__label">Forked it? Paste this into Claude or your IDE:</p>
+          <ProsePrompt
+            description="Add my first tool to the Bitrix24 MCP"
+            :actions="['copy', 'cursor', 'windsurf']"
+          >{{ firstToolPrompt }}</ProsePrompt>
+        </div>
       </main>
 
       <footer class="footer">
@@ -144,6 +165,19 @@ useHead({
   gap: 14px;
   flex-wrap: wrap;
   justify-content: center;
+}
+
+.prompt {
+  width: 100%;
+  margin-top: 40px;
+  text-align: left;
+}
+
+.prompt__label {
+  margin: 0 0 10px;
+  font-size: 13px;
+  opacity: 0.78;
+  text-align: center;
 }
 
 .footer {
