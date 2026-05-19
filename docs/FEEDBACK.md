@@ -54,6 +54,19 @@ Feedback rate limit reached. Try again in about <N> seconds. (5 attempts per hou
 
 No GitHub call is made. The agent is expected to back off and try later. Phase 3 (multi-tenant) will move this to a per-token shared store.
 
+## Privacy — no personal data in feedback
+
+The destination repository (`NUXT_GITHUB_FEEDBACK_REPO`, default `bitrix24/templates-mcp`) is **public**. Every issue body — including the AI agent's `details` payload — is world-readable from the moment it's created and may be indexed by search engines within hours.
+
+Operators running this MCP against portals that hold personal data (almost any production Bitrix24 portal does) must keep that data out of feedback submissions:
+
+- **Do not** put customer names, phone numbers, email addresses, government IDs (CPF / СНИЛС / SSN), home or shipping addresses, or specific CRM-record contents into `summary` or `details`.
+- **Do** describe the technical failure: which tool was called, what input shape was given (with personal data replaced by placeholders — `<name>`, `<email>`, `taskId:12345`), what the agent expected vs what it observed.
+- The agent is the primary author of feedback submissions. The tool's runtime description and the `details` field description both instruct the agent to keep submissions PII-free, but the agent's training is not a privacy guarantee — operators with GDPR, LGPD, or similar exposure should review the issue tracker periodically and report any agent slip-ups via [GitHub Security Advisory](https://github.com/bitrix24/templates-mcp/security/advisories), not via a regular issue (which would compound the disclosure).
+- For multi-tenant deployments or portals subject to data-residency regulations, point `NUXT_GITHUB_FEEDBACK_REPO` at a **private** repository on a GitHub Enterprise instance under your control, or set `NUXT_GITHUB_FEEDBACK_TOKEN` to an empty string to disable the meta-tool entirely.
+
+This is one of two PII-bearing surfaces in the MCP (the other is the application logger, where the credential redactor in `server/utils/logger-redactor.ts` already strips webhook secrets but does not generally redact portal-business data — that's an explicit project decision documented in `docs/SECURITY-AUDIT.md`).
+
 ## Sanitisation
 
 Both `summary` and `details` pass through the same hostile-character strip before any further processing:
