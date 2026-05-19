@@ -7,7 +7,6 @@ vi.stubGlobal('defineEventHandler', <T>(fn: T) => fn)
 const handler = (await import('../../../server/api/health.get')).default as () => {
   status: string
   service: string
-  version: string
   timestamp: string
 }
 
@@ -16,7 +15,6 @@ describe('/api/health', () => {
     const result = handler()
     expect(result.status).toBe('ok')
     expect(result.service).toBe('bx24-template-mcp')
-    expect(result.version).toMatch(/^\d+\.\d+\.\d+/)
     expect(() => new Date(result.timestamp)).not.toThrow()
     expect(new Date(result.timestamp).toISOString()).toBe(result.timestamp)
   })
@@ -29,8 +27,8 @@ describe('/api/health', () => {
     expect(b.timestamp).not.toBe(a.timestamp)
   })
 
-  it('has no extra fields — the deploy workflow relies on the payload being stable', () => {
+  it('has no extra fields — the deploy workflow relies on the payload being stable, and no version / build / commit string is exposed (fingerprinting surface)', () => {
     const keys = Object.keys(handler()).sort()
-    expect(keys).toEqual(['service', 'status', 'timestamp', 'version'])
+    expect(keys).toEqual(['service', 'status', 'timestamp'])
   })
 })
