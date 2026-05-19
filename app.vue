@@ -46,6 +46,7 @@ useHead({
         <nav class="links" aria-label="Project links">
           <B24Button
             :icon="GitHubIcon"
+            :b24ui="{ baseLine: '[--ui-btn-icon-size:16px]' }"
             color="air-secondary-no-accent"
             size="lg"
             to="https://github.com/bitrix24/templates-mcp"
