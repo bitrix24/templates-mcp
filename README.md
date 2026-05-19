@@ -10,11 +10,11 @@
 
 A starter template for building Model Context Protocol (MCP) servers on top of Bitrix24. Ships example tools for tasks and users behind a single Bearer-protected `/mcp` endpoint — plus the auth, throttling, logging, and test scaffolding you need to fork it and add your own.
 
-> **Status**: pre-release, Phase 2 in progress. MVP shipped (PRs #1–#4); task lifecycle + rating shipped (PR #5). Roadmap and contract live in [`PROJECT-BRIEF.md`](./PROJECT-BRIEF.md). This README will be rewritten for end-users on the first `v0.1.0` tag.
+> **Status**: stable template, pre-v1. Fork it and extend with your own tools. Roadmap and contract live in [`PROJECT-BRIEF.md`](./PROJECT-BRIEF.md). This README will be rewritten for end-users on the first `v0.1.0` tag.
 
 ## Why
 
-Off-the-shelf Bitrix24 MCP servers are either toy demos or vendor-locked. This project ships a production-grade Nuxt + Nitro server with:
+Off-the-shelf Bitrix24 MCP servers are either toy demos or vendor-locked. This project ships a production-grade Nuxt + Nitro **template** with:
 
 - File-based tool discovery via [`@nuxtjs/mcp-toolkit`](https://github.com/nuxt-modules/mcp-toolkit).
 - Official [`@bitrix24/b24jssdk-nuxt`](https://www.npmjs.com/package/@bitrix24/b24jssdk-nuxt) under the hood — no hand-rolled HTTP.

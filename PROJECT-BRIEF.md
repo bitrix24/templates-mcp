@@ -789,9 +789,9 @@ The root README is the first thing visitors see. Keep it skimmable; everything d
 
 Sections:
 
-1. **What this is** — one paragraph: "Bitrix24 MCP server that lets AI assistants create tasks, manage deals, etc."
+1. **What this is** — one paragraph: "Starter template for building Bitrix24 MCP servers — ships example tools for tasks and users, fork it to add your own."
 2. **Status badges** — CI, license, Node version, latest release
-3. **Why** — one paragraph about the problem (no off-the-shelf Bitrix24 MCP, need production-grade)
+3. **Why** — one paragraph about the problem (no off-the-shelf Bitrix24 MCP, need a production-quality starter)
 4. **Features** — bullet list of capabilities by phase
 5. **Quick start (local)** — copy-paste sequence:
    ```bash

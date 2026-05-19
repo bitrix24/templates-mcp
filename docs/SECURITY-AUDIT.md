@@ -322,3 +322,42 @@ Skipping the audit on a bump means trusting the SDK maintainers'
 judgement about credential disclosure — re-establish that trust on
 every bump (not just majors), because a minor or patch can add a new
 logger callsite as easily as a major.
+
+## UI dependencies — `@bitrix24/b24ui-nuxt` + `@bitrix24/b24icons-vue` (PR #48)
+
+### Why this audit matters
+
+PR #48 added `@bitrix24/b24ui-nuxt`, `@bitrix24/b24icons-vue`, and `tailwindcss` to the project's `dependencies` (production). The UI lib pulls a large transitive surface — Reka UI, Tailwind CSS 4, plus tanstack / embla / tiptap helpers and a few dozen siblings — ~140 packages in the b24ui-nuxt sub-tree. None of them touch credential surfaces today; the risk is that a future bump could:
+
+- Inject new Nuxt `runtimeConfig` keys (especially `public:` ones, which leak into the client bundle).
+- Add a `postinstall` script that runs arbitrary code on every `pnpm install`.
+- Introduce a runtime network call (telemetry, font CDN, analytics) from inside a UI component.
+
+The bar here is lower than for `@bitrix24/b24jssdk` (no webhook URL or auth header is anywhere near these packages) but the supply-chain surface is bigger (~7× the dep tree of the SDK alone). The procedure below catches the three categories above.
+
+### Initial audit pass — b24ui-nuxt 2.7.1 / b24icons-vue 2.0.7 / tailwindcss 4.3.0 (2026-05-19)
+
+**Origin and trust**: all three are official packages — `@bitrix24/b24ui-nuxt` and `@bitrix24/b24icons-vue` from the same `bitrix24` GitHub organisation as `@bitrix24/b24jssdk` already in the tree; `tailwindcss` is the canonical upstream. No third-party forks were considered.
+
+**Runtime config exposure**: `@bitrix24/b24ui-nuxt`'s module entry-point (`dist/module.mjs`) does not add any `runtimeConfig` keys. It registers a Nuxt plugin (component auto-import + tooltip / toast provider context) and a CSS layer entry; nothing crosses the server/client boundary that wasn't already there. No `NUXT_PUBLIC_*` env reads either.
+
+**Postinstall / preinstall**: neither `@bitrix24/b24ui-nuxt`, nor `@bitrix24/b24icons-vue`, nor `tailwindcss` declare `postinstall` or `preinstall` scripts in their published `package.json`. The only `postinstall` hook in this repo's tree remains the project-level `nuxt prepare` in the root `package.json`.
+
+**Runtime network calls**: grep across `node_modules/@bitrix24/b24ui-nuxt/dist` and `node_modules/@bitrix24/b24icons-vue/dist` finds no `fetch(`, `axios`, hardcoded `https://` host literals, or `XMLHttpRequest`. Icons are inline SVG components; UI components are pure Vue / Reka primitives. No telemetry, no font CDN, no remote asset.
+
+**Where they're used**: `app.vue` consumes `<B24App>` and `<B24Button>` only; `@bitrix24/b24icons-vue` is imported via subpaths (`/social`, `/solid`) for `GitHubIcon` and `HeartIcon`. No `runtimeConfig`, no server-side use.
+
+**Verdict**: clean to land. Renovate is configured to auto-merge patch updates and to gate minor / major bumps on manual review; the manual review for any future b24ui-nuxt bump must execute the checklist below.
+
+### What to check on every future bump
+
+The same checklist lives — short form — in `skills/manage-bx24-template-mcp/SKILL.md` under "Renovate Bot" → "`@bitrix24/b24ui-nuxt` and `@bitrix24/b24icons-vue` bumps". Long form here:
+
+1. **New `runtimeConfig` keys.** `grep -RE "runtimeConfig|nuxt\.options\.runtime" node_modules/@bitrix24/b24ui-nuxt/dist/`. Any new `public:` key crossing into the client bundle is a yellow flag — read the surrounding code and confirm the value is non-sensitive (theme defaults are fine; portal-shaped data is not).
+2. **New install hooks.** `jq .scripts node_modules/@bitrix24/b24ui-nuxt/package.json` and the same for `b24icons-vue`. Anything besides what's there today triggers a manual read of the script body.
+3. **New outbound network calls.** `grep -RE "fetch\(|axios|XMLHttpRequest|https://[a-z]" node_modules/@bitrix24/b24ui-nuxt/dist/ | grep -v '^Binary'`. A UI library that suddenly phones home is the canonical supply-chain compromise pattern; this catches it.
+4. **Transitive dep delta.** `pnpm why @bitrix24/b24ui-nuxt` before and after, count packages. A sudden 2× jump on a "patch" version is suspicious; investigate which transitive dep changed and why.
+5. **Append a new "Audit pass — b24ui-nuxt `<version>`" sub-section here.** Date it, list the four checks' outcomes one-line each, and either land or refuse the bump on the strength of that record.
+6. **Re-run the build and integration suite.** UI libs can break SSR (hydration mismatch, server-only API leaking client-side) in ways lint and typecheck don't catch.
+
+Skipping this audit means trusting the upstream maintainer's judgement on what ships through the dep tree — re-establish that trust on every bump (the SDK section above explains why patches are not exempt).

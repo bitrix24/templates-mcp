@@ -100,9 +100,19 @@ Patch updates auto-merge when CI is green. Minor (for 1.x+) and major updates re
 
 Skipping the audit means trusting the SDK maintainers' judgement about credential disclosure — re-establish that trust on every bump (minor or patch can add a logger callsite as easily as a major).
 
+**`@bitrix24/b24ui-nuxt` and `@bitrix24/b24icons-vue` bumps** sit in the same Bitrix24-org tier as the SDK above but with a lighter risk profile: they're UI primitives (Reka UI + Tailwind 4 + Tailwind Variants), they don't touch credentials, and they don't talk to the network at runtime. The `b24ui-nuxt` package does however inject Nuxt plugins, register components, and pull ~140 transitive dependencies (Reka UI, Tailwind, tanstack/embla/tiptap helpers) — Renovate would auto-merge a patch/minor without anyone looking. Before merging a bump:
+
+1. **Check for new Nuxt `runtimeConfig` keys.** Grep the bumped package's `module.mjs` / dist for `nuxt.options.runtimeConfig` mutations. If a new `public` key appears, audit whether it's harmless (theme defaults) or whether it could leak portal data into the client bundle.
+2. **Check for new postinstall / preinstall scripts.** `cat node_modules/@bitrix24/b24ui-nuxt/package.json | jq .scripts` — anything besides `nuxt prepare` triggering on install is a yellow flag.
+3. **Check for new outbound network calls at runtime.** Grep the dist for `fetch(`, `axios`, `XMLHttpRequest`, hardcoded `https://` URLs. A UI library that suddenly phones home to a telemetry endpoint is the headline case to catch.
+4. **Update `docs/SECURITY-AUDIT.md`** — append an "Audit pass — b24ui-nuxt `<version>`" sub-section with the date, the transitive dep count delta (compared to the previous pinned version, via `pnpm why @bitrix24/b24ui-nuxt`), and one-line notes on each of the three checks above.
+5. **Re-run the build and the integration suite** — a bumped UI lib can break SSR (hydration mismatch, server-only API leaking into client code) in ways that lint and typecheck don't catch.
+
+The bar here is lower than for the SDK (no credential-leak surface to defend), but the supply-chain surface is bigger (the dep tree is 7× larger). Skipping the audit is what supply-chain attacks rely on.
+
 ## When asked to add a new tool
 
-1. Identify the group: `tasks` / `deals` / `contacts` / `users` / `meta`.
+1. Identify the group: `tasks` / `users` / `meta` — or, if your tool covers a domain the template hasn't touched yet (deals, contacts, products, …), create the directory yourself; that's the explicit "fork and extend" path.
 2. Create `server/mcp/tools/<group>/<kebab-name>.ts`.
 3. Use `defineMcpTool({ name, description, inputSchema, handler })`.
 4. Name pattern: `bitrix24_<verb>_<entity>` for Bitrix24 tools, `bx24mcp_<verb>` for meta-tools.
