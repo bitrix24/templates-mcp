@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "description": "Starter template for building Model Context Protocol servers on Bitrix24 — example tools for tasks and users, plus the auth, throttling, and test scaffolding to fork and extend with your own.",
+  "author": "Bitrix24",
+  "homepage": "https://github.com/bitrix24/templates-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bitrix24/templates-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bitrix24/templates-mcp/issues"
+  },
   "license": "MIT",
   "type": "module",
   "engines": {

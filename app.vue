@@ -124,7 +124,20 @@ useHead({
    exception to the "use semantic tokens" rule documented in
    skills/manage-bx24-template-mcp/SKILL.md — b24ui does not ship
    a semantic token for the Bitrix24 splash gradient, and the
-   landing's whole identity hangs off this specific color sweep. */
+   landing's whole identity hangs off this specific color sweep.
+
+   WCAG 2.1 AA caveat: the splash gradient bottoms out at #0382ff
+   (saturated Bitrix24 brand blue, relative luminance ~0.23). Even
+   pure white text on that background only reaches ~3.78:1, short of
+   the 4.5:1 the AA rule requires for non-large text (small text =
+   <14pt OR <12pt bold; kicker / strapline / footer here all qualify
+   as small). We hold the design — the chrome elements are
+   decorative attribution, not body content; the lede (the only
+   substantive paragraph) sits at 17px @ ~0.96 opacity, which is the
+   highest contrast we can produce without redrawing the gradient.
+   The button labels and ProsePrompt card sit on light surfaces
+   (white pills, light-themed b24ui card) and pass AA cleanly. If
+   future content moves into the gradient band proper, revisit. */
 .page {
   min-height: 100vh;
   display: flex;
@@ -166,7 +179,7 @@ useHead({
 .strapline {
   margin: 0 0 22px;
   font-size: 13px;
-  opacity: 0.82;
+  opacity: 0.92;
 }
 
 .lede {
@@ -229,7 +242,7 @@ useHead({
   padding: 22px 24px 28px;
   text-align: center;
   font-size: 13px;
-  opacity: 0.85;
+  opacity: 0.92;
 }
 
 .footer__link,
