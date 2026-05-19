@@ -106,7 +106,12 @@ useHead({
           rel="noopener noreferrer"
         >MIT</a>
         <span class="footer__sep" aria-hidden="true">&middot;</span>
-        <span class="footer__badge">Beta</span>
+        <a
+          class="footer__link"
+          href="https://github.com/bitrix24/templates-mcp/releases"
+          target="_blank"
+          rel="noopener noreferrer"
+        >Beta · v0.1.0-alpha.1</a>
         <span class="footer__sep" aria-hidden="true">&middot;</span>
         <a
           class="footer__link"

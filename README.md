@@ -10,7 +10,7 @@
 
 A starter template for building Model Context Protocol (MCP) servers on top of Bitrix24. Ships example tools for tasks and users behind a single Bearer-protected `/mcp` endpoint — plus the auth, throttling, logging, and test scaffolding you need to fork it and add your own.
 
-> **Status**: stable template, pre-v1. Fork it and extend with your own tools. Roadmap and contract live in [`PROJECT-BRIEF.md`](./PROJECT-BRIEF.md). This README will be rewritten for end-users on the first `v0.1.0` tag.
+> **Status**: stable template, currently at **v0.1.0-alpha.1** (see [`CHANGELOG.md`](./CHANGELOG.md)). Fork it and extend with your own tools. Roadmap and contract live in [`PROJECT-BRIEF.md`](./PROJECT-BRIEF.md). This README will be rewritten for end-users on the first non-alpha `v0.1.0` tag.
 
 ## Why
 
@@ -22,6 +22,12 @@ Off-the-shelf Bitrix24 MCP servers are either toy demos or vendor-locked. This p
 - Docker behind `nginx-proxy` + `acme-companion` for hands-off TLS.
 - Renovate for automated dependency updates.
 - Three test layers: unit, integration (real test portal), and Evalite + DeepSeek for tool-selection evals.
+
+## Deploy on Railway
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Fbitrix24%2Ftemplates-mcp)
+
+One-click deploy for evaluators who want a hosted MCP without setting up Docker / nginx-proxy themselves. Railway builds from the repo's `Dockerfile` (same image we ship to production) and prompts for the env vars listed in [`railway.toml`](./railway.toml) — at minimum `NUXT_BITRIX24_WEBHOOK_URL` and `NUXT_MCP_AUTH_TOKEN`. Health-checks `/api/health`. For long-term self-host, see the [Production server section in `PROJECT-BRIEF.md`](./PROJECT-BRIEF.md#production-server--self-sufficiency).
 
 ## Quick start (local)
 
@@ -83,9 +89,10 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `bitrix24_list_task_results` | List the results recorded on a task. Newest-first by default; pagination via limit/offset. |
 | `bitrix24_update_task_result` | Rewrite the text of an existing result. Author-only: Bitrix24 returns `ACCESSDENIEDEXCEPTION` if any other operator (besides a portal admin) tries to edit. |
 | `bitrix24_delete_task_result` | Delete a result by id. Author-only; the task itself is not affected. |
+| `bitrix24_find_deal` | Find CRM deals (sales opportunities — "Negociação" in PT-BR; ≈ Salesforce Opportunity) by title fragment or by structured filters (contactId / companyId / stageId / categoryId / assignedById / closedOnly). Read-only reference implementation — the canonical "first tool to fork" mirroring the prompt advertised on the landing. |
 | `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 
-23 Bitrix24 + 1 meta = **24 tools total**.
+24 Bitrix24 + 1 meta = **25 tools total**.
 
 The 8 task-mutation tools above (`start_task` / `pause_task` / `complete_task` / `approve_task` / `disapprove_task` / `defer_task` / `renew_task` / `rate_task`) plus the 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) accept either a single id **or** an array for batch mode (up to 50; pass `force: true` to override). Batches go through one HTTP round-trip — `actions.v3.batch.make` for the lifecycle tools, `actions.v2.batch.make` for the checklist actions. `add_checklist_item` and `list_checklist_items` are single-call only by design. Rate limiting, retry, and adaptive back-pressure are provided by the [`@bitrix24/b24jssdk`](https://www.npmjs.com/package/@bitrix24/b24jssdk) `RestrictionManager` — initialised with `ParamsFactory.getDefault()` (standard tariff: burst 50, drain 2 req/sec, 3 retries on transient errors). Override at runtime via `client.setRestrictionManagerParams(ParamsFactory.getEnterprise())` etc.
 
