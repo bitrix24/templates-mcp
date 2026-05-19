@@ -2,16 +2,17 @@
 import { GitHubIcon } from '@bitrix24/b24icons-vue/social'
 import { HeartIcon } from '@bitrix24/b24icons-vue/solid'
 
-const description
-  = 'A starter template for building Model Context Protocol servers on Bitrix24. Ships example tools for tasks and users — plus the auth, throttling, and test scaffolding to fork and extend with your own.'
-
 useHead({
   htmlAttrs: { lang: 'en' },
   title: 'Bitrix24 MCP server template',
   meta: [
     { charset: 'UTF-8' },
     { name: 'viewport', content: 'width=device-width,initial-scale=1,minimum-scale=1' },
-    { name: 'description', content: description },
+    {
+      name: 'description',
+      content:
+        'A starter template for building Model Context Protocol servers on Bitrix24. Ships example tools for tasks and users — plus the auth, throttling, and test scaffolding to fork and extend with your own.',
+    },
     { name: 'theme-color', content: '#0382ff' },
   ],
 })
@@ -45,7 +46,7 @@ useHead({
         <nav class="links" aria-label="Project links">
           <B24Button
             :icon="GitHubIcon"
-            color="air-primary"
+            color="air-secondary-no-accent"
             size="lg"
             to="https://github.com/bitrix24/templates-mcp"
             target="_blank"
@@ -59,7 +60,6 @@ useHead({
             color="air-secondary-no-accent"
             size="lg"
             to="/api/health"
-            aria-label="Check server health at /api/health"
           >
             /api/health
           </B24Button>
@@ -74,12 +74,7 @@ useHead({
           rel="noopener noreferrer"
         >MIT</a>
         <span class="footer__sep" aria-hidden="true">&middot;</span>
-        <a
-          class="footer__link"
-          href="https://github.com/bitrix24/templates-mcp/releases"
-          target="_blank"
-          rel="noopener noreferrer"
-        >Pre-release</a>
+        <span class="footer__badge">Pre-release</span>
         <span class="footer__sep" aria-hidden="true">&middot;</span>
         <a
           class="footer__link"
@@ -93,6 +88,11 @@ useHead({
 </template>
 
 <style scoped>
+/* Brand-splash hero. The raw hex values below are an intentional
+   exception to the "use semantic tokens" rule documented in
+   skills/manage-bx24-template-mcp/SKILL.md — b24ui does not ship
+   a semantic token for the Bitrix24 splash gradient, and the
+   landing's whole identity hangs off this specific color sweep. */
 .page {
   min-height: 100vh;
   display: flex;
@@ -152,32 +152,23 @@ useHead({
   opacity: 0.7;
 }
 
-.footer__link {
+.footer__link,
+.footer__badge {
   color: inherit;
   text-decoration: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.32);
+  border-bottom: 1px solid transparent;
   padding-bottom: 1px;
   transition: border-color 0.15s ease;
+}
+.footer__link {
+  border-bottom-color: rgba(255, 255, 255, 0.32);
 }
 .footer__link:hover,
 .footer__link:focus-visible {
   border-bottom-color: rgba(255, 255, 255, 0.85);
-  outline: none;
 }
 
 .footer__sep {
   margin: 0 8px;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 </style>

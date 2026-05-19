@@ -1,2 +1,3 @@
+/* Order matters: Tailwind base layers first, b24ui design tokens override after. */
 @import "tailwindcss";
 @import "@bitrix24/b24ui-nuxt";
