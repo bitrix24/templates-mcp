@@ -47,15 +47,21 @@
   },
   "keywords": [
     "bitrix24",
+    "bitrix24-api",
+    "bitrix24-rest",
+    "b24",
     "mcp",
-    "ai",
+    "mcp-server",
+    "model-context-protocol",
+    "claude",
+    "claude-code",
+    "anthropic",
+    "ai-agent",
+    "llm",
+    "tool-use",
     "nuxt",
-    "vue",
-    "vuejs",
-    "vue.js",
-    "nodejs",
-    "restapi",
-    "REST",
-    "API"
+    "nitro",
+    "typescript",
+    "vibecoded"
   ]
 }

@@ -25,11 +25,15 @@ Off-the-shelf Bitrix24 MCP servers are either toy demos or vendor-locked. This p
 
 ## Quick start (local)
 
+**Prerequisite — mint an incoming webhook in your Bitrix24 portal.** In the portal: *Developer resources → Other → Inbound webhook* (or "Applications → Developer resources" on some skins). Grant the scopes you plan to call (at minimum `user` + `task` for the current tool set), save, and copy the URL of the form `https://<your-portal>.bitrix24.com/rest/<user-id>/<webhook-code>/` — that is `NUXT_BITRIX24_WEBHOOK_URL`.
+
 ```bash
 git clone https://github.com/bitrix24/templates-mcp.git
 cd templates-mcp
 cp .env.example .env
-# edit .env: set NUXT_BITRIX24_WEBHOOK_URL and NUXT_MCP_AUTH_TOKEN
+# edit .env: set NUXT_BITRIX24_WEBHOOK_URL (from the step above)
+#            and NUXT_MCP_AUTH_TOKEN (generate via: openssl rand -hex 32)
+corepack enable    # if pnpm is not installed
 pnpm install
 pnpm dev
 ```
