@@ -27,6 +27,10 @@ Off-the-shelf Bitrix24 MCP servers are either toy demos or vendor-locked. This p
 
 **Prerequisite — mint an incoming webhook in your Bitrix24 portal.** In the portal: *Developer resources → Other → Inbound webhook* (or "Applications → Developer resources" on some skins). Grant the scopes you plan to call (at minimum `user` + `task` for the current tool set), save, and copy the URL of the form `https://<your-portal>.bitrix24.com/rest/<user-id>/<webhook-code>/` — that is `NUXT_BITRIX24_WEBHOOK_URL`.
 
+> **Create the webhook under a dedicated service user with administrator rights** — not under a real employee's account. The webhook inherits the creator's permissions for every call, so binding it to a personal account ties the integration to that person's role, department visibility, and tenure (anyone who leaves the company or loses rights silently breaks the MCP). A service-user + admin pair keeps the MCP working consistently across all portal data and avoids "task not found" / `ACCESS_DENIED` surprises on entities the personal user happens not to see.
+>
+> This is a Phase 1 (webhook) trade-off only. When the template moves to **OAuth 2.0 in Phase 3**, each end user logs in with their own Bitrix24 account and every REST call is executed under that user's identity and permissions — the service-user shortcut goes away, and access becomes per-user by design.
+
 ```bash
 git clone https://github.com/bitrix24/templates-mcp.git
 cd templates-mcp
