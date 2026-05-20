@@ -4,10 +4,12 @@ How this MCP server ships to production: a Docker image built and pushed by GitH
 
 Everything below describes what the repo's [`Dockerfile`](../Dockerfile), [`docker-compose.yml`](../docker-compose.yml), and [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) actually do — keep them and this doc in sync when any of them change.
 
+> This doc is the **operator how-to**; the design rationale lives in [`PROJECT-BRIEF.md` § Production server — self-sufficiency](../PROJECT-BRIEF.md#production-server--self-sufficiency). If the two ever diverge, treat this doc as authoritative for *how to operate* and fix the brief.
+
 ## At a glance
 
 ```
-git tag v0.1.0 && git push --tags
+push a v* tag
         │
         ▼
 GitHub Actions (deploy.yml)
@@ -18,14 +20,31 @@ GitHub Actions (deploy.yml)
   5. Rollback — on health failure, re-pin the previous image digest
 ```
 
-The trigger is a pushed tag matching `v*`. A `workflow_dispatch` (Actions → Deploy → Run workflow) with a `ref` input re-runs the same pipeline against a chosen tag/sha — use it to redeploy an existing release.
+> ⚠️ **Pushing a `v*` tag triggers an immediate production deploy.** There is no "build now, ship later" gate — the tag IS the release. Before tagging: make sure the deploy secrets/variables (below) are configured and you are ready for prod to change. If they are *not* configured the pipeline build still runs but the deploy step fails at the SSH stage (no silent half-deploy).
+
+### Cutting a release
+
+```bash
+# 1. Bump the version (keep package.json + nuxt.config.ts mcp.version in step)
+#    edit package.json "version" and nuxt.config.ts mcp.version
+git commit -am "chore(release): v0.1.0"
+git push
+
+# 2. Tag and push — this is what triggers the deploy
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Use an annotated `vMAJOR.MINOR.PATCH` (or `-alpha.N` / `-beta.N`) tag matching the bumped `package.json` version.
+
+**Re-deploying an existing release**: `workflow_dispatch` (Actions → Deploy → Run workflow) takes a `ref` input and re-runs verify+build+deploy. ⚠️ Image *tagging* still follows the `metadata-action` rules, which only emit the `:latest` tag (and the semver tags) when the triggering ref is a `v*` **tag** — running a dispatch against a branch or bare SHA will not refresh `:latest`, and the deploy step's `docker compose pull` of `:latest` would then pull a **stale** image. Always dispatch against a `v*` tag, never a branch/SHA, unless you also override `BX24_IMAGE` to the exact image you intend.
 
 ## The image
 
 - Built from the multi-stage [`Dockerfile`](../Dockerfile): `node:22-alpine` builder runs `pnpm build`, the runtime stage copies only `.output` and runs `node .output/server/index.mjs` as the non-root `node` user.
 - Published to **GitHub Container Registry**: `ghcr.io/bitrix24/templates-mcp`.
-- Tags applied on a `v*` release (via `docker/metadata-action`): the full `{{version}}` (e.g. `0.1.0`), `{{major}}.{{minor}}` (e.g. `0.1`), the raw tag ref, and `latest`.
-- The container `EXPOSE`s `3000` and ships a `HEALTHCHECK` hitting `/api/health` every 30s.
+- Tags applied on a `v*` release (via `docker/metadata-action`): the semver `{{version}}` **without** the `v` prefix (e.g. `0.1.0`), `{{major}}.{{minor}}` (e.g. `0.1`), the raw tag ref **with** the prefix (e.g. `v0.1.0`), and `latest`. Note the prefix difference — for a manual rollback pin (below) use the no-prefix semver form `:0.1.0` or the digest, not the `v`-prefixed ref unless you mean it.
+- The container `EXPOSE`s `3000` and ships a `HEALTHCHECK` (`/api/health`, `--interval=30s --timeout=5s --retries=3`). `docker-compose.yml` declares an equivalent compose-level healthcheck with the same parameters.
 
 ## Prerequisites on the production host
 
@@ -53,11 +72,13 @@ The `deploy` job reads these from the repo's **Settings → Secrets and variable
 | Secret | `SSH_HOST` | Production host address. |
 | Secret | `SSH_USER` | SSH user (must be able to run `docker`). |
 | Secret | `SSH_KEY` | Private key for that user. |
-| Secret | `SSH_PORT` | Optional; defaults to `22`. |
+| Secret | `SSH_PORT` | Optional. Read as `secrets.SSH_PORT \|\| 22`, so leaving the secret unset defaults to `22` — don't create an empty secret, just omit it. |
 | Variable | `PROD_HOST` | Public hostname for the post-deploy health check (`https://<PROD_HOST>/api/health`) and the environment URL. |
 | Variable | `DEPLOY_PATH` | Optional; deploy directory on the host. Defaults to `/opt/bx24-template-mcp`. |
 
 `GITHUB_TOKEN` (auto-provided) is used to push the image to GHCR — no extra secret needed, but the repo's package settings must allow Actions to write packages.
+
+> **Hardening — host-key verification**: the deploy uses `appleboy/ssh-action`, which does **not** verify the production host's SSH fingerprint by default. That leaves a (small, CI-only) MITM window on the runner → host channel. For a hardened setup, pin the host key via the action's `fingerprint` input in `deploy.yml` (a separate change — tracked as an infra issue). Until then, the runner trusts whatever host answers on `SSH_HOST`.
 
 ## Environment variables
 
@@ -70,14 +91,16 @@ Set these in the `.env` file in the deploy directory (consumed by [`docker-compo
 | `NUXT_GITHUB_FEEDBACK_TOKEN` | ⬜ | Enables `bx24mcp_submit_feedback`. Fine-grained PAT with Issues: read/write. Leave empty to disable the meta-tool. |
 | `NUXT_GITHUB_FEEDBACK_REPO` | ⬜ | `owner/name` for feedback issues. Defaults to `bitrix24/templates-mcp`. |
 | `NUXT_LOG_LEVEL` | ⬜ | `info` (default) / `debug` / `warning` / `error`. |
-| `NITRO_PORT` | ✅ | Container listen port. Keep `3000` unless you also change `VIRTUAL_PORT` and the Dockerfile `EXPOSE`/`HEALTHCHECK`. |
-| `NODE_ENV` | ✅ | `production`. |
+| `NITRO_PORT` | ✅ † | Container listen port. Keep `3000` unless you also change `VIRTUAL_PORT` and the Dockerfile `EXPOSE`/`HEALTHCHECK`. |
+| `NODE_ENV` | ✅ † | `production`. |
 | `VIRTUAL_HOST` | ✅ | Hostname nginx-proxy routes to this container (e.g. `mcp.example.com`). |
 | `VIRTUAL_PORT` | ✅ | Container port nginx-proxy forwards to — must equal `NITRO_PORT` (`3000`). |
 | `LETSENCRYPT_HOST` | ✅ | Hostname acme-companion requests a cert for; normally the same as `VIRTUAL_HOST`. |
 | `LETSENCRYPT_EMAIL` | ✅ | Contact email for Let's Encrypt. |
 
-> **Secrets management**: the `.env` lives only on the host, never in the repo. The image carries no secrets — it reads everything from the environment at runtime. Rotate `NUXT_MCP_AUTH_TOKEN` by editing `.env` and running `docker compose up -d` (it severs all current MCP clients; re-issue the new token to the ones that should keep access). Rotate `NUXT_GITHUB_FEEDBACK_TOKEN` the same way (see [`FEEDBACK.md`](./FEEDBACK.md)).
+† `NITRO_PORT` and `NODE_ENV` have image-level defaults baked into the [`Dockerfile`](../Dockerfile) (`ENV NITRO_PORT=3000`, `ENV NODE_ENV=production`), but `docker-compose.yml` forwards them unconditionally (`NITRO_PORT: ${NITRO_PORT}`, not `${NITRO_PORT:-3000}`) — so leaving them out of `.env` passes an **empty** value that overrides the image default. Keep both in `.env` ([`.env.example`](../.env.example) already sets them).
+
+> **Secrets management**: the `.env` lives only on the host, never in the repo. The image carries no secrets — it reads everything from the environment at runtime. Rotating `NUXT_MCP_AUTH_TOKEN` is **not zero-downtime**: editing `.env` and running `docker compose up -d` restarts the container and severs all current MCP clients at once (there is no dual-accept window), so plan a short maintenance window and re-issue the new token to the clients that should keep access. Rotate `NUXT_GITHUB_FEEDBACK_TOKEN` the same way (see [`FEEDBACK.md`](./FEEDBACK.md)).
 
 ## What the deploy job does on the host
 
@@ -85,13 +108,16 @@ From [`deploy.yml`](../.github/workflows/deploy.yml), after the image is pushed:
 
 ```bash
 cd "$DEPLOY_PATH"                      # default /opt/bx24-template-mcp
-# record the currently-running image digest for rollback
-IMAGE_ID=$(docker container inspect --format='{{.Image}}' bx24-template-mcp)
-docker image inspect --format='{{index .RepoDigests 0}}' "$IMAGE_ID" > rollback.env  # as previous=…
+# record the currently-running image digest for rollback (guarded: on the very
+# first deploy there is no running container, so this resolves to empty)
+IMAGE_ID=$(docker container inspect --format='{{.Image}}' bx24-template-mcp 2>/dev/null || true)
+# → writes `previous=<digest>` (or `previous=` on first deploy) to rollback.env
 docker compose pull --quiet
 docker compose up -d --remove-orphans
 docker image prune -f
 ```
+
+On the **first** deploy `rollback.env` holds an empty `previous=` — that's expected; the rollback step below detects it and exits with "No previous image recorded — manual rollback required" instead of pinning garbage.
 
 Then it polls `https://<PROD_HOST>/api/health` up to 10 times (3s apart). If the service never returns 200, the **rollback** step reads `previous=` from `rollback.env`, pulls that digest, and re-pins it:
 
@@ -113,7 +139,7 @@ BX24_IMAGE="ghcr.io/bitrix24/templates-mcp:0.1.0" docker compose up -d --remove-
 curl -fsS https://<PROD_HOST>/api/health
 ```
 
-To make the pin permanent, set `BX24_IMAGE=…` in `.env` (otherwise the next `v*` deploy pulls `:latest` again).
+`BX24_IMAGE` must be a valid image reference — a digest (`ghcr.io/bitrix24/templates-mcp@sha256:…`) or a `name:tag`. Never interpolate an untrusted string into it; it's passed to the shell. To make the pin permanent, set `BX24_IMAGE=…` in `.env` (otherwise the next `v*` deploy pulls `:latest` again).
 
 ## Running a production-like container locally
 
