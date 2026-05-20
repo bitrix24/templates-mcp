@@ -23,12 +23,6 @@ Off-the-shelf Bitrix24 MCP servers are either toy demos or vendor-locked. This p
 - Renovate for automated dependency updates.
 - Three test layers: unit, integration (real test portal), and Evalite + DeepSeek for tool-selection evals.
 
-## Deploy on Railway
-
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Fbitrix24%2Ftemplates-mcp)
-
-One-click deploy for evaluators who want a hosted MCP without setting up Docker / nginx-proxy themselves. Railway builds from the repo's `Dockerfile` (same image we ship to production) and prompts for the env vars listed in [`railway.toml`](./railway.toml) — at minimum `NUXT_BITRIX24_WEBHOOK_URL` and `NUXT_MCP_AUTH_TOKEN`. Health-checks `/api/health`. For long-term self-host, see the [Production server section in `PROJECT-BRIEF.md`](./PROJECT-BRIEF.md#production-server--self-sufficiency).
-
 ## Quick start (local)
 
 **Prerequisite — mint an incoming webhook in your Bitrix24 portal.** In the portal: *Developer resources → Other → Inbound webhook* (or "Applications → Developer resources" on some skins). Grant the scopes you plan to call (at minimum `user` + `task` for the current tool set), save, and copy the URL of the form `https://<your-portal>.bitrix24.com/rest/<user-id>/<webhook-code>/` — that is `NUXT_BITRIX24_WEBHOOK_URL`.

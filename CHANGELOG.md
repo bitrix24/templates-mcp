@@ -27,7 +27,6 @@ The first tagged release. Cuts a baseline anchor that ships every tool, every co
 - **CI**: lint, typecheck, unit, integration, build, commit-message lint — all gated on every PR.
 - **Renovate** for automated dependency updates with explicit policy for `@bitrix24/*` and UI deps.
 - **Production deployment** via Docker + `nginx-proxy` + `acme-companion` (hands-off TLS).
-- **Railway one-click deploy** — `railway.toml` + a "Deploy on Railway" button in the README for evaluators who want to skip self-host.
 - **Landing page** (`app.vue`) on `@bitrix24/b24ui-nuxt`'s `B24App` + `B24Button` primitives, with a `ProsePrompt`-driven "Show me what needs attention across my portal — right now" risk-report prompt that copies / Cursor-deeplinks / Windsurf-deeplinks the full prompt to the operator's IDE.
 - **Agent skill** `skills/manage-bx24-template-mcp/` — primary entry-point for AI agents working on this repo (ground rules, when-to-do-X recipes, the new "When asked to do UI / frontend work" section pointing at b24ui's upstream llms.txt and skill).
 - **Documentation**: `README.md`, `PROJECT-BRIEF.md` (project spec / source of truth), `docs/FEEDBACK.md` (LGPD / GDPR PII warning + sanitisation + operator setup), `docs/SECURITY-AUDIT.md` (webhook-URL leak audit pass for SDK 1.1.2, supply-chain audit for b24ui-nuxt 2.7.1).
