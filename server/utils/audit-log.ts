@@ -170,10 +170,11 @@ const MAX_UA_LEN = 512
  * tests can verify the resolver without touching the host filesystem (ESM
  * forbids spying on `node:fs/promises`).
  *
- * The validated value is normalised with `path.posix.normalize` (collapses
- * double slashes, trailing slashes, and single-dot segments) and returned
- * as-is without `path.resolve`, which on Windows would prepend the current
- * drive letter and turn `/audit` into `C:\audit`.
+ * The validated value is returned as-is. `path.resolve` is intentionally
+ * avoided — on Windows it prepends the current drive letter, converting
+ * `/audit` to `C:\audit`. `path.join` in {@link recordAuditEvent} normalises
+ * double slashes when building the per-day filename, so no normalisation is
+ * needed here.
  *
  * Operator note: point this at a **dedicated** directory. The logger only
  * ever appends its own `YYYY-MM-DD.jsonl` files (never overwrites), but a
@@ -184,25 +185,23 @@ export function resolveAuditDir(): string {
   const fromEnv = process.env.NUXT_AUDIT_DIR?.trim()
   if (!fromEnv || fromEnv.length === 0) return DEFAULT_AUDIT_DIR
 
-  // Reject `..` segments anywhere — checked before isAbsolute so that
-  // relative traversal paths (e.g. `../../etc/cron.d`) surface as
-  // "path-traversal" rather than merely "not absolute". Split on '/'
-  // (not path.sep) because NUXT_AUDIT_DIR follows POSIX conventions and
-  // this server always runs on Linux; path.sep would be '\' on Windows
-  // dev machines and silently skip the check there.
-  if (fromEnv.split('/').some(seg => seg === '..')) {
+  // Reject `..` segments — checked before isAbsolute so that relative
+  // traversal paths (e.g. `../../etc/cron.d`) surface as "path-traversal"
+  // rather than merely "not absolute". Split on both '/' and '\' so the
+  // guard works on Windows dev machines as well as Linux production.
+  if (fromEnv.split(/[/\\]/).some(seg => seg === '..')) {
     throw new Error(`NUXT_AUDIT_DIR rejected: path-traversal segment "..": ${fromEnv}`)
   }
 
-  if (!path.posix.isAbsolute(fromEnv)) {
+  // path.isAbsolute is intentionally platform-aware here: on Linux (production)
+  // it accepts POSIX absolute paths (/data/audit); on Windows (dev/test) it
+  // also accepts Windows absolute paths (C:\...\Temp\audit-log-test-xxx) so
+  // the test suite can use os.tmpdir() without special-casing.
+  if (!path.isAbsolute(fromEnv)) {
     throw new Error(`NUXT_AUDIT_DIR rejected: must be an absolute path, got: ${fromEnv}`)
   }
 
-  // path.posix.normalize handles cosmetic cleanup (double slashes, trailing
-  // slash, single-dot segments) without touching drive letters — unlike
-  // path.resolve which would prepend 'C:\' on Windows dev machines.
-  // path.posix is always available in Node regardless of host OS.
-  return path.posix.normalize(fromEnv)
+  return fromEnv
 }
 
 let writeChain: Promise<void> = Promise.resolve()
