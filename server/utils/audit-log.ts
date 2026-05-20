@@ -64,9 +64,18 @@ import path from 'node:path'
  * installs.
  *
  * Operator note — files grow forever. Operators MUST configure log
- * rotation and retention (`logrotate`, cron + `find -mtime`, or equivalent)
- * with retention ≥ 90 days. The daily-rotation filename keeps the operator's
- * job trivial; this module never deletes anything.
+ * rotation and retention (`logrotate`, cron + `find -mtime`, or equivalent).
+ * The daily-rotation filename keeps the operator's job trivial; this module
+ * never deletes anything.
+ *
+ * PII / GDPR — `ip` and `ua` are personal data (GDPR Art. 4(1)). The lawful
+ * basis for recording them is legitimate interest in security / abuse
+ * forensics (Art. 6(1)(f)) and SOC2 access-logging. Retention is therefore
+ * NOT open-ended: operators MUST cap it (recommended 90 days, max 12 months
+ * absent a longer legal-hold requirement) via their rotation policy. The
+ * full data-subject-request + retention runbook lands in `docs/SECURITY-
+ * AUDIT.md` with PR-2 — tracked in issue #66. Forks that do not need IP/UA
+ * forensics should simply omit those fields at the call site.
  *
  * Secret hygiene — `mcpTokenId` MUST be the sha256 prefix of the Bearer
  * (token-store discipline), never raw token material. A defensive regex
@@ -145,27 +154,42 @@ const FILE_MODE = 0o640
  */
 const MCP_TOKEN_ID_RE = /^sha256-[a-f0-9]{1,64}$/
 
+// Length caps for free-text fields (DoS / disk-blowup guard). Generous vs.
+// any legitimate value; truncation never drops the event.
+const MAX_PORTAL_LEN = 253 // RFC 1035 hostname max
+const MAX_USERID_LEN = 64
+const MAX_IP_LEN = 64 // IPv6 + zone id fits comfortably
+const MAX_UA_LEN = 512
+
 /**
  * Resolves the directory writes land in. `NUXT_AUDIT_DIR` wins if non-empty
- * after trim; otherwise falls back to {@link DEFAULT_AUDIT_DIR}. Rejects
- * any value containing `..` (path-traversal guard) or whose absolute
- * resolution differs from a clean `path.normalize` round-trip. Exported
- * so tests can verify the resolver without touching the host filesystem
- * (ESM forbids spying on `node:fs/promises`).
+ * after trim; otherwise falls back to {@link DEFAULT_AUDIT_DIR}. Throws on a
+ * value containing `..` segments (path-traversal guard) or one that is not
+ * absolute (a relative value would resolve against `process.cwd()`, which is
+ * unpredictable under Docker / systemd — fail loud instead). Exported so
+ * tests can verify the resolver without touching the host filesystem (ESM
+ * forbids spying on `node:fs/promises`).
+ *
+ * Operator note: point this at a **dedicated** directory. The logger only
+ * ever appends its own `YYYY-MM-DD.jsonl` files (never overwrites), but a
+ * shared directory mixes audit records with unrelated files and complicates
+ * retention/rotation.
  */
 export function resolveAuditDir(): string {
   const fromEnv = process.env.NUXT_AUDIT_DIR?.trim()
   if (!fromEnv || fromEnv.length === 0) return DEFAULT_AUDIT_DIR
 
-  // Reject `..` segments anywhere — even after `path.normalize` would
-  // resolve them, we don't want the env value SAYING "../etc".
-  const segments = fromEnv.split(path.sep)
-  if (segments.includes('..')) {
+  // Reject `..` segments anywhere — we don't want the env value SAYING
+  // "../etc" even before `path.resolve` would collapse it.
+  if (fromEnv.split(path.sep).includes('..')) {
     throw new Error(`NUXT_AUDIT_DIR rejected: path-traversal segment "..": ${fromEnv}`)
   }
 
-  const resolved = path.resolve(fromEnv)
-  return resolved
+  if (!path.isAbsolute(fromEnv)) {
+    throw new Error(`NUXT_AUDIT_DIR rejected: must be an absolute path, got: ${fromEnv}`)
+  }
+
+  return path.resolve(fromEnv)
 }
 
 let writeChain: Promise<void> = Promise.resolve()
@@ -183,15 +207,20 @@ export async function recordAuditEvent(event: AuditEvent): Promise<void> {
     )
   }
 
+  // Cap free-text fields so a hostile/buggy caller can't blow up line size
+  // (and disk) with a multi-MB User-Agent or portal string. Caps are well
+  // above any legitimate value: hostname max is 253 (RFC 1035), UA strings
+  // are realistically <512. Truncation is preferable to rejection — never
+  // drop an audit event over an oversized cosmetic field.
   const record: AuditRecord = {
     ts: new Date().toISOString(),
     event: kind,
-    portal,
-    userId,
+    portal: portal.slice(0, MAX_PORTAL_LEN),
+    userId: userId.slice(0, MAX_USERID_LEN),
     ...(mcpTokenId !== undefined ? { mcpTokenId } : {}),
     actor,
-    ...(ip !== undefined ? { ip } : {}),
-    ...(ua !== undefined ? { ua } : {}),
+    ...(ip !== undefined ? { ip: ip.slice(0, MAX_IP_LEN) } : {}),
+    ...(ua !== undefined ? { ua: ua.slice(0, MAX_UA_LEN) } : {}),
   }
   const line = `${JSON.stringify(record)}\n`
   const dir = resolveAuditDir()

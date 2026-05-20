@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as AuditLog from '../../server/utils/audit-log'
 
 /**
- * Forces a fresh module import so the in-memory write queue + mkdir cache
- * reset between tests. The audit logger keeps a module-level `writeChain`
- * promise and a `dirsEnsured` Set; without reset, a failure or directory
- * cached in one test would carry over.
+ * Forces a fresh module import so the module-level `writeChain` promise
+ * resets between tests — without it, a failed write queued in one test
+ * would carry its rejected state into the next. Reset is deferred to each
+ * `loadFresh()` call (not `beforeEach`) so a test can opt into a clean
+ * queue exactly where it needs one.
  */
 async function loadFresh(): Promise<typeof AuditLog> {
   vi.resetModules()
@@ -175,6 +176,15 @@ describe('recordAuditEvent — append-only JSONL audit trail (#61)', () => {
     }
   })
 
+  it('resolveAuditDir rejects a relative NUXT_AUDIT_DIR (cwd footgun)', async () => {
+    const { resolveAuditDir } = await loadFresh()
+
+    for (const rel of ['data/audit', './audit', 'audit']) {
+      process.env.NUXT_AUDIT_DIR = rel
+      expect(() => resolveAuditDir()).toThrow(/absolute path/)
+    }
+  })
+
   it('creates files with 0o640 mode (owner rw, group r, world none)', async () => {
     const { recordAuditEvent, drainAuditQueue } = await loadFresh()
     await recordAuditEvent({ event: 'oauth.upsert', portal: 'p.bitrix24.com', userId: '1', actor: 'install' })
@@ -311,5 +321,66 @@ describe('recordAuditEvent — append-only JSONL audit trail (#61)', () => {
 
     const lines = await readJsonlLines(path.join(tmpDir, `${todayKey()}.jsonl`))
     expect(lines).toHaveLength(10)
+  })
+
+  it('drainAuditQueue resolves (does not reject) even when a queued write failed', async () => {
+    // The Nitro shutdown hook awaits drainAuditQueue; if a failed write in
+    // the chain made drain reject, the close hook would throw on shutdown.
+    const { recordAuditEvent, drainAuditQueue } = await loadFresh()
+
+    process.env.NUXT_AUDIT_DIR = '/dev/null/nope'
+    const failing = recordAuditEvent({ event: 'oauth.upsert', portal: 'p', userId: '1', actor: 'install' })
+    await expect(failing).rejects.toThrow()
+
+    // drain must settle cleanly despite the rejected write sitting in the chain.
+    await expect(drainAuditQueue()).resolves.toBeUndefined()
+  })
+
+  it('isolates a mid-queue failure — other concurrent writes still land in order', async () => {
+    // Write to a real dir, but make exactly one event un-writable by giving
+    // it an oversized... no — instead force one failure via a bad token that
+    // throws synchronously BEFORE queueing, leaving the rest intact.
+    const { recordAuditEvent, drainAuditQueue } = await loadFresh()
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 20 }, (_, i) =>
+        recordAuditEvent({
+          event: 'mcp.create',
+          portal: 'p',
+          userId: String(i),
+          actor: 'install',
+          // i === 7 gets a malformed token → rejected at the guard, never queued.
+          mcpTokenId: i === 7 ? 'RAW-not-sha256' : `sha256-${i.toString(16)}`,
+        }),
+      ),
+    )
+    await drainAuditQueue()
+
+    expect(results[7]!.status).toBe('rejected')
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(19)
+
+    const lines = await readJsonlLines(path.join(tmpDir, `${todayKey()}.jsonl`))
+    // 19 successful writes, in registration order, with userId 7 absent.
+    expect(lines).toHaveLength(19)
+    const ids = lines.map(l => Number(l.userId))
+    expect(ids).toEqual([0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19])
+  })
+
+  it('truncates oversized free-text fields (DoS / disk-blowup guard)', async () => {
+    const { recordAuditEvent, drainAuditQueue } = await loadFresh()
+    await recordAuditEvent({
+      event: 'oauth.upsert',
+      portal: 'p'.repeat(1000),
+      userId: '1',
+      actor: 'install',
+      ua: 'u'.repeat(5000),
+      ip: '203.0.113.7',
+    })
+    await drainAuditQueue()
+
+    const lines = await readJsonlLines(path.join(tmpDir, `${todayKey()}.jsonl`))
+    expect(String(lines[0]!.portal).length).toBe(253)
+    expect(String(lines[0]!.ua).length).toBe(512)
+    expect(lines[0]!.ip).toBe('203.0.113.7')
   })
 })

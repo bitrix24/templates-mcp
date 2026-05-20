@@ -7,9 +7,10 @@ import { drainAuditQueue } from '~/server/utils/audit-log'
  * 503 response that races the shutdown) would be dropped when the
  * process exits before the in-memory chain settles.
  *
- * Belt-and-braces: the chain is process-local. A SIGKILL still drops
- * unflushed records; for that, the operator needs `O_SYNC` (see the
- * durability caveat in `server/utils/audit-log.ts`).
+ * Limit: a SIGKILL (or power loss) bypasses the `close` hook entirely, so
+ * records still queued in the in-memory chain are lost. Closing that gap
+ * needs `O_SYNC` on each write — see the durability caveat in
+ * `server/utils/audit-log.ts`.
  *
  * Tracked: issue #61.
  */
