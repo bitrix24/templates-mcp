@@ -23,6 +23,20 @@ export default defineNuxtConfig({
     preset: 'node-server',
   },
 
+  vite: {
+    // Pre-bundle the b24icons-vue subpath entry points the landing imports
+    // from. Without this, Vite discovers them lazily on first request and
+    // triggers a dep re-optimization + full page reload in dev ("Re-optimizing
+    // dependencies because vite config has changed"). Listing them here makes
+    // the optimizer pick them up on startup instead.
+    optimizeDeps: {
+      include: [
+        '@bitrix24/b24icons-vue/social',
+        '@bitrix24/b24icons-vue/solid',
+      ],
+    },
+  },
+
   typescript: {
     strict: true,
     typeCheck: false,
