@@ -33,7 +33,7 @@ Open Nuxt DevTools (in the browser console it prints the URL) and pick the MCP I
 All commits must follow [Conventional Commits](https://www.conventionalcommits.org/).
 
 Prefixes: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `ci`, `perf`, `build`, `revert`.
-Optional scopes: `tools`, `client`, `auth`, `deploy`, `evals`, `skill`, `feedback`, `deps`, `docs`, `ci`.
+Optional scopes: `tools`, `client`, `auth`, `security`, `deploy`, `evals`, `skill`, `feedback`, `deps`, `docs`, `ci`, `tsconfig`, `lint`, `types`, `test`, `app`, `utils`.
 
 Examples:
 
@@ -103,7 +103,7 @@ Short version:
 4. Name pattern: `bitrix24_<verb>_<entity>` for Bitrix24 tools, `bx24mcp_<verb>` for meta-tools.
 5. Every Zod field gets `.describe()` — the LLM reads it at runtime.
 6. Call Bitrix24 via `useBitrix24()`. Never bypass.
-7. Add a unit test in `tests/unit/tools/<name>.test.ts` mocking `useBitrix24`.
+7. Add a unit test in `tests/unit/tools/<group>/<name>.test.ts` mocking `useBitrix24`.
 8. Optionally add an eval case in `tests/evals/tool-selection.eval.ts`.
 9. Commit: `feat(tools): add bitrix24_<name>`.
 

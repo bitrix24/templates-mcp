@@ -1,5 +1,7 @@
 # bx24-template-mcp — Agent Skill
 
+`Last reviewed: 2026-05-20`
+
 You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. Read this before making changes.
 
 ## Project context
@@ -17,7 +19,7 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
 
 1. **One tool per file** in `server/mcp/tools/<group>/<name>.ts`. Discovery is automatic.
 2. **Never call Bitrix24 directly.** Always go through `useBitrix24()`, and from there through the typed helpers in `server/utils/sdk-helpers.ts`: `callV3<T>(b24, method, params, errorContext)` for v3 methods (`tasks.task.*`, `crm.*`, …), `callV2<T>(…)` for v2 (`user.*`, `task.commentitem.*`, …), and `batchV3<T>(b24, calls, errorContext)` for bulk operations. The helpers own the `isSuccess` / `getErrorMessages` / transport-error funnel — tool handlers stay short and uniform. Calling `b24.actions.*.{call,batch}.make` directly from a tool handler is forbidden (it duplicates that funnel and drifts over time); the deprecated `b24.callMethod` is doubly forbidden — it disappears in SDK 2.0. See [`adding-tools.md`](./adding-tools.md) for the canonical template.
-3. **Every tool must have a unit test** in `tests/unit/tools/<name>.test.ts` with the Bitrix24 client mocked.
+3. **Every tool must have a unit test** in `tests/unit/tools/<group>/<name>.test.ts` with the Bitrix24 client mocked.
 4. **Every Zod field must have `.describe()`** — the LLM reads it at runtime.
 5. **No secrets in code or tests.** Use `useRuntimeConfig()` and `.env`.
 6. **Operators talk in names, not ids.** When a tool needs a `responsibleId` / `userId` / similar, **resolve from a name first** via `bitrix24_find_user`. The decision tree:
@@ -122,7 +124,7 @@ The bar here is lower than for the SDK (no credential-leak surface to defend), b
 8. Run `pnpm lint && pnpm typecheck && pnpm test`.
 9. Commit: `feat(tools): add bitrix24_<name>`.
 
-Full template — including v3 `actions.call.make` usage, `AjaxError` handling, the `useLogger()` recipe, batch-tool conventions, and a copy-paste unit-test skeleton — lives in [`adding-tools.md`](./adding-tools.md).
+Full template — including the `callV3` / `callV2` / `batchV3` helper usage, `AjaxError` handling, the `useLogger()` recipe, batch-tool conventions, and a copy-paste unit-test skeleton — lives in [`adding-tools.md`](./adding-tools.md).
 
 ## When asked to do UI / frontend work
 
@@ -172,7 +174,7 @@ Use the typed helpers from `server/utils/sdk-helpers.ts`: `callV3<T>(b24, method
 ## Where to read more
 
 - Root [`CONTRIBUTING.md`](../../CONTRIBUTING.md) — full commit and PR rules.
-- [`adding-tools.md`](./adding-tools.md) — modern tool template (`callV3` / `callV2` / `batchV3` helpers, batch via `actions.v3.batch.make`, `AjaxError` handling, SDK logger, unit-test skeleton).
+- [`adding-tools.md`](./adding-tools.md) — modern tool template (`callV3` / `callV2` / `batchV3` helpers, batch via `batchV3` / `batchV2`, `AjaxError` handling, SDK logger, unit-test skeleton).
 - [`feedback.md`](./feedback.md) — agent feedback prompts and policy.
 - `docs/EVALS.md`, `docs/FEEDBACK.md`, `docs/MANUAL-TEST-PHRASES.md` at the project root — operator-facing guides.
 

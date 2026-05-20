@@ -33,7 +33,7 @@ The following operator / contributor docs are referenced in `PROJECT-BRIEF.md` b
 
 - `DEPLOYMENT.md` — release process, nginx-proxy + acme-companion, secrets management
 - `RUNBOOK.md` — on-call playbook for prod incidents
-- `SECURITY.md` — threat model, secret rotation, sanitisation rationale
+- `SECURITY.md` — threat model, secret rotation, sanitisation rationale (note: [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md) already exists and covers the SDK credential-leak audit log — `SECURITY.md` is the still-missing threat-model / rotation piece, not a duplicate)
 - `TESTING.md` — running unit / integration / eval layers locally
 - `TROUBLESHOOTING.md` — known issues and recovery procedures
 - `ARCHITECTURE.md` — system design (today this lives inside `PROJECT-BRIEF.md`; eventual split when the brief gets trimmed)
