@@ -4,6 +4,23 @@ import { useBitrix24 } from '~/server/utils/bitrix24'
 import { callV3 } from '~/server/utils/sdk-helpers'
 
 /**
+ * Whitelist of deal fields the agent may sort by. Kept to a fixed enum rather
+ * than an open `z.string()` key so an LLM can't probe the portal's custom-field
+ * schema (`UF_CRM_*`) through which-field-errors / which-field-sorts behaviour.
+ */
+const SORTABLE_FIELD = z.enum([
+  'ID',
+  'TITLE',
+  'DATE_CREATE',
+  'DATE_MODIFY',
+  'OPPORTUNITY',
+  'STAGE_ID',
+  'CATEGORY_ID',
+  'ASSIGNED_BY_ID',
+  'CLOSED',
+])
+
+/**
  * Subset of the `crm.deal.list` row shape we surface back to the agent. The
  * Bitrix24 API returns scalar fields as strings (numeric ids, money amounts,
  * Y/N flags) — we coerce to native JS types at the boundary so the LLM
@@ -120,10 +137,10 @@ export default defineMcpTool({
       .optional()
       .describe('When true, return only closed (won or lost) deals. When false, return only open deals. Omit to include both.'),
     order: z
-      .record(z.string(), z.enum(['ASC', 'DESC']))
+      .record(SORTABLE_FIELD, z.enum(['ASC', 'DESC']))
       .optional()
       .describe(
-        'Sort order. Keys are UPPER_SNAKE deal fields (`DATE_MODIFY`, `DATE_CREATE`, `OPPORTUNITY`, `ID`, …); values are `ASC` / `DESC`. Default `{ ID: "DESC" }` (newest first). For a "deals idle for N days" report set `{ "DATE_MODIFY": "ASC" }` so the most stale deals come first within the single page this tool returns.',
+        'Sort order. Keys are a fixed set of UPPER_SNAKE deal fields (ID, TITLE, DATE_CREATE, DATE_MODIFY, OPPORTUNITY, STAGE_ID, CATEGORY_ID, ASSIGNED_BY_ID, CLOSED); values are `ASC` / `DESC`. Default `{ ID: "DESC" }` (newest first). For a "deals idle for N days" report set `{ "DATE_MODIFY": "ASC" }` so the most stale deals come first within the single page this tool returns.',
       ),
     limit: z
       .number()
@@ -173,12 +190,17 @@ export default defineMcpTool({
       'DATE_MODIFY',
     ]
 
+    // `order ?? { ID: 'DESC' }` is not enough: an empty object `{}` is truthy,
+    // so it would slip past `??` and ask Bitrix24 to sort by nothing. Treat a
+    // missing OR empty order as "use the default".
+    const effectiveOrder = order && Object.keys(order).length > 0 ? order : { ID: 'DESC' }
+
     const b24 = useBitrix24()
     const all
       = (await callV3<DealListRow[]>(
           b24,
           'crm.deal.list',
-          { filter, select, order: order ?? { ID: 'DESC' } },
+          { filter, select, order: effectiveOrder },
           'Failed to search Bitrix24 deals',
         ))
       ?? []
@@ -208,7 +230,13 @@ export default defineMcpTool({
           type: 'text' as const,
           text: JSON.stringify({
             matches: deals.length,
-            returnedByApi: all.length,
+            // `pageSize` is how many rows this single Bitrix24 page held (≤50),
+            // NOT the total count on the portal — there is no pagination cursor
+            // yet (see issue #70). `mayHaveMore` flags a full page so the agent
+            // knows to narrow the filter rather than assume it has seen
+            // everything.
+            pageSize: all.length,
+            mayHaveMore: all.length >= 50,
             ...(truncated ? { truncatedAt: cap } : {}),
             deals,
           }),

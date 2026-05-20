@@ -80,6 +80,13 @@ describe('bitrix24_find_deal', () => {
         params: expect.objectContaining({
           filter: { '%TITLE': 'Сделка' },
           order: { ID: 'DESC' },
+          // pin the select so dropping a field (and silently nulling the
+          // mapped property) fails loudly here.
+          select: expect.arrayContaining([
+            'ID', 'TITLE', 'STAGE_ID', 'CATEGORY_ID', 'TYPE_ID', 'OPPORTUNITY',
+            'CURRENCY_ID', 'CONTACT_ID', 'COMPANY_ID', 'ASSIGNED_BY_ID', 'CLOSED',
+            'DATE_CREATE', 'DATE_MODIFY',
+          ]),
         }),
       }),
     )
@@ -127,9 +134,19 @@ describe('bitrix24_find_deal', () => {
             ASSIGNED_BY_ID: 6,
             CLOSED: 'N',
           },
+          // structured-only call still gets the default sort
+          order: { ID: 'DESC' },
         }),
       }),
     )
+  })
+
+  it('accepts companyId as the sole filter', async () => {
+    fake.v3Call.mockResolvedValue(fakeOk([]))
+    await tool.handler({ companyId: 7 })
+    expect(fake.v3Call).toHaveBeenCalledTimes(1)
+    const callArg = fake.v3Call.mock.calls[0]?.[0]
+    expect(callArg?.params?.filter).toEqual({ COMPANY_ID: 7 })
   })
 
   it('encodes closedOnly: true as CLOSED=Y', async () => {
@@ -151,9 +168,21 @@ describe('bitrix24_find_deal', () => {
     await tool.handler({ closedOnly: false, order: { DATE_MODIFY: 'ASC' } })
     expect(fake.v3Call).toHaveBeenCalledWith(
       expect.objectContaining({
-        params: expect.objectContaining({ order: { DATE_MODIFY: 'ASC' } }),
+        params: expect.objectContaining({
+          filter: { CLOSED: 'N' },
+          order: { DATE_MODIFY: 'ASC' },
+        }),
       }),
     )
+  })
+
+  it('falls back to the default order when an empty order object is passed', async () => {
+    fake.v3Call.mockResolvedValue(fakeOk([]))
+    await tool.handler({ query: 'x', order: {} })
+    const callArg = fake.v3Call.mock.calls[0]?.[0]
+    // `{}` is truthy, so a naive `order ?? default` would forward it — the
+    // handler must explicitly fall back to { ID: 'DESC' }.
+    expect(callArg?.params?.order).toEqual({ ID: 'DESC' })
   })
 
   it('returns a guidance message and does not call Bitrix24 when no filter is supplied', async () => {
@@ -162,8 +191,8 @@ describe('bitrix24_find_deal', () => {
     expect(result.content[0]!.text).toMatch(/Provide at least one filter/i)
   })
 
-  it('caps the result count to `limit` (default 10) and reports truncation', async () => {
-    const many = Array.from({ length: 15 }, (_, i) => ({
+  const makeDeals = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
       ID: String(i + 1),
       TITLE: `Deal ${i + 1}`,
       STAGE_ID: 'C1:NEW',
@@ -173,20 +202,42 @@ describe('bitrix24_find_deal', () => {
       ASSIGNED_BY_ID: '1',
       CLOSED: 'N',
     }))
-    fake.v3Call.mockResolvedValue(fakeOk(many))
+
+  it('caps the result count to `limit` and reports truncation via pageSize / truncatedAt', async () => {
+    fake.v3Call.mockResolvedValue(fakeOk(makeDeals(15)))
 
     const result = await tool.handler({ query: 'Deal', limit: 5 })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.matches).toBe(5)
     expect(payload.truncatedAt).toBe(5)
-    expect(payload.returnedByApi).toBe(15)
+    expect(payload.pageSize).toBe(15)
   })
 
-  it('omits `truncatedAt` when no truncation happened', async () => {
+  it('honours limit: 1 (the Zod minimum)', async () => {
+    fake.v3Call.mockResolvedValue(fakeOk(makeDeals(15)))
+    const result = await tool.handler({ query: 'Deal', limit: 1 })
+    const payload = JSON.parse(result.content[0]!.text)
+    expect(payload.matches).toBe(1)
+    expect(payload.truncatedAt).toBe(1)
+  })
+
+  it('flags mayHaveMore when Bitrix24 returns a full page of 50', async () => {
+    fake.v3Call.mockResolvedValue(fakeOk(makeDeals(50)))
+    const result = await tool.handler({ query: 'Deal', limit: 50 })
+    const payload = JSON.parse(result.content[0]!.text)
+    expect(payload.matches).toBe(50)
+    expect(payload.pageSize).toBe(50)
+    expect(payload.mayHaveMore).toBe(true)
+    // returned exactly `limit` rows out of a 50-row page — no client-side cut
+    expect('truncatedAt' in payload).toBe(false)
+  })
+
+  it('omits `truncatedAt` and clears mayHaveMore when the page is not full', async () => {
     fake.v3Call.mockResolvedValue(fakeOk([sampleDeals[0]]))
     const result = await tool.handler({ query: 'Сделка', limit: 10 })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.matches).toBe(1)
+    expect(payload.mayHaveMore).toBe(false)
     expect('truncatedAt' in payload).toBe(false)
   })
 
