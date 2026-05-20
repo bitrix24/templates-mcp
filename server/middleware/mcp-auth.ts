@@ -10,7 +10,10 @@ export default defineEventHandler((event) => {
   if (pathname !== '/mcp' && !pathname.startsWith('/mcp/')) return
 
   const expected = useRuntimeConfig().mcpAuthToken
-  if (!expected) {
+  // Treat the `.env.example` placeholder as "not configured": an operator who
+  // copied the example without running `openssl rand -hex 32` must not end up
+  // with a guessable, publicly-documented token guarding /mcp.
+  if (!expected || expected === 'replace-with-secure-token') {
     // Service-unavailable: not configured, not the caller's fault. Surfacing
     // 500 here would leak misconfiguration to anonymous callers.
     throw createError({

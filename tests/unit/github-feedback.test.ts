@@ -74,6 +74,17 @@ describe('createGithubIssue', () => {
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
+  it('throws NOT_CONFIGURED on a malformed repo slug and never calls fetch', async () => {
+    runtimeConfig.githubFeedbackRepo = '../../users/admin/repos'
+    const { createGithubIssue } = await loadFresh()
+
+    await expect(createGithubIssue({ title: 't', body: 'b', labels: [] })).rejects.toMatchObject({
+      name: 'GithubFeedbackError',
+      code: 'NOT_CONFIGURED',
+    })
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
   it('maps 401/403 to a friendly UPSTREAM error without leaking the body', async () => {
     mockFetch.mockResolvedValue(errResponse(401))
     const { createGithubIssue } = await loadFresh()
@@ -260,6 +271,17 @@ describe('formatIssueBody', () => {
     expect(body).toContain('<pre><code>')
     expect(body).toContain('&lt;script&gt;alert(1)&lt;/script&gt; &amp; more')
     expect(body).not.toContain('<script>')
+  })
+
+  it('HTML-escapes relatedTool defensively (caller-sanitised, but escaped again here)', async () => {
+    const { formatIssueBody } = await loadFresh()
+    const body = formatIssueBody({
+      kind: 'issue',
+      details: 'x',
+      relatedTool: '<img src=x onerror=alert(1)>',
+    })
+    expect(body).toContain('**Related tool**: &lt;img src=x onerror=alert(1)&gt;')
+    expect(body).not.toContain('<img')
   })
 
   it('falls back to n/a when relatedTool and severity are absent', async () => {

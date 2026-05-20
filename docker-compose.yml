@@ -5,6 +5,14 @@ services:
     image: ${BX24_IMAGE:-ghcr.io/bitrix24/templates-mcp:latest}
     container_name: bx24-template-mcp
     restart: always
+    # Hardening: drop all Linux capabilities (the Node server binds an
+    # unprivileged port and runs as USER node, so it needs none) and forbid
+    # privilege escalation via setuid binaries. `read_only` is intentionally
+    # NOT set — the audit logger appends JSONL under /data/audit at runtime.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
