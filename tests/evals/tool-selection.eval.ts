@@ -4,8 +4,8 @@
  *
  * The cases below are a curated subset of `docs/MANUAL-TEST-PHRASES.md`:
  * unambiguous prompts where the FIRST tool call should be one specific tool.
- * Each pass through the eval bills DeepSeek for ~20 small chat-completion
- * calls (≈ $0.002 total at current pricing).
+ * Each pass through the eval bills DeepSeek for ~80 small chat-completion
+ * calls — one per case (≈ $0.01 total at current pricing).
  *
  * Skip behaviour: if `DEEPSEEK_API_KEY` is not set, this file logs a notice
  * and exits cleanly — useful so CI can run the eval suite only when the key
