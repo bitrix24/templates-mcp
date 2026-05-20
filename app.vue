@@ -3,6 +3,11 @@ import { GitHubIcon } from '@bitrix24/b24icons-vue/social'
 import { HeartIcon } from '@bitrix24/b24icons-vue/solid'
 import { EncloseTextInCodeTagIcon } from '@bitrix24/b24icons-vue/editor'
 
+// ProsePrompt.icon is typed as string (IconComponent['name']) in b24ui-nuxt 2.7.1,
+// but the component uses <Component :is> and accepts FunctionalComponent at runtime.
+// Cast bridges the library type bug without affecting behaviour.
+const prosePromptIcon = EncloseTextInCodeTagIcon as unknown as string
+
 // Kept as a JS string (not inline slot text) so the line breaks survive
 // Vue's template-whitespace collapse and land verbatim in the clipboard /
 // Cursor / Windsurf deeplink that ProsePrompt builds from the slot.
@@ -90,7 +95,7 @@ useHead({
           <ProsePrompt
             description="Show me what needs attention across my portal — right now"
             :actions="['copy', 'cursor', 'windsurf']"
-            :icon="EncloseTextInCodeTagIcon"
+            :icon="prosePromptIcon"
           >{{ firstToolPrompt }}</ProsePrompt>
           <p class="mt-2.5 mb-0 text-xs opacity-[0.82] text-center">
             Using VS Code? See the
