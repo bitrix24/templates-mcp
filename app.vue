@@ -34,7 +34,8 @@ useHead({
 
 <template>
   <B24App>
-    <div class="edge-dark min-h-screen flex flex-col text-[#f3f9ff] font-sans [background:#0382ff_linear-gradient(162deg,#34e9c0_0.21%,#0382ff_58.71%)_fixed]">
+    <!-- edge-dark: b24ui dark-surface token — keeps b24ui components in their dark variant -->
+    <div class="edge-dark bx-brand-splash min-h-screen flex flex-col font-sans">
       <main class="flex-1 flex flex-col items-center justify-center py-12 px-6 text-center max-w-[940px] w-full mx-auto">
         <svg viewBox="0 0 174 33" xmlns="http://www.w3.org/2000/svg" fill="currentColor" class="w-[min(56vw,280px)] h-auto mb-7 text-white" role="img" aria-label="Bitrix24">
           <path d="M 0 27.1L 18.7 27.1L 18.7 23L 6.3 23C 8 16.2 18.4 14.7 18.4 7.1C 18.4 3 15.6 0 9.8 0C 6.1 0 3 1.1 0.8 2.2L 2.1 6C 4.1 5.1 6.3 4.2 9 4.2C 11.2 4.2 13.2 5.1 13.2 7.6C 13.3 13.2 1.1 13.6 0 27.1Z" transform="translate(106.8 5.3)" />
@@ -77,6 +78,7 @@ useHead({
             size="md"
             to="/api/health"
             target="_blank"
+            rel="noopener noreferrer"
           >
             /api/health
             <span class="sr-only">(opens in new tab)</span>
@@ -104,21 +106,21 @@ useHead({
 
       <footer class="pt-[22px] pb-7 px-6 text-center text-[13px] opacity-[0.92]">
         <a
-          class="text-inherit no-underline border-b border-white/[0.32] pb-px transition-[border-color] duration-150 hover:border-white/[0.85] focus-visible:border-white/[0.85]"
+          class="footer-link"
           href="https://github.com/bitrix24/templates-mcp/blob/main/LICENSE"
           target="_blank"
           rel="noopener noreferrer"
         >MIT</a>
         <span class="mx-2" aria-hidden="true">&middot;</span>
         <a
-          class="text-inherit no-underline border-b border-white/[0.32] pb-px transition-[border-color] duration-150 hover:border-white/[0.85] focus-visible:border-white/[0.85]"
+          class="footer-link"
           href="https://github.com/bitrix24/templates-mcp/releases"
           target="_blank"
           rel="noopener noreferrer"
         >v0.1.0-alpha.1</a>
         <span class="mx-2" aria-hidden="true">&middot;</span>
         <a
-          class="text-inherit no-underline border-b border-white/[0.32] pb-px transition-[border-color] duration-150 hover:border-white/[0.85] focus-visible:border-white/[0.85]"
+          class="footer-link"
           href="https://github.com/bitrix24/templates-mcp"
           target="_blank"
           rel="noopener noreferrer"
