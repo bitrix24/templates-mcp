@@ -4,6 +4,11 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as AuditLog from '../../server/utils/audit-log'
 
+// Three tests below use POSIX-only semantics: Unix file-mode bits and
+// /dev/null as a non-directory device. Both are unavailable on Windows —
+// NTFS has no chmod, and /dev/null is not a character device there.
+const isWindows = process.platform === 'win32'
+
 /**
  * Forces a fresh module import so the module-level `writeChain` promise
  * resets between tests — without it, a failed write queued in one test
@@ -185,7 +190,7 @@ describe('recordAuditEvent — append-only JSONL audit trail (#61)', () => {
     }
   })
 
-  it('creates files with 0o640 mode (owner rw, group r, world none)', async () => {
+  it.skipIf(isWindows)('creates files with 0o640 mode (owner rw, group r, world none)', async () => {
     const { recordAuditEvent, drainAuditQueue } = await loadFresh()
     await recordAuditEvent({ event: 'oauth.upsert', portal: 'p.bitrix24.com', userId: '1', actor: 'install' })
     await drainAuditQueue()
@@ -199,16 +204,21 @@ describe('recordAuditEvent — append-only JSONL audit trail (#61)', () => {
     expect(perms & 0o600).toBe(0o600) // owner rw
   })
 
-  it('survives a failing write — subsequent writes are not poisoned', async () => {
+  it.skipIf(isWindows)('survives a failing write — subsequent writes are not poisoned', async () => {
     const { recordAuditEvent, drainAuditQueue } = await loadFresh()
 
     // `/dev/null` is a character device; mkdir of a child under it fails
     // with ENOTDIR for every user including root — portable failure mode.
-    process.env.NUXT_AUDIT_DIR = '/dev/null/audit-cant-go-here'
-    const failing = recordAuditEvent({ event: 'oauth.upsert', portal: 'p', userId: '1', actor: 'install' })
-    await expect(failing).rejects.toThrow()
+    // try/finally ensures NUXT_AUDIT_DIR is restored even if the assertion
+    // itself throws, preventing env state from leaking to subsequent test code.
+    try {
+      process.env.NUXT_AUDIT_DIR = '/dev/null/audit-cant-go-here'
+      const failing = recordAuditEvent({ event: 'oauth.upsert', portal: 'p', userId: '1', actor: 'install' })
+      await expect(failing).rejects.toThrow()
+    } finally {
+      process.env.NUXT_AUDIT_DIR = tmpDir
+    }
 
-    process.env.NUXT_AUDIT_DIR = tmpDir
     await recordAuditEvent({ event: 'mcp.create', portal: 'p', userId: '1', actor: 'install', mcpTokenId: 'sha256-aa' })
     await drainAuditQueue()
 
@@ -323,14 +333,19 @@ describe('recordAuditEvent — append-only JSONL audit trail (#61)', () => {
     expect(lines).toHaveLength(10)
   })
 
-  it('drainAuditQueue resolves (does not reject) even when a queued write failed', async () => {
+  it.skipIf(isWindows)('drainAuditQueue resolves (does not reject) even when a queued write failed', async () => {
     // The Nitro shutdown hook awaits drainAuditQueue; if a failed write in
     // the chain made drain reject, the close hook would throw on shutdown.
     const { recordAuditEvent, drainAuditQueue } = await loadFresh()
 
-    process.env.NUXT_AUDIT_DIR = '/dev/null/nope'
-    const failing = recordAuditEvent({ event: 'oauth.upsert', portal: 'p', userId: '1', actor: 'install' })
-    await expect(failing).rejects.toThrow()
+    // try/finally so the env is reset even if the rejects assertion fails.
+    try {
+      process.env.NUXT_AUDIT_DIR = '/dev/null/nope'
+      const failing = recordAuditEvent({ event: 'oauth.upsert', portal: 'p', userId: '1', actor: 'install' })
+      await expect(failing).rejects.toThrow()
+    } finally {
+      delete process.env.NUXT_AUDIT_DIR
+    }
 
     // drain must settle cleanly despite the rejected write sitting in the chain.
     await expect(drainAuditQueue()).resolves.toBeUndefined()
