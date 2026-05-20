@@ -54,11 +54,11 @@ bx24-template-mcp/
 ├── server/
 │   ├── mcp/
 │   │   ├── tools/                       # file-based discovery
-│   │   │   ├── tasks/
-│   │   │   │   ├── create-task.ts
-│   │   │   │   ├── list-tasks.ts
+│   │   │   ├── tasks/                    # 27 tools: core CRUD shown +
+│   │   │   │   ├── create-task.ts        #   lifecycle verbs, checklist, results,
+│   │   │   │   ├── list-tasks.ts         #   elapsed-time, dependencies
 │   │   │   │   ├── update-task.ts
-│   │   │   │   └── add-task-comment.ts
+│   │   │   │   └── add-task-comment.ts   # … + 23 more
 │   │   │   ├── deals/
 │   │   │   │   └── find-deal.ts           # reference CRM tool (read-only); create/update/etc are forker territory
 │   │   │   ├── users/
@@ -100,16 +100,18 @@ bx24-template-mcp/
 │       ├── deployment.md
 │       ├── contributing.md
 │       └── feedback.md                  # when and how an AI should send feedback
-├── docs/
-│   ├── README.md
-│   ├── ARCHITECTURE.md
-│   ├── ADDING-TOOLS.md
-│   ├── DEPLOYMENT.md
-│   ├── TESTING.md
-│   ├── SECURITY.md
+├── docs/                                # shipped: README, AGENT, EVALS, FEEDBACK,
+│   ├── README.md                        #   MANUAL-TEST-PHRASES, SECURITY-AUDIT.
+│   ├── AGENT.md                         # the rest below are planned stubs.
+│   ├── EVALS.md
 │   ├── FEEDBACK.md
-│   ├── AGENT.md
-│   └── RUNBOOK.md
+│   ├── MANUAL-TEST-PHRASES.md
+│   ├── SECURITY-AUDIT.md
+│   ├── ARCHITECTURE.md                  # planned
+│   ├── ADDING-TOOLS.md                  # planned
+│   ├── DEPLOYMENT.md                    # planned
+│   ├── TESTING.md                       # planned
+│   └── RUNBOOK.md                       # planned
 ├── CONTRIBUTING.md
 ├── commitlint.config.js
 ├── nuxt.config.ts

@@ -4,7 +4,7 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
-## [0.1.0-alpha.1] — 2026-05-19
+## [0.1.0-alpha.1] - 2026-05-19
 
 The first tagged release. Cuts a baseline anchor that ships every tool, every contract, and every operator-facing surface the template offers on day one. Footer of the landing now links here.
 
