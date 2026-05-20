@@ -31,13 +31,13 @@ git commit -am "chore(release): v0.1.0"
 git push
 
 # 2. Tag and push — this is what triggers the deploy
-git tag v0.1.0
+git tag -a v0.1.0 -m "v0.1.0"
 git push origin v0.1.0
 ```
 
-Use an annotated `vMAJOR.MINOR.PATCH` (or `-alpha.N` / `-beta.N`) tag matching the bumped `package.json` version.
+Use an annotated (`-a`) `vMAJOR.MINOR.PATCH` (or `-alpha.N` / `-beta.N`) tag matching the bumped `package.json` version. A lightweight tag also fires the `v*` trigger, but annotated tags carry an author/date/message and are what `git describe` and the GitHub release UI expect.
 
-**Re-deploying an existing release**: `workflow_dispatch` (Actions → Deploy → Run workflow) takes a `ref` input and re-runs verify+build+deploy. ⚠️ Image *tagging* still follows the `metadata-action` rules, which only emit the `:latest` tag (and the semver tags) when the triggering ref is a `v*` **tag** — running a dispatch against a branch or bare SHA will not refresh `:latest`, and the deploy step's `docker compose pull` of `:latest` would then pull a **stale** image. Always dispatch against a `v*` tag, never a branch/SHA, unless you also override `BX24_IMAGE` to the exact image you intend.
+**Re-deploying an existing release**: `workflow_dispatch` (Actions → Deploy → Run workflow) takes a `ref` input and re-runs verify+build+deploy. ⚠️ Image *tagging* follows the `metadata-action` rules, which emit the semver tags (`0.1.0`, `0.1`) and `:latest` **only** when the triggering ref is a `v*` **tag**. Dispatching against a branch or bare SHA produces neither `:latest` nor the semver tags, so the deploy step's `docker compose pull` of `:latest` would pull a **stale** image. Always dispatch against a `v*` tag, never a branch/SHA — or override `BX24_IMAGE` to the exact digest/tag you intend.
 
 ## The image
 
@@ -78,7 +78,15 @@ The `deploy` job reads these from the repo's **Settings → Secrets and variable
 
 `GITHUB_TOKEN` (auto-provided) is used to push the image to GHCR — no extra secret needed, but the repo's package settings must allow Actions to write packages.
 
-> **Hardening — host-key verification**: the deploy uses `appleboy/ssh-action`, which does **not** verify the production host's SSH fingerprint by default. That leaves a (small, CI-only) MITM window on the runner → host channel. For a hardened setup, pin the host key via the action's `fingerprint` input in `deploy.yml` (a separate change — tracked as an infra issue). Until then, the runner trusts whatever host answers on `SSH_HOST`.
+> ⚠️ **Hardening — host-key verification (open gap)**: the deploy uses `appleboy/ssh-action`, which does **not** verify the production host's SSH fingerprint by default. The runner trusts whatever host answers on `SSH_HOST` — so anyone able to redirect that address (DNS spoofing, BGP hijack, a cloud-network MITM) can capture `SSH_KEY` and gain shell + Docker-daemon access to production. **Not recommended for production without pinning.** Close it by setting the action's `fingerprint` input in `deploy.yml`, e.g.:
+>
+> ```yaml
+>     with:
+>       host: ${{ secrets.SSH_HOST }}
+>       fingerprint: ${{ secrets.SSH_FINGERPRINT }}   # ssh-keyscan -p <port> <host>
+> ```
+>
+> Tracked in [#89](https://github.com/bitrix24/templates-mcp/issues/89). This is a `deploy.yml` change (out of scope for the doc), but it should land before the host serves real traffic.
 
 ## Environment variables
 
@@ -108,16 +116,22 @@ From [`deploy.yml`](../.github/workflows/deploy.yml), after the image is pushed:
 
 ```bash
 cd "$DEPLOY_PATH"                      # default /opt/bx24-template-mcp
-# record the currently-running image digest for rollback (guarded: on the very
-# first deploy there is no running container, so this resolves to empty)
+# Record the currently-running image's repo digest for rollback. Two steps:
+# the container exposes only its image ID, so resolve the ID to a pushed
+# digest via a second inspect. Both are guarded — on the very first deploy
+# there is no running container, so this resolves to empty.
 IMAGE_ID=$(docker container inspect --format='{{.Image}}' bx24-template-mcp 2>/dev/null || true)
-# → writes `previous=<digest>` (or `previous=` on first deploy) to rollback.env
+CURRENT_DIGEST=""
+if [ -n "$IMAGE_ID" ]; then
+  CURRENT_DIGEST=$(docker image inspect --format='{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$IMAGE_ID" 2>/dev/null || true)
+fi
+echo "previous=$CURRENT_DIGEST" > rollback.env   # `previous=` (empty) on first deploy
 docker compose pull --quiet
 docker compose up -d --remove-orphans
 docker image prune -f
 ```
 
-On the **first** deploy `rollback.env` holds an empty `previous=` — that's expected; the rollback step below detects it and exits with "No previous image recorded — manual rollback required" instead of pinning garbage.
+On the **first** deploy `rollback.env` holds an empty `previous=` — that's expected. If a later deploy fails health, the rollback step distinguishes two cases: a **missing** `rollback.env` → "rollback.env missing — manual rollback required"; a present file with an **empty** `previous=` → "No previous image recorded — manual rollback required". Either way it refuses to pin garbage and exits non-zero for a human to take over.
 
 Then it polls `https://<PROD_HOST>/api/health` up to 10 times (3s apart). If the service never returns 200, the **rollback** step reads `previous=` from `rollback.env`, pulls that digest, and re-pins it:
 
