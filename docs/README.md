@@ -15,8 +15,9 @@ Start here if you are about to change code.
 
 Start here if you are running the service.
 
-1. [`FEEDBACK.md`](./FEEDBACK.md) — agent-feedback channel (`bx24mcp_submit_feedback`) and its GitHub integration.
-2. [`MANUAL-TEST-PHRASES.md`](./MANUAL-TEST-PHRASES.md) — natural-language test pack for verifying tool descriptions and LLM behaviour against a real portal.
+1. [`DEPLOYMENT.md`](./DEPLOYMENT.md) — shipping to production: Docker image on GHCR, the `v*`-tag GitHub Actions pipeline, nginx-proxy + acme-companion, env vars, rollback.
+2. [`FEEDBACK.md`](./FEEDBACK.md) — agent-feedback channel (`bx24mcp_submit_feedback`) and its GitHub integration.
+3. [`MANUAL-TEST-PHRASES.md`](./MANUAL-TEST-PHRASES.md) — natural-language test pack for verifying tool descriptions and LLM behaviour against a real portal.
 
 ## AI agent
 
@@ -31,7 +32,6 @@ Start here if you are an AI assistant working with this MCP.
 
 The following operator / contributor docs are referenced in `PROJECT-BRIEF.md` but not yet written. **Don't improvise local stubs** — open a GitHub issue and link the work, so the doc lands once authoritatively rather than drifting in parallel:
 
-- `DEPLOYMENT.md` — release process, nginx-proxy + acme-companion, secrets management
 - `RUNBOOK.md` — on-call playbook for prod incidents
 - `SECURITY.md` — threat model, secret rotation, sanitisation rationale
 - `TESTING.md` — running unit / integration / eval layers locally

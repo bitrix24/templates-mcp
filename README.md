@@ -128,7 +128,8 @@ The 8 task-mutation tools above (`start_task` / `pause_task` / `complete_task` /
 
 - [`PROJECT-BRIEF.md`](./PROJECT-BRIEF.md) — full specification, source of truth.
 - [`CONTRIBUTING.md`](./CONTRIBUTING.md) — commits, PRs, CI gates.
-- [`docs/`](./docs/) — architecture, deployment, runbook, testing, security, feedback (stubs land alongside MVP).
+- [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) — shipping to production: GHCR image, `v*`-tag pipeline, nginx-proxy + acme-companion, rollback.
+- [`docs/`](./docs/) — index of operator / contributor / agent docs (some still planned stubs).
 - [`skills/manage-bx24-template-mcp/SKILL.md`](./skills/manage-bx24-template-mcp/SKILL.md) — entry point for AI agents.
 
 ## Support
