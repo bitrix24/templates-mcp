@@ -36,6 +36,7 @@ export default defineNuxtConfig({
     // the optimizer pick them up on startup instead.
     optimizeDeps: {
       include: [
+        '@bitrix24/b24icons-vue/editor',
         '@bitrix24/b24icons-vue/social',
         '@bitrix24/b24icons-vue/solid',
       ],
