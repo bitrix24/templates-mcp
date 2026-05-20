@@ -1,4 +1,3 @@
-import type { TypeCallParams } from '@bitrix24/b24jssdk'
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
@@ -57,6 +56,12 @@ function parseId(raw: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/**
+ * Coerce a money amount to a number. Bitrix24 emits `OPPORTUNITY` as a numeric
+ * string ("19999.99"), and an empty string ("") for a deal with no amount set.
+ * Both the empty string and a non-numeric value map to null — same "absent vs
+ * malformed is indistinguishable, so normalise to null" contract as parseId.
+ */
 function parseMoney(raw: string | number | null | undefined): number | null {
   if (raw === null || raw === undefined || raw === '') return null
   const n = typeof raw === 'string' ? Number.parseFloat(raw) : raw
@@ -66,14 +71,15 @@ function parseMoney(raw: string | number | null | undefined): number | null {
 export default defineMcpTool({
   name: 'bitrix24_find_deal',
   description:
-    'Find Bitrix24 CRM deals (sales opportunities — "Negociação" in the Brazilian Portuguese UI; equivalent to a Salesforce Opportunity). Filter by a free-text title fragment (LIKE match) and / or structured fields: contactId, companyId, stageId, categoryId, assignedById, closedOnly. At least one filter is required — without one the portal returns every deal, which is rarely what you want. Returns id / title / stageId / opportunity / currencyId / contactId / companyId / assignedById / isClosed / dateCreate for each match. To search by contact name, resolve the contact id first (forker TODO: ship `bitrix24_find_contact`) and pass it as `contactId`.',
+    'Find Bitrix24 CRM deals (sales opportunities — "Negociação" in the Brazilian Portuguese UI; equivalent to a Salesforce Opportunity). Filter by a free-text title fragment (LIKE match) and / or structured fields: contactId, companyId, stageId, categoryId, assignedById, closedOnly. At least one filter is required — without one the portal returns every deal, which is rarely what you want. Returns up to one page (max 50, capped further by `limit`) of: id / title / stageId / categoryId / typeId / opportunity / currencyId / contactId / companyId / assignedById / isClosed / dateCreate / dateModify. Use `order` to sort — e.g. `{ "DATE_MODIFY": "ASC" }` puts the most stale deals first, the right sort for a "deals idle for N days" report. To search by an associated contact, pass that contact\'s numeric id as `contactId`.',
   inputSchema: {
     query: z
       .string()
       .min(1)
+      .max(255)
       .optional()
       .describe(
-        'Free-text fragment matched against the deal title (LIKE; Bitrix24 `%TITLE` filter prefix). Use this when the operator gives a project / customer / contract name like "договор Сидорова" or "Acme renewal". Case-insensitive on most portal locales.',
+        'Free-text fragment matched against the deal title (LIKE; Bitrix24 `%TITLE` filter prefix). Use this when the operator gives a project / customer / contract name like "договор Сидорова" or "Acme renewal". Case-insensitive on most portal locales. Note: `%` and `_` are SQL LIKE wildcards on the Bitrix24 side — a query of just "%" matches every deal.',
       ),
     contactId: z
       .number()
@@ -92,6 +98,7 @@ export default defineMcpTool({
     stageId: z
       .string()
       .min(1)
+      .max(64)
       .optional()
       .describe(
         'Deal stage in the form `<categorySlug>:<stageCode>` — e.g. `C1:NEW`, `C1:WON`, `LOSE`. Categories beyond the default pipeline use the `C<n>` prefix. Use this to narrow to "open deals at the proposal stage" or "lost deals".',
@@ -112,15 +119,21 @@ export default defineMcpTool({
       .boolean()
       .optional()
       .describe('When true, return only closed (won or lost) deals. When false, return only open deals. Omit to include both.'),
+    order: z
+      .record(z.string(), z.enum(['ASC', 'DESC']))
+      .optional()
+      .describe(
+        'Sort order. Keys are UPPER_SNAKE deal fields (`DATE_MODIFY`, `DATE_CREATE`, `OPPORTUNITY`, `ID`, …); values are `ASC` / `DESC`. Default `{ ID: "DESC" }` (newest first). For a "deals idle for N days" report set `{ "DATE_MODIFY": "ASC" }` so the most stale deals come first within the single page this tool returns.',
+      ),
     limit: z
       .number()
       .int()
       .min(1)
       .max(50)
       .optional()
-      .describe('Cap on the returned matches. Default 10. Bitrix24 paginates at 50 per request; for more, narrow the filter and call again.'),
+      .describe('Cap on the returned matches. Default 10. This tool returns a single Bitrix24 page (max 50) — there is no pagination cursor yet, so use `order` to put the rows you care about at the top rather than relying on paging through everything.'),
   },
-  handler: async ({ query, contactId, companyId, stageId, categoryId, assignedById, closedOnly, limit }) => {
+  handler: async ({ query, contactId, companyId, stageId, categoryId, assignedById, closedOnly, order, limit }) => {
     const filter: Record<string, unknown> = {}
     // Bitrix24 v3 filter prefix `%FIELD` = LIKE-contains; the SDK passes the
     // key through verbatim, so the percent sign must live in the key, not the
@@ -165,7 +178,7 @@ export default defineMcpTool({
       = (await callV3<DealListRow[]>(
           b24,
           'crm.deal.list',
-          { filter, select, order: { ID: 'DESC' } } as unknown as TypeCallParams,
+          { filter, select, order: order ?? { ID: 'DESC' } },
           'Failed to search Bitrix24 deals',
         ))
       ?? []
