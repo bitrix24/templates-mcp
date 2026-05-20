@@ -60,11 +60,10 @@ bx24-template-mcp/
 │   │   │   │   ├── update-task.ts
 │   │   │   │   └── add-task-comment.ts
 │   │   │   ├── deals/
-│   │   │   │   ├── create-deal.ts
-│   │   │   │   ├── list-deals.ts
-│   │   │   │   └── move-deal-stage.ts
+│   │   │   │   └── find-deal.ts           # reference CRM tool (read-only); create/update/etc are forker territory
 │   │   │   ├── users/
-│   │   │   │   └── current-user.ts
+│   │   │   │   ├── current-user.ts
+│   │   │   │   └── find-user.ts
 │   │   │   └── meta/
 │   │   │       └── submit-feedback.ts   # meta MCP tool for agent feedback
 │   │   ├── resources/

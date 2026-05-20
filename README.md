@@ -89,10 +89,16 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `bitrix24_list_task_results` | List the results recorded on a task. Newest-first by default; pagination via limit/offset. |
 | `bitrix24_update_task_result` | Rewrite the text of an existing result. Author-only: Bitrix24 returns `ACCESSDENIEDEXCEPTION` if any other operator (besides a portal admin) tries to edit. |
 | `bitrix24_delete_task_result` | Delete a result by id. Author-only; the task itself is not affected. |
-| `bitrix24_find_deal` | Find CRM deals (sales opportunities — "Negociação" in PT-BR; ≈ Salesforce Opportunity) by title fragment or by structured filters (contactId / companyId / stageId / categoryId / assignedById / closedOnly). Read-only reference implementation — the canonical "first tool to fork" mirroring the prompt advertised on the landing. |
+| `bitrix24_add_elapsed_time` | Log a manual elapsed-time entry on a task ("how long did this take"), separate from the auto stopwatch. `seconds` capped at 86400 (24h). |
+| `bitrix24_list_elapsed_time` | List elapsed-time entries (manual + stopwatch) on tasks. Filter by `taskId` or a custom camelCase filter; paginates at 50. |
+| `bitrix24_update_elapsed_time` | Correct an existing elapsed-time entry (duration / comment / attribution). Author-or-admin only. |
+| `bitrix24_delete_elapsed_time` | Delete elapsed-time entries. Requires `confirmDelete: true`. Author-or-admin only. |
+| `bitrix24_add_task_dependency` | Create a "previous task" dependency (`taskIdFrom` → `taskIdTo`) for Gantt-style scheduling. |
+| `bitrix24_remove_task_dependency` | Remove a "previous task" dependency. Requires `confirmDelete: true`. |
+| `bitrix24_find_deal` | Find CRM deals (sales opportunities — "Negociação" in PT-BR; ≈ Salesforce Opportunity) by title fragment or by structured filters (contactId / companyId / stageId / categoryId / assignedById / closedOnly), with optional `order`. Read-only reference implementation — the canonical "first tool to fork" mirroring the prompt advertised on the landing. |
 | `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 
-24 Bitrix24 + 1 meta = **25 tools total**.
+30 Bitrix24 + 1 meta = **31 tools total**.
 
 The 8 task-mutation tools above (`start_task` / `pause_task` / `complete_task` / `approve_task` / `disapprove_task` / `defer_task` / `renew_task` / `rate_task`) plus the 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) accept either a single id **or** an array for batch mode (up to 50; pass `force: true` to override). Batches go through one HTTP round-trip — `actions.v3.batch.make` for the lifecycle tools, `actions.v2.batch.make` for the checklist actions. `add_checklist_item` and `list_checklist_items` are single-call only by design. Rate limiting, retry, and adaptive back-pressure are provided by the [`@bitrix24/b24jssdk`](https://www.npmjs.com/package/@bitrix24/b24jssdk) `RestrictionManager` — initialised with `ParamsFactory.getDefault()` (standard tariff: burst 50, drain 2 req/sec, 3 retries on transient errors). Override at runtime via `client.setRestrictionManagerParams(ParamsFactory.getEnterprise())` etc.
 
