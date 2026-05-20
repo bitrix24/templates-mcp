@@ -9,7 +9,7 @@ const firstToolPrompt = `You're connected to my Bitrix24 portal via this MCP. Pu
 
 1. **Overdue or imminent tasks** — every task with deadline within the next 48 hours OR already overdue, status not "Completed (5)". Use \`bitrix24_list_tasks\` with \`{ "<=deadline": "<ISO 48h from now>", "!status": 5 }\`. Resolve each \`responsibleId\` to a name once via \`bitrix24_find_user\`. Columns: title, deadline, days_overdue (negative if upcoming), responsible.
 
-2. **Stalled CRM deals** — every open deal idle for 14+ days. \`bitrix24_find_deal\` with \`closedOnly: false\`; keep matches where \`dateModify\` is older than 14 days from today. Columns: title, stage, opportunity_with_currency, assigned_to (resolved name), days_idle.
+2. **Stalled CRM deals** — every open deal idle for 14+ days. \`bitrix24_find_deal\` with \`{ closedOnly: false, order: { "DATE_MODIFY": "ASC" }, limit: 50 }\` so the most stale deals come back first; keep matches whose \`dateModify\` is older than 14 days from today. Columns: title, stage, opportunity_with_currency, assigned_to (resolved name), days_idle.
 
 3. **Headline** — total count for each list and the single oldest item in each, with the responsible person's name.
 
@@ -111,7 +111,7 @@ useHead({
           href="https://github.com/bitrix24/templates-mcp/releases"
           target="_blank"
           rel="noopener noreferrer"
-        >Beta · v0.1.0-alpha.1</a>
+        >v0.1.0-alpha.1</a>
         <span class="footer__sep" aria-hidden="true">&middot;</span>
         <a
           class="footer__link"
