@@ -37,7 +37,7 @@ Two separate signals — don't conflate them. **Keep history tiny in context** �
 
 1. **Trend — the 3 most recent runs, any age.** No time window: sequential runs show progress and connect to the current PR, and a window would return nothing when runs are weeks apart. 3 is a deliberate, fixed safety net.
    `gh issue list --repo <test-repo> --search "Manual QA in:title" --state all --limit 3`
-   plus the newest matching filenames under `archive/`. **One line per run, nothing more:** `date | scope | N pass / M fail | open: #X,#Y`. If a run is old or a different scope than the current PR, append `(may not reflect current code)`.
+   plus the newest archive filenames: `gh api repos/<test-repo>/contents/archive --jq '.[].name' | sort | tail -3` (the filename `YYYY-MM-DD-<scope>.md` is itself the one-liner — open a file only on a scope overlap, per step 3). **One line per run, nothing more:** `date | scope | N pass / M fail | open: #X,#Y`. If a run is old or a different scope than the current PR, append `(may not reflect current code)`.
 2. **Backlog — every open fail-issue, no limit.** Independent of the 3-run cap, so a bug older than 3 runs is never dropped:
    `gh issue list --repo <test-repo> --label agent-feedback --state open` plus checklist-converted fail-issues. **One line each:** `#N <title>`. Numbers and titles only — do not open the bodies.
 3. **Lazy drill-down.** Read a full issue (`gh issue view <N>`) **only when its title/scope overlaps the current PR's surface** (same tool, same area). Otherwise keep just the number. This is the rule that keeps old nightmares out of context.
