@@ -15,6 +15,7 @@
  *
  * Run via `pnpm build:dxt`.
  */
+import { validateManifest } from '@anthropic-ai/mcpb'
 import { ZipArchive } from 'archiver'
 import { build } from 'esbuild'
 import { createWriteStream } from 'node:fs'
@@ -36,11 +37,17 @@ const manifest = JSON.parse(
 )
 const pkg = JSON.parse(await readFile(resolve(projectRoot, 'package.json'), 'utf8'))
 manifest.version = pkg.version
-await writeFile(
-  join(outDir, 'manifest.json'),
-  JSON.stringify(manifest, null, 2),
-  'utf8',
-)
+const manifestOut = join(outDir, 'manifest.json')
+await writeFile(manifestOut, JSON.stringify(manifest, null, 2), 'utf8')
+
+// Validate against the official DXT/MCPB schema before bundling. Claude
+// Desktop runs the same check at install time and refuses the whole package
+// on any unrecognised key (e.g. an `options` enum on a user_config field),
+// so a build that skips this ships a bundle that fails for every operator.
+console.error('[dxt] validating manifest against the MCPB schema')
+if (!validateManifest(manifestOut)) {
+  throw new Error('manifest.json failed MCPB schema validation — see the errors above')
+}
 
 console.error(`[dxt] bundling server.ts → ${outDir}/server/index.mjs`)
 await build({

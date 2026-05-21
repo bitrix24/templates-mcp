@@ -47,6 +47,7 @@
   },
   "devDependencies": {
     "@ai-sdk/openai": "^3.0.0",
+    "@anthropic-ai/mcpb": "^2.1.2",
     "@commitlint/cli": "^21.0.1",
     "@commitlint/config-conventional": "^21.0.1",
     "@nuxt/eslint": "^1.15.2",

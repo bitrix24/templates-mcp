@@ -55,10 +55,9 @@
     "log_level": {
       "type": "string",
       "title": "Log level · Уровень логирования · Nível de log",
-      "description": "EN: Logs go to stderr (Claude Desktop's extension log panel), never stdout. RU: Логи пишутся в stderr (панель логов расширений Claude Desktop), не в stdout. PT-BR: Os logs vão para stderr (painel de logs de extensões do Claude Desktop), nunca para stdout.",
+      "description": "Accepted values: error · warn · info · debug (default: info). Logs go to stderr (Claude Desktop's extension log panel), never stdout. RU: Допустимо error · warn · info · debug (по умолчанию info); логи в stderr. PT-BR: Valores: error · warn · info · debug (padrão info); logs em stderr.",
       "required": false,
-      "default": "info",
-      "options": ["error", "warn", "info", "debug"]
+      "default": "info"
     }
   },
   "compatibility": {
