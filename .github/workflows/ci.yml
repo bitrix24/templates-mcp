@@ -121,3 +121,27 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+
+  scaffold-sync:
+    name: Manual-QA scaffold sync
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'scaffold-sync-exempt')
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - name: Require scaffold update when .env.example changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          scaffold="skills/run-manual-qa/references/issue-scaffold.md"
+          if echo "$changed" | grep -qx ".env.example"; then
+            if ! echo "$changed" | grep -qx "$scaffold"; then
+              echo "::error::.env.example changed but $scaffold was not updated in the same PR."
+              echo "The scaffold mirrors env vars / port / endpoint / scopes (see manage-bx24-template-mcp/SKILL.md Ground Rule 5)."
+              echo "Update $scaffold, or — if the change touches no scaffold-relevant fact — add the label 'scaffold-sync-exempt' to this PR."
+              exit 1
+            fi
+          fi
