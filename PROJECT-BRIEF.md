@@ -839,25 +839,6 @@ Sections:
 8. **Failure modes** — Bitrix24 down, GitHub API down, exhausted rate limit, expired webhook
 9. **Open questions** — list of things explicitly deferred
 
-### `docs/ADDING-TOOLS.md` — outline
-
-Step-by-step recipe for adding a new MCP tool. Mirrors `skills/.../adding-tools.md` but is verbose.
-
-Sections:
-
-1. **Before you start** — pick a group (`tasks` / `deals` / `contacts` / `users` / `meta`), choose a name (`bitrix24_<verb>_<entity>`), find the REST method in https://apidocs.bitrix24.com/
-2. **Create the file** — `server/mcp/tools/<group>/<kebab-name>.ts`
-3. **Skeleton** — full code template with `defineMcpTool`, Zod schema, handler
-4. **Naming conventions** — verbs, plurality, meta-tool prefix
-5. **Zod schemas** — every field gets `.describe()`, narrow types, use enums where possible
-6. **Calling Bitrix24** — `useBitrix24()`, then `b24.actions.v3.call.make<T>({ method, params })` for v3 (`tasks.task.*`, `crm.*`) and `b24.actions.v2.call.make<T>({ method, params })` for v2 (`user.*`, `task.commentitem.*`). Use `b24.actions.v3.batch.make` for bulk operations (`isHaltOnError: false, returnAjaxResult: true`). Always check `response.isSuccess` and read via `response.getData()?.result`. The deprecated `b24.callMethod` is forbidden (removed in SDK 2.0). One-line `// REST: …` comment linking to apidocs above the call.
-7. **Error handling** — let SDK errors bubble; rely on `server/utils/errors.ts` to map them
-8. **Unit test** — template for `tests/unit/tools/<name>.test.ts`, what to mock
-9. **Eval case** — when to add an entry in `tests/evals/tool-selection.eval.ts`
-10. **Smoke test** — manual call via Inspector, manual call via Claude
-11. **Commit and PR** — `feat(tools): add <name>`, checklist
-12. **Examples** — two annotated diffs of real tools
-
 ### `docs/DEPLOYMENT.md` — outline
 
 For the person shipping a release.
