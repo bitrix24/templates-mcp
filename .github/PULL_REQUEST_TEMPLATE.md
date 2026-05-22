@@ -25,7 +25,7 @@
 - [ ] `pnpm typecheck` passes
 - [ ] `pnpm test` passes
 - [ ] New or changed code has tests
-- [ ] Public-facing changes reflected in `docs/` and `skills/`
+- [ ] Public-facing changes reflected in `docs/` and `skills/` (if you change the tool-authoring conventions or checklist — not just add a tool — keep the human guide `docs/ADDING-TOOLS.md` and the agent skill `skills/manage-bx24-template-mcp/adding-tools.md` in sync)
 - [ ] No unrelated changes
 - [ ] No secrets in code, tests, or CI logs
 

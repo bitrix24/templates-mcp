@@ -8,11 +8,12 @@ Practical template for an AI agent (or human) adding a Bitrix24 MCP tool to this
 server/mcp/tools/
 ├── tasks/    – everything touching the tasks module (tasks.task.*, task.*)
 ├── users/    – user lookup / identity (user.current, user.search)
+├── deals/    – CRM deals (crm.deal.*)
 └── meta/     – MCP meta-tools (e.g. bx24mcp_submit_feedback)
 ```
 
-The template ships only these three groups. If you're adding a tool for a different
-domain (CRM deals, contacts, products, calendars, …), create the directory yourself
+The template ships these four groups. If you're adding a tool for a different
+domain (CRM contacts, products, calendars, …), create the directory yourself
 under `server/mcp/tools/` — that's the canonical "fork and extend" path this
 starter template is designed around.
 

@@ -8,7 +8,7 @@ Start here if you are about to change code.
 
 1. [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — commits, PR rules, CI gates.
 2. [`ARCHITECTURE.md`](./ARCHITECTURE.md) — 15-minute orientation: layers, decisions, hot spots.
-3. [`../skills/manage-bx24-template-mcp/adding-tools.md`](../skills/manage-bx24-template-mcp/adding-tools.md) — how to add a new MCP tool (modern template: `callV3` / `callV2` / `batchV3` helpers, error funnel, unit-test skeleton, persona walk).
+3. [`ADDING-TOOLS.md`](./ADDING-TOOLS.md) — human walkthrough for adding a new MCP tool: mental model, where files go, the two registrations, anatomy of a real tool. Links to the agent skill for the full template (`callV2` / `callV3` / `batchV2` / `batchV3` helpers, error funnel, unit-test skeleton, persona walk).
 4. [`EVALS.md`](./EVALS.md) — automated tool-selection eval (Evalite + DeepSeek); how to run, how to add cases.
 5. [`../PROJECT-BRIEF.md`](../PROJECT-BRIEF.md) — system design and roadmap, source of truth for everything that hasn't earned its own doc yet.
 
