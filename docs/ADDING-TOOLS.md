@@ -1,0 +1,179 @@
+# Adding a tool
+
+A human-facing walkthrough for forking this template and adding your own Bitrix24
+MCP tool. It covers the mental model, where files go, the two registrations you
+must not forget, and an end-to-end look at a real tool.
+
+This is the orientation. The exhaustive, copy-paste reference — the v2/v3 transport
+rules, the single-or-batch action factory, the delete-confirmation registry, the
+persona walk — lives in the agent skill
+[`../skills/manage-bx24-template-mcp/adding-tools.md`](../skills/manage-bx24-template-mcp/adding-tools.md).
+That doc is written for an AI agent driving the change; this one is for the person
+deciding to make it. Read this first, then reach for the skill when you write code.
+
+## What a "tool" is here
+
+An MCP tool is a single TypeScript file that exports one `defineMcpTool({...})`
+object. It declares a `name`, a `description` the LLM reads to decide when to call
+it, a Zod `inputSchema`, and a `handler` that talks to Bitrix24 and returns a text
+payload. The MCP server exposes it over the `/mcp` route; an MCP client (Claude
+Desktop, the web client, the DXT stdio bundle) calls it.
+
+The request path for one call:
+
+```
+MCP client ── /mcp ──▶ defineMcpTool handler
+                          │  useBitrix24()        → the configured webhook client
+                          │  callV2 / callV3 ...  → typed SDK boundary (sdk-helpers.ts)
+                          ▼
+                       Bitrix24 REST  →  compact JSON back to the agent
+```
+
+## Where the file goes
+
+```
+server/mcp/tools/
+├── tasks/   – the tasks module (tasks.task.*, task.*)
+├── users/   – user lookup / identity (user.current, user.search)
+├── deals/   – CRM deals (crm.deal.*)
+└── meta/    – MCP meta-tools that don't call Bitrix24 (e.g. bx24mcp_submit_feedback)
+```
+
+One tool per file, named `kebab-case.ts`. Adding a tool for a domain that doesn't
+have a folder yet (contacts, products, calendars, …)? Create the directory under
+`server/mcp/tools/` — extending into new Bitrix24 modules is exactly what this
+template is built for.
+
+## The two registrations (don't skip the second one)
+
+A tool has to be registered **twice**, because the project ships two transports:
+
+1. **HTTP server** — auto-discovery. Dropping the file under `server/mcp/tools/**`
+   is enough; it's picked up automatically.
+2. **DXT / stdio bundle** — a hand-maintained registry. You must add an `import`
+   and an array entry in
+   [`../mcp-stdio/tools.ts`](../mcp-stdio/tools.ts).
+
+The two are cross-checked by `tests/unit/mcp-stdio/tools.parity.test.ts` — **CI
+fails if they drift.** This is the single most common thing a first-time
+contributor forgets, so it's the first thing to remember.
+
+## Naming
+
+- **Bitrix24 tools**: `bitrix24_<verb>_<entity>` — e.g. `bitrix24_complete_task`.
+- **Meta tools**: `bx24mcp_<verb>` — e.g. `bx24mcp_submit_feedback`. These never
+  touch Bitrix24.
+
+## Anatomy of a real tool
+
+The simplest shipped tool is
+[`server/mcp/tools/users/current-user.ts`](../server/mcp/tools/users/current-user.ts).
+Read it top to bottom — every tool in the repo is a variation on it:
+
+```ts
+import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
+import { useBitrix24 } from '~/server/utils/bitrix24'
+import { callV2 } from '~/server/utils/sdk-helpers'
+
+export default defineMcpTool({
+  name: 'bitrix24_current_user',
+  description:
+    'Get the Bitrix24 user that owns the configured incoming webhook. Use this as a '
+    + 'connectivity check or when you need the operator id/name before subsequent calls.',
+  inputSchema: {},                       // Zod raw shape; every field gets a .describe()
+  handler: async () => {
+    const b24 = useBitrix24()            // the webhook-backed client
+    const user = await callV2<CurrentUserResponse>(
+      b24,
+      'user.current',
+      {},
+      'Failed to fetch current Bitrix24 user',   // error context if the call fails
+    )
+    // ... shape a compact JSON response (no pretty-print — newlines cost tokens)
+  },
+})
+```
+
+Four things the example bakes in, and why they matter for a human writing the next one:
+
+- **`useBitrix24()`** hands you the client wired to the configured webhook. You
+  never construct credentials yourself.
+- **`callV2` / `callV3`** (from `server/utils/sdk-helpers.ts`) are the *only*
+  sanctioned way to reach the SDK. They collapse the
+  `await → isSuccess → getErrorMessages → getData` dance into one call and throw a
+  typed `Bitrix24ToolError` on every failure path — which is why the handler has no
+  `try`/`catch`. Never call `b24.actions.*.make` directly, and never use the
+  deprecated `b24.callMethod`.
+- **Compact JSON.** Use `JSON.stringify(payload)`, not `JSON.stringify(payload, null, 2)`
+  — every space and newline is tokens out of the agent's budget.
+- **Every Zod field gets `.describe()`** — that text is what the LLM reads to fill
+  the argument correctly.
+
+## v2 vs v3 — the one rule that bites
+
+Bitrix24 has two REST surfaces and they are **not** interchangeable. The classic
+API (UPPERCASE fields) goes through `callV2`/`batchV2`; rest-v3 (camelCase DTOs)
+through `callV3`/`batchV3`. Calling a classic method on v3 fails with
+`UNKNOWNDTOPROPERTYEXCEPTION`.
+
+**Default to v2.** Bitrix24's v3 migration is slow, so most methods (`tasks.task.{add,list,update,…}`,
+`crm.*`, `user.*`, `task.*`) are v2. Use v3 *only* for methods that are v3-only with
+no working v2 form (currently `tasks.task.get` and `tasks.task.result.*`). When in
+doubt: a `/rest/api/` URL with camelCase fields means v3. The authoritative
+convention block is at the top of
+[`server/utils/sdk-helpers.ts`](../server/utils/sdk-helpers.ts).
+
+## Bigger shapes
+
+You won't need these for a first read tool, but know they exist:
+
+- **Acting on 10–50 ids at once** → use `batchV2` / `batchV3` (one round-trip, up to
+  50 sub-calls), never a loop of single calls.
+- **A family of tools sharing the same wire signature** (e.g. the seven task
+  lifecycle verbs) → build on the `defineActionTool` factory in
+  `server/utils/define-action-tool.ts` instead of re-implementing dispatch.
+- **A `delete_` / `remove_` tool** → it MUST gate on `confirmDelete: true`
+  (Ground Rule #9), and stack a second confirm flag if the delete cascades
+  (Rule #10). Use the shared `confirmDeleteSchema()` / `assertConfirmedDelete()`
+  helpers — don't hand-roll the refusal.
+
+All three are documented in full, with reference implementations, in the
+[agent skill](../skills/manage-bx24-template-mcp/adding-tools.md).
+
+## Errors and logging
+
+- Funnel every error through `toToolError(err, fallback)` from
+  `~/server/utils/errors`. For project-defined codes (refusal gates, batch-cap),
+  throw `Bitrix24ToolError` with a `Bitrix24ErrorCode.*` constant — not a raw string.
+- Don't `import console`. Use `useLogger()` from `~/server/utils/logger`.
+
+## Tests and evals
+
+Both are required by CI:
+
+- **Unit test** co-located at `tests/unit/tools/<group>/<name>.test.ts`, mocking the
+  SDK via `makeFakeBitrix24`. Assert the call routed through the right transport and
+  the response shape is correct.
+- **Eval case** in `tests/evals/tool-selection.eval.ts` so the tool-selection eval
+  confirms natural-language prompts route to your tool — add a disambiguation case
+  if it could be confused with an existing tool. See
+  [`EVALS.md`](./EVALS.md).
+
+The skill has copy-paste skeletons for both.
+
+## Before you open the PR
+
+- [ ] One file under `server/mcp/tools/<group>/<kebab>.ts`.
+- [ ] **Registered in `mcp-stdio/tools.ts` too** (import + array entry) — parity test.
+- [ ] Correct transport (`callV2` default, `callV3` only for v3-only methods); no
+      direct `actions.*.make`, no `callMethod`.
+- [ ] Every Zod field has `.describe()`; compact JSON response.
+- [ ] Unit test + eval case added.
+- [ ] `pnpm lint && pnpm typecheck && pnpm test` all green.
+- [ ] PR title in Conventional Commits form: `feat(tools): add bitrix24_<name>`
+      (the `Commit messages` CI job runs commitlint on the title and every commit).
+
+The skill's checklist is the authoritative superset — including the persona walk
+you should run over your tool's description before opening the PR. See
+[`../CONTRIBUTING.md`](../CONTRIBUTING.md) for the commit/PR rules and CI gates, and
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) for how the tool layer fits the rest of the system.
