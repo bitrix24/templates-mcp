@@ -50,15 +50,18 @@ const LEVEL_BY_NAME: Record<string, LogLevel> = {
 }
 
 /**
- * Resolves the console log level. Read from `process.env.NUXT_LOG_LEVEL`
- * directly (not via `useRuntimeConfig()`) so the level is available even when
- * the singleton materialises before the Nitro app context — the same reason
- * `audit-log.ts` reads its env directly. An explicit, recognised value always
- * wins; otherwise we keep the historical default (`DEBUG` in development,
- * `INFO` elsewhere).
+ * Resolves the console log level. Read from the environment directly (not via
+ * `useRuntimeConfig()`) so the level is available even when the singleton
+ * materialises before the Nitro app context — the same reason `audit-log.ts`
+ * reads its env directly. The env chain mirrors the stdio shim
+ * (`mcp-stdio/nuxt-shims.ts`): `NUXT_LOG_LEVEL` is canonical (the DXT manifest
+ * injects it from `user_config.log_level`), `LOG_LEVEL` is the un-prefixed
+ * back-compat fallback for older bundles / the README dry-run. An explicit,
+ * recognised value always wins; otherwise we keep the historical default
+ * (`DEBUG` in development, `INFO` elsewhere).
  */
 function resolveLevel(): LogLevel {
-  const configured = (process.env.NUXT_LOG_LEVEL ?? '').trim().toUpperCase()
+  const configured = (process.env.NUXT_LOG_LEVEL ?? process.env.LOG_LEVEL ?? '').trim().toUpperCase()
   if (configured && configured in LEVEL_BY_NAME) return LEVEL_BY_NAME[configured]!
   return process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO
 }

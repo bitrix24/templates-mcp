@@ -39,6 +39,7 @@ describe('useLogger level resolution', () => {
     handlerLevels.length = 0
     pushHandler.mockReset()
     delete process.env.NUXT_LOG_LEVEL
+    delete process.env.LOG_LEVEL
     delete process.env.NODE_ENV
   })
 
@@ -73,6 +74,22 @@ describe('useLogger level resolution', () => {
     const { useLogger } = await loadFresh()
     useLogger()
     expect(handlerLevels).toEqual([1])
+  })
+
+  it('honours the un-prefixed LOG_LEVEL fallback (stdio/DXT back-compat)', async () => {
+    process.env.LOG_LEVEL = 'debug'
+    process.env.NODE_ENV = 'production'
+    const { useLogger } = await loadFresh()
+    useLogger()
+    expect(handlerLevels).toEqual([0]) // DEBUG from LOG_LEVEL, overriding the prod INFO default
+  })
+
+  it('prefers NUXT_LOG_LEVEL over LOG_LEVEL when both are set', async () => {
+    process.env.NUXT_LOG_LEVEL = 'error'
+    process.env.LOG_LEVEL = 'debug'
+    const { useLogger } = await loadFresh()
+    useLogger()
+    expect(handlerLevels).toEqual([4]) // ERROR (NUXT_ wins)
   })
 
   it('falls back to the NODE_ENV default on an unrecognised level', async () => {
