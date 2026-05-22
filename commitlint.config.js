@@ -28,6 +28,10 @@ export default {
         'test',
         // app/* — Nuxt frontend (landing page, future client UI).
         'app',
+        // mcp-stdio/* — DXT bundle (Claude-Desktop-installable stdio
+        // transport built alongside the HTTP server). First-class
+        // packaging shape; see docs/ARCHITECTURE.md.
+        'dxt',
         // server/utils/* — shared helpers (sdk-helpers, wire-coerce,
         // v3-filter, define-action-tool, task-lifecycle, checklist, …)
         // get their own scope. Submodule-level scopes (sdk-helpers etc.)

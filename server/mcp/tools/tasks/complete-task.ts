@@ -3,7 +3,7 @@ import { defineTaskLifecycleTool } from '~/server/utils/task-lifecycle'
 /**
  * Mark a Bitrix24 task as completed.
  *
- * Bitrix24 REST: tasks.task.complete (v3)
+ * Bitrix24 REST: tasks.task.complete (classic / v2 transport)
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-complete.html
  *
  * If the task has `taskControl: Y` (creator review enabled), the resulting

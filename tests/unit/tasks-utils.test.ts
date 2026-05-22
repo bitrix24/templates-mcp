@@ -186,4 +186,21 @@ describe('normalizeBitrix24Filter / Order / Select', () => {
   it('deduplicates select array entries after normalisation', () => {
     expect(normalizeBitrix24Select(['id', 'ID', 'title', 'Title'])).toEqual(['ID', 'TITLE'])
   })
+
+  it('drops prototype-pollution-shaped keys (verbatim and operator-prefixed)', () => {
+    // JSON.parse makes __proto__ an own enumerable key (an object literal would
+    // not), reproducing how an LLM-routed payload reaches the normaliser.
+    expect(normalizeBitrix24Filter(JSON.parse('{"__proto__":1,"%TITLE":"x"}'))).toEqual({
+      '%TITLE': 'x',
+    })
+    expect(normalizeBitrix24Filter(JSON.parse('{"!__proto__":1,"STATUS":3}'))).toEqual({
+      STATUS: 3,
+    })
+    expect(normalizeBitrix24Order(JSON.parse('{"__proto__":"asc","DEADLINE":"desc"}'))).toEqual({
+      DEADLINE: 'desc',
+    })
+    expect(normalizeBitrix24Select(['__proto__', 'constructor', 'prototype', 'title'])).toEqual([
+      'TITLE',
+    ])
+  })
 })

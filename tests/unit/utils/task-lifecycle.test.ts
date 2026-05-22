@@ -44,8 +44,8 @@ function errRow(message: string) {
 
 describe('defineTaskLifecycleTool', () => {
   beforeEach(() => {
-    fake.v3Call.mockReset()
-    fake.v3Batch.mockReset()
+    fake.v2Call.mockReset()
+    fake.v2Batch.mockReset()
   })
 
   it('rejects non-positive, non-integer, and string taskIds at the schema layer', () => {
@@ -84,7 +84,7 @@ describe('defineTaskLifecycleTool', () => {
     expect(schema.safeParse({ taskId: [1, 2], force: true }).success).toBe(true)
   })
 
-  it('batch mode: dispatches one actions.v3.batch.make and shapes per-id results', async () => {
+  it('batch mode: dispatches one actions.v2.batch.make and shapes per-id results', async () => {
     const tool = defineTaskLifecycleTool({
       name: 'bitrix24_pause_task',
       method: 'tasks.task.pause',
@@ -94,7 +94,7 @@ describe('defineTaskLifecycleTool', () => {
       taskIdHint: 'irrelevant',
     }) as unknown as ToolDef
 
-    fake.v3Batch.mockResolvedValue({
+    fake.v2Batch.mockResolvedValue({
       isSuccess: true,
       getData: () => [
         okRow({ id: 1, title: 'a', status: '2' }),
@@ -114,7 +114,7 @@ describe('defineTaskLifecycleTool', () => {
       results: { taskId: number; ok: boolean; status?: string | null; error?: string }[]
     }
 
-    expect(fake.v3Batch).toHaveBeenCalledWith({
+    expect(fake.v2Batch).toHaveBeenCalledWith({
       calls: [
         ['tasks.task.pause', { taskId: 1 }],
         ['tasks.task.pause', { taskId: 2 }],
@@ -122,6 +122,8 @@ describe('defineTaskLifecycleTool', () => {
       ],
       options: { isHaltOnError: false, returnAjaxResult: true },
     })
+    // Regression guard: classic tasks.task.* must NOT go through the v3 transport.
+    expect(fake.v3Batch).not.toHaveBeenCalled()
     expect(payload.batch).toBe(true)
     expect(payload.verb).toBe('paused')
     expect(payload.total).toBe(3)
@@ -145,7 +147,7 @@ describe('defineTaskLifecycleTool', () => {
       taskIdHint: 'irrelevant',
     }) as unknown as ToolDef
 
-    fake.v3Batch.mockResolvedValue({
+    fake.v2Batch.mockResolvedValue({
       isSuccess: true,
       getData: () => [
         okRow({ id: 10, title: 't10', status: '5' }),
@@ -177,9 +179,9 @@ describe('defineTaskLifecycleTool', () => {
       name: 'Bitrix24ToolError',
       code: Bitrix24ErrorCode.BATCH_TOO_LARGE,
     })
-    expect(fake.v3Batch).not.toHaveBeenCalled()
+    expect(fake.v2Batch).not.toHaveBeenCalled()
 
-    fake.v3Batch.mockResolvedValue({
+    fake.v2Batch.mockResolvedValue({
       isSuccess: true,
       getData: () => ids.map(() => okRow({ id: 1, title: 't', status: '3' })),
       getErrorMessages: () => [],
@@ -190,7 +192,7 @@ describe('defineTaskLifecycleTool', () => {
     expect(payload.ok).toBe(26)
   })
 
-  it('passes the configured REST method to actions.v3.call.make and shapes the payload uniformly across the seven verbs', async () => {
+  it('passes the configured REST method to actions.v2.call.make and shapes the payload uniformly across the seven verbs', async () => {
     const tool = defineTaskLifecycleTool({
       name: 'bitrix24_defer_task',
       method: 'tasks.task.defer',
@@ -200,10 +202,12 @@ describe('defineTaskLifecycleTool', () => {
       taskIdHint: 'irrelevant',
     }) as unknown as ToolDef
 
-    fake.v3Call.mockResolvedValue(fakeOk({ task: { id: 1, title: 't', status: '6', responsibleId: '5' } }))
+    fake.v2Call.mockResolvedValue(fakeOk({ task: { id: 1, title: 't', status: '6', responsibleId: '5' } }))
 
     const payload = JSON.parse((await tool.handler({ taskId: 1 })).content[0]!.text)
-    expect(fake.v3Call).toHaveBeenCalledWith({ method: 'tasks.task.defer', params: { taskId: 1 } })
+    expect(fake.v2Call).toHaveBeenCalledWith({ method: 'tasks.task.defer', params: { taskId: 1 } })
+    // Regression guard: classic tasks.task.* must NOT go through the v3 transport.
+    expect(fake.v3Call).not.toHaveBeenCalled()
     expect(payload).toEqual({ deferred: true, id: 1, title: 't', status: '6', responsibleId: '5' })
   })
 
@@ -217,7 +221,7 @@ describe('defineTaskLifecycleTool', () => {
       taskIdHint: 'irrelevant',
     }) as unknown as ToolDef
 
-    fake.v3Call.mockRejectedValue(new Error(''))
+    fake.v2Call.mockRejectedValue(new Error(''))
     await expect(tool.handler({ taskId: 7 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'Failed to disapprove Bitrix24 task 7',

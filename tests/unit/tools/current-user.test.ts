@@ -26,6 +26,9 @@ describe('bitrix24_current_user', () => {
         ID: 1,
         NAME: 'Ada',
         LAST_NAME: 'Lovelace',
+        // Fields the user.current REST surface does not reliably return
+        // (EMAIL is scope-gated, ADMIN/SERVER_NAME are absent) — assert the
+        // tool drops them rather than emitting misleading null/false values.
         EMAIL: 'SomeUser@example.com',
         ADMIN: true,
         SERVER_NAME: 'for-test.bitrix24.com',
@@ -42,9 +45,6 @@ describe('bitrix24_current_user', () => {
       id: 1,
       name: 'Ada',
       lastName: 'Lovelace',
-      email: 'SomeUser@example.com',
-      isAdmin: true,
-      portal: 'for-test.bitrix24.com',
     })
   })
 

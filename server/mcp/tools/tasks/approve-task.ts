@@ -4,7 +4,7 @@ import { defineTaskLifecycleTool } from '~/server/utils/task-lifecycle'
  * Approve a "Supposedly completed" Bitrix24 task — only meaningful when task
  * control is enabled on the task.
  *
- * Bitrix24 REST: tasks.task.approve (v3)
+ * Bitrix24 REST: tasks.task.approve (classic / v2 transport)
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-approve.html
  */
 export default defineTaskLifecycleTool({

@@ -1,0 +1,70 @@
+{
+  "dxt_version": "0.1",
+  "name": "bx24-template-mcp",
+  "display_name": "Bitrix24 (b24-mcp)",
+  "version": "0.1.0",
+  "description": "Bitrix24 MCP server — tasks, checklists, elapsed time, dependencies, and feedback. Local stdio bundle. / Bitrix24 MCP-сервер — задачи, чек-листы, учёт времени, зависимости, обратная связь. Локальный stdio-бандл. / Servidor MCP do Bitrix24 — tarefas, checklists, apontamento de tempo, dependências e feedback. Pacote stdio local.",
+  "long_description": "Gives AI assistants direct access to a Bitrix24 portal via an incoming webhook. Tasks (CRUD + 8 lifecycle actions + rating), checklist items, task results, elapsed time, dependencies, user search, plus a meta-tool to file structured feedback as a GitHub issue. Runs entirely on your machine — no server to operate, no public URL, no Bearer token. The webhook secret stays in Claude Desktop's encrypted user_config storage and never leaves the device.\n\nWorks with Bitrix24 Cloud (any TLD — .com / .ru / .com.br / .es / .de / …) and Bitrix24 Self-Hosted (on-premise). For self-hosted portals on a private CA, set NODE_EXTRA_CA_CERTS in your shell before launching Claude Desktop.\n\nLocalised install guides:\n• Русский: mcp-stdio/INSTALL.ru.md\n• Português (BR): mcp-stdio/INSTALL.pt-BR.md\n\nFull tool list and project status: https://github.com/bitrix24/templates-mcp",
+  "author": {
+    "name": "Bitrix24",
+    "url": "https://github.com/bitrix24/templates-mcp"
+  },
+  "homepage": "https://github.com/bitrix24/templates-mcp",
+  "documentation": "https://github.com/bitrix24/templates-mcp#readme",
+  "support": "https://github.com/bitrix24/templates-mcp/issues",
+  "license": "MIT",
+  "keywords": ["bitrix24", "tasks", "crm", "productivity", "mcp"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.mjs"],
+      "env": {
+        "NUXT_BITRIX24_WEBHOOK_URL": "${user_config.webhook_url}",
+        "NUXT_GITHUB_FEEDBACK_TOKEN": "${user_config.github_feedback_token}",
+        "NUXT_GITHUB_FEEDBACK_REPO": "${user_config.github_feedback_repo}",
+        "NUXT_LOG_LEVEL": "${user_config.log_level}",
+        "NODE_ENV": "production"
+      }
+    }
+  },
+  "user_config": {
+    "webhook_url": {
+      "type": "string",
+      "title": "Bitrix24 webhook URL · URL вебхука Bitrix24 · URL do webhook Bitrix24",
+      "description": "EN: Full incoming-webhook URL. Bitrix24 Cloud: https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/ (any TLD — .com / .ru / .com.br / .es / .de / …). Bitrix24 Self-Hosted: any internal domain, same URL shape. Create one under Developer resources → Other → Inbound webhook. The secret stays on your device.\n\nRU: Полный URL входящего вебхука. Bitrix24 Cloud: https://<портал>.bitrix24.<tld>/rest/<user_id>/<secret>/ (любая зона — .ru / .com / .by / …). Self-Hosted: любой внутренний домен с такой же структурой. Создаётся в портале: «Разработчикам → Другое → Входящий вебхук». Секрет хранится у вас на устройстве.\n\nPT-BR: URL completa do webhook de entrada. Bitrix24 Cloud: https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/ (qualquer TLD — .com.br / .com / .es / …). Self-Hosted: qualquer domínio interno com a mesma estrutura. Crie em «Recursos para desenvolvedores → Outros → Webhook de entrada». O segredo fica no seu dispositivo.",
+      "sensitive": true,
+      "required": true
+    },
+    "github_feedback_token": {
+      "type": "string",
+      "title": "GitHub feedback token (optional) · Токен GitHub для обратной связи · Token de feedback no GitHub",
+      "description": "EN: Fine-grained PAT with Issues: read/write on bitrix24/templates-mcp. Enables bx24mcp_submit_feedback so the assistant can file structured issues when something is unclear. Leave empty to disable.\n\nRU: Fine-grained PAT с правом Issues: read/write на bitrix24/templates-mcp. Включает инструмент bx24mcp_submit_feedback — ассистент сможет создавать структурированные issue при неясностях. Оставьте пустым, чтобы отключить.\n\nPT-BR: Fine-grained PAT com Issues: read/write em bitrix24/templates-mcp. Habilita o bx24mcp_submit_feedback para o assistente abrir issues estruturadas quando algo não estiver claro. Deixe em branco para desativar.",
+      "sensitive": true,
+      "required": false,
+      "default": ""
+    },
+    "github_feedback_repo": {
+      "type": "string",
+      "title": "Feedback repository · Репозиторий для feedback · Repositório de feedback",
+      "description": "EN/RU/PT-BR: owner/repo for the feedback tool. Defaults to the upstream project.",
+      "required": false,
+      "default": "bitrix24/templates-mcp"
+    },
+    "log_level": {
+      "type": "string",
+      "title": "Log level · Уровень логирования · Nível de log",
+      "description": "Accepted values: error · warn · info · debug (default: info). Logs go to stderr (Claude Desktop's extension log panel), never stdout. RU: Допустимо error · warn · info · debug (по умолчанию info); логи в stderr. PT-BR: Valores: error · warn · info · debug (padrão info); logs em stderr.",
+      "required": false,
+      "default": "info"
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=22.0.0"
+    }
+  }
+}

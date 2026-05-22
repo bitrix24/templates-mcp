@@ -66,15 +66,15 @@ const sampleDeals = [
 
 describe('bitrix24_find_deal', () => {
   beforeEach(() => {
-    fake.v3Call.mockReset()
+    fake.v2Call.mockReset()
   })
 
   it('maps a free-text query to the %TITLE filter prefix (LIKE) and defaults order to ID DESC', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk(sampleDeals))
+    fake.v2Call.mockResolvedValue(fakeOk(sampleDeals))
 
     const result = await tool.handler({ query: 'Сделка' })
 
-    expect(fake.v3Call).toHaveBeenCalledWith(
+    expect(fake.v2Call).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'crm.deal.list',
         params: expect.objectContaining({
@@ -90,6 +90,9 @@ describe('bitrix24_find_deal', () => {
         }),
       }),
     )
+
+    // Regression guard: classic crm.deal.list must NOT go through the v3 transport.
+    expect(fake.v3Call).not.toHaveBeenCalled()
 
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.matches).toBe(2)
@@ -112,7 +115,7 @@ describe('bitrix24_find_deal', () => {
   })
 
   it('maps structured filters straight to UPPER_SNAKE keys', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk([]))
+    fake.v2Call.mockResolvedValue(fakeOk([]))
 
     await tool.handler({
       contactId: 12,
@@ -123,7 +126,7 @@ describe('bitrix24_find_deal', () => {
       closedOnly: false,
     })
 
-    expect(fake.v3Call).toHaveBeenCalledWith(
+    expect(fake.v2Call).toHaveBeenCalledWith(
       expect.objectContaining({
         params: expect.objectContaining({
           filter: {
@@ -142,31 +145,31 @@ describe('bitrix24_find_deal', () => {
   })
 
   it('accepts companyId as the sole filter', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk([]))
+    fake.v2Call.mockResolvedValue(fakeOk([]))
     await tool.handler({ companyId: 7 })
-    expect(fake.v3Call).toHaveBeenCalledTimes(1)
-    const callArg = fake.v3Call.mock.calls[0]?.[0]
+    expect(fake.v2Call).toHaveBeenCalledTimes(1)
+    const callArg = fake.v2Call.mock.calls[0]?.[0]
     expect(callArg?.params?.filter).toEqual({ COMPANY_ID: 7 })
   })
 
   it('encodes closedOnly: true as CLOSED=Y', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk([]))
+    fake.v2Call.mockResolvedValue(fakeOk([]))
     await tool.handler({ closedOnly: true, query: 'x' })
-    const callArg = fake.v3Call.mock.calls[0]?.[0]
+    const callArg = fake.v2Call.mock.calls[0]?.[0]
     expect(callArg?.params?.filter).toMatchObject({ CLOSED: 'Y' })
   })
 
   it('combines a free-text query with structured filters (does not reject the mix)', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk([]))
+    fake.v2Call.mockResolvedValue(fakeOk([]))
     await tool.handler({ query: 'Сделка', closedOnly: true })
-    const callArg = fake.v3Call.mock.calls[0]?.[0]
+    const callArg = fake.v2Call.mock.calls[0]?.[0]
     expect(callArg?.params?.filter).toEqual({ '%TITLE': 'Сделка', CLOSED: 'Y' })
   })
 
   it('passes a custom order through to crm.deal.list (e.g. stale-first by DATE_MODIFY)', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk([]))
+    fake.v2Call.mockResolvedValue(fakeOk([]))
     await tool.handler({ closedOnly: false, order: { DATE_MODIFY: 'ASC' } })
-    expect(fake.v3Call).toHaveBeenCalledWith(
+    expect(fake.v2Call).toHaveBeenCalledWith(
       expect.objectContaining({
         params: expect.objectContaining({
           filter: { CLOSED: 'N' },
@@ -177,9 +180,9 @@ describe('bitrix24_find_deal', () => {
   })
 
   it('falls back to the default order when an empty order object is passed', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk([]))
+    fake.v2Call.mockResolvedValue(fakeOk([]))
     await tool.handler({ query: 'x', order: {} })
-    const callArg = fake.v3Call.mock.calls[0]?.[0]
+    const callArg = fake.v2Call.mock.calls[0]?.[0]
     // `{}` is truthy, so a naive `order ?? default` would forward it — the
     // handler must explicitly fall back to { ID: 'DESC' }.
     expect(callArg?.params?.order).toEqual({ ID: 'DESC' })
@@ -187,7 +190,7 @@ describe('bitrix24_find_deal', () => {
 
   it('returns a guidance message and does not call Bitrix24 when no filter is supplied', async () => {
     const result = await tool.handler({})
-    expect(fake.v3Call).not.toHaveBeenCalled()
+    expect(fake.v2Call).not.toHaveBeenCalled()
     expect(result.content[0]!.text).toMatch(/Provide at least one filter/i)
   })
 
@@ -204,7 +207,7 @@ describe('bitrix24_find_deal', () => {
     }))
 
   it('caps the result count to `limit` and reports truncation via pageSize / truncatedAt', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk(makeDeals(15)))
+    fake.v2Call.mockResolvedValue(fakeOk(makeDeals(15)))
 
     const result = await tool.handler({ query: 'Deal', limit: 5 })
     const payload = JSON.parse(result.content[0]!.text)
@@ -214,7 +217,7 @@ describe('bitrix24_find_deal', () => {
   })
 
   it('honours limit: 1 (the Zod minimum)', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk(makeDeals(15)))
+    fake.v2Call.mockResolvedValue(fakeOk(makeDeals(15)))
     const result = await tool.handler({ query: 'Deal', limit: 1 })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.matches).toBe(1)
@@ -222,7 +225,7 @@ describe('bitrix24_find_deal', () => {
   })
 
   it('flags mayHaveMore when Bitrix24 returns a full page of 50', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk(makeDeals(50)))
+    fake.v2Call.mockResolvedValue(fakeOk(makeDeals(50)))
     const result = await tool.handler({ query: 'Deal', limit: 50 })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.matches).toBe(50)
@@ -233,7 +236,7 @@ describe('bitrix24_find_deal', () => {
   })
 
   it('omits `truncatedAt` and clears mayHaveMore when the page is not full', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk([sampleDeals[0]]))
+    fake.v2Call.mockResolvedValue(fakeOk([sampleDeals[0]]))
     const result = await tool.handler({ query: 'Сделка', limit: 10 })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.matches).toBe(1)
@@ -244,7 +247,7 @@ describe('bitrix24_find_deal', () => {
   it('handles a success envelope with no payload (Bitrix24 returns undefined result)', async () => {
     // callV3 returns `getData()?.result`, which is undefined here; the handler's
     // `?? []` must keep .slice / .map from throwing.
-    fake.v3Call.mockResolvedValue(fakeOkEmpty())
+    fake.v2Call.mockResolvedValue(fakeOkEmpty())
     const result = await tool.handler({ query: 'Сделка' })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload.matches).toBe(0)
@@ -252,7 +255,7 @@ describe('bitrix24_find_deal', () => {
   })
 
   it('returns null id / null opportunity when Bitrix24 emits non-numeric values', async () => {
-    fake.v3Call.mockResolvedValue(
+    fake.v2Call.mockResolvedValue(
       fakeOk([
         {
           ID: 'not-a-number',
@@ -272,7 +275,7 @@ describe('bitrix24_find_deal', () => {
   })
 
   it('wraps SDK errors into Bitrix24ToolError', async () => {
-    fake.v3Call.mockRejectedValue(
+    fake.v2Call.mockRejectedValue(
       Object.assign(new Error('ACCESS_DENIED'), { code: 'ACCESS_DENIED' }),
     )
     await expect(tool.handler({ query: 'x' })).rejects.toMatchObject({

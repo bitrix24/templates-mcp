@@ -3,14 +3,16 @@ import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import { Bitrix24ErrorCode, Bitrix24ToolError } from '~/server/utils/errors'
-import { batchV3, callV3 } from '~/server/utils/sdk-helpers'
+import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 
 /**
  * Set or clear the rating (`MARK` field) on a Bitrix24 task.
  *
- * Bitrix24 REST: tasks.task.update (v3) — there is no dedicated rate method,
- * so the rating is just a field write on `MARK`.
+ * Bitrix24 REST: tasks.task.update (classic / v2 transport) — there is no
+ * dedicated rate method, so the rating is just a field write on `MARK`. This
+ * is the classic `tasks.task.*` API, served on v2 (`callV2`), NOT rest-v3 —
+ * the v3 `TaskDto` rejects the UPPERCASE `MARK` key.
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-update.html
  *
  * Field semantics from `tasks.task.getFields`:
@@ -21,7 +23,7 @@ import { extractTasks } from '~/server/utils/tasks'
  * single-letter codes.
  *
  * Batch mode mirrors the lifecycle factory (#7): pass an array of ids to
- * rate many tasks in one call via the `batchV3` helper from `sdk-helpers.ts`,
+ * rate many tasks in one call via the `batchV2` helper from `sdk-helpers.ts`,
  * which sends the whole batch as one HTTP request rather than N.
  */
 const RATING_TO_MARK = {
@@ -75,7 +77,7 @@ export default defineMcpTool({
 
 async function runOne(taskId: number, rating: Rating, mark: Mark) {
   const b24 = useBitrix24()
-  const result = await callV3<SingleTaskEnvelope>(
+  const result = await callV2<SingleTaskEnvelope>(
     b24,
     'tasks.task.update',
     { taskId, fields: { MARK: mark } },
@@ -119,7 +121,7 @@ async function runBatch(taskIds: number[], rating: Rating, mark: Mark, force: bo
   }
 
   const b24 = useBitrix24()
-  const rows = await batchV3<SingleTaskEnvelope>(
+  const rows = await batchV2<SingleTaskEnvelope>(
     b24,
     taskIds.map((id) => ['tasks.task.update', { taskId: id, fields: { MARK: mark } }]),
     `Failed to rate ${taskIds.length} Bitrix24 task(s)`,
