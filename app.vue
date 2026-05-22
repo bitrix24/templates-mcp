@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { GitHubIcon } from '@bitrix24/b24icons-vue/social'
 import { HeartIcon } from '@bitrix24/b24icons-vue/solid'
+import { EncloseTextInCodeTagIcon } from '@bitrix24/b24icons-vue/editor'
 
 // Kept as a JS string (not inline slot text) so the line breaks survive
 // Vue's template-whitespace collapse and land verbatim in the clipboard /
@@ -33,9 +34,10 @@ useHead({
 
 <template>
   <B24App>
-    <div class="page">
-      <main class="hero">
-        <svg viewBox="0 0 174 33" xmlns="http://www.w3.org/2000/svg" fill="currentColor" class="logo" role="img" aria-label="Bitrix24">
+    <!-- edge-dark: b24ui dark-surface token — keeps b24ui components in their dark variant -->
+    <div class="edge-dark bx-brand-splash min-h-screen flex flex-col font-sans">
+      <main class="flex-1 flex flex-col items-center justify-center py-12 px-6 text-center max-w-[940px] w-full mx-auto">
+        <svg viewBox="0 0 174 33" xmlns="http://www.w3.org/2000/svg" fill="currentColor" class="w-[min(56vw,280px)] h-auto mb-7 text-white" role="img" aria-label="Bitrix24">
           <path d="M 0 27.1L 18.7 27.1L 18.7 23L 6.3 23C 8 16.2 18.4 14.7 18.4 7.1C 18.4 3 15.6 0 9.8 0C 6.1 0 3 1.1 0.8 2.2L 2.1 6C 4.1 5.1 6.3 4.2 9 4.2C 11.2 4.2 13.2 5.1 13.2 7.6C 13.3 13.2 1.1 13.6 0 27.1Z" transform="translate(106.8 5.3)" />
           <path d="M 10.4 20.8C 4.7 20.8 0 16.1 0 10.4C 0 4.7 4.7 0 10.4 0C 16.1 0 20.8 4.7 20.8 10.4C 20.8 16.1 16.1 20.8 10.4 20.8ZM 10.4 1.9C 5.7 1.9 1.9 5.7 1.9 10.4C 1.9 15.1 5.7 18.9 10.4 18.9C 15.1 18.9 18.9 15.1 18.9 10.4C 18.9 5.7 15.1 1.9 10.4 1.9Z" transform="translate(152.5 5.9)" />
           <path d="M 6.6 5.2L 1.4 5.2L 1.4 0L 0 0L 0 6.6L 6.6 6.6L 6.6 5.2Z" transform="translate(162.2 11.1)" />
@@ -48,21 +50,21 @@ useHead({
           <path d="M 16.8 16.6L 16.8 0L 13.3 0L 0 17.3L 0 20.6L 12 20.6L 12 27.2L 16.8 27.2L 16.8 20.6L 20.8 20.6L 20.8 16.6L 16.8 16.6ZM 12 12.7L 12 16.5L 8.8 16.5C 7.8 16.5 6 16.6 5.4 16.6L 12.2 7.4C 12.2 8.2 12 10.6 12 12.7Z" transform="translate(126.1 5.3)" />
         </svg>
 
-        <h1 class="kicker">MCP server template</h1>
-        <p class="strapline">An official starter by the Bitrix24 team</p>
+        <h1 class="m-0 mb-1.5 text-[13px] tracking-[0.22em] uppercase font-semibold opacity-[0.92]">MCP server template</h1>
+        <p class="m-0 mb-[22px] text-[13px] opacity-[0.92]">An official starter by the Bitrix24 team</p>
 
-        <p class="lede">
-          A starter template for building <a class="lede__link" href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a>
+        <p class="m-0 mb-8 text-[17px] leading-[1.6] opacity-[0.96]">
+          A starter template for building <a class="text-inherit no-underline border-b border-white/50 transition-[border-color] duration-150 hover:border-white/[0.95] focus-visible:border-white/[0.95]" href="https://modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">Model Context Protocol</a>
           servers on Bitrix24. Ships example tools for tasks and users — plus the
           auth, throttling, and test scaffolding to fork and extend with your own.
         </p>
 
-        <nav class="links" aria-label="Project links">
+        <nav class="flex gap-[14px] flex-wrap justify-center" aria-label="Project links">
           <B24Button
             :icon="GitHubIcon"
-            :b24ui="{ baseLine: '[--ui-btn-icon-size:20px]' }"
+            :b24ui="{ baseLine: '[--ui-btn-icon-size:20px] gap-1.5' }"
             color="air-secondary-no-accent"
-            size="lg"
+            size="md"
             to="https://github.com/bitrix24/templates-mcp"
             target="_blank"
             rel="noopener noreferrer"
@@ -73,23 +75,27 @@ useHead({
           <B24Button
             :icon="HeartIcon"
             color="air-secondary-no-accent"
-            size="lg"
+            size="md"
             to="/api/health"
+            target="_blank"
+            rel="noopener noreferrer"
           >
             /api/health
+            <span class="sr-only">(opens in new tab)</span>
           </B24Button>
         </nav>
 
-        <div class="prompt">
-          <p class="prompt__label">Try it on your portal — paste this into Claude, Cursor, Windsurf, or your IDE:</p>
+        <div class="w-full mt-10 text-left">
+          <p class="m-0 mb-2.5 text-[13px] opacity-[0.92] text-center">Try it on your portal — paste this into Claude, Cursor, Windsurf, or your IDE:</p>
           <ProsePrompt
             description="Show me what needs attention across my portal — right now"
             :actions="['copy', 'cursor', 'windsurf']"
+            :icon="EncloseTextInCodeTagIcon"
           >{{ firstToolPrompt }}</ProsePrompt>
-          <p class="prompt__fallback">
+          <p class="mt-2.5 mb-0 text-xs opacity-[0.82] text-center">
             Using VS Code? See the
             <a
-              class="prompt__fallback-link"
+              class="text-inherit no-underline border-b border-white/40 transition-[border-color] duration-150 hover:border-white/90 focus-visible:border-white/90"
               href="https://docs.continue.dev/customize/deep-dives/mcp"
               target="_blank"
               rel="noopener noreferrer"
@@ -98,23 +104,23 @@ useHead({
         </div>
       </main>
 
-      <footer class="footer">
+      <footer class="pt-[22px] pb-7 px-6 text-center text-[13px] opacity-[0.92]">
         <a
-          class="footer__link"
+          class="footer-link"
           href="https://github.com/bitrix24/templates-mcp/blob/main/LICENSE"
           target="_blank"
           rel="noopener noreferrer"
         >MIT</a>
-        <span class="footer__sep" aria-hidden="true">&middot;</span>
+        <span class="mx-2" aria-hidden="true">&middot;</span>
         <a
-          class="footer__link"
+          class="footer-link"
           href="https://github.com/bitrix24/templates-mcp/releases"
           target="_blank"
           rel="noopener noreferrer"
         >v0.1.0-alpha.1</a>
-        <span class="footer__sep" aria-hidden="true">&middot;</span>
+        <span class="mx-2" aria-hidden="true">&middot;</span>
         <a
-          class="footer__link"
+          class="footer-link"
           href="https://github.com/bitrix24/templates-mcp"
           target="_blank"
           rel="noopener noreferrer"
@@ -123,150 +129,3 @@ useHead({
     </div>
   </B24App>
 </template>
-
-<style scoped>
-/* Brand-splash hero. The raw hex values below are an intentional
-   exception to the "use semantic tokens" rule documented in
-   skills/manage-bx24-template-mcp/SKILL.md — b24ui does not ship
-   a semantic token for the Bitrix24 splash gradient, and the
-   landing's whole identity hangs off this specific color sweep.
-
-   WCAG 2.1 AA caveat: the splash gradient bottoms out at #0382ff
-   (saturated Bitrix24 brand blue, relative luminance ~0.23). Even
-   pure white text on that background only reaches ~3.78:1, short of
-   the 4.5:1 the AA rule requires for non-large text (small text =
-   <14pt OR <12pt bold; kicker / strapline / footer here all qualify
-   as small). We hold the design — the chrome elements are
-   decorative attribution, not body content; the lede (the only
-   substantive paragraph) sits at 17px @ ~0.96 opacity, which is the
-   highest contrast we can produce without redrawing the gradient.
-   The button labels and ProsePrompt card sit on light surfaces
-   (white pills, light-themed b24ui card) and pass AA cleanly. If
-   future content moves into the gradient band proper, revisit. */
-.page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  color: #f3f9ff;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: #0382ff linear-gradient(162deg, #34e9c0 0.21%, #0382ff 58.71%) fixed;
-}
-
-.hero {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 24px;
-  text-align: center;
-  max-width: 640px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.logo {
-  width: min(56vw, 280px);
-  height: auto;
-  margin-bottom: 28px;
-  color: #ffffff;
-}
-
-.kicker {
-  margin: 0 0 6px;
-  font-size: 13px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  font-weight: 600;
-  opacity: 0.92;
-}
-
-.strapline {
-  margin: 0 0 22px;
-  font-size: 13px;
-  opacity: 0.92;
-}
-
-.lede {
-  margin: 0 0 32px;
-  font-size: 17px;
-  line-height: 1.6;
-  opacity: 0.96;
-}
-
-.lede__link {
-  color: inherit;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.5);
-  text-decoration: none;
-  transition: border-color 0.15s ease;
-}
-.lede__link:hover,
-.lede__link:focus-visible {
-  border-bottom-color: rgba(255, 255, 255, 0.95);
-}
-
-.links {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.prompt {
-  width: 100%;
-  margin-top: 40px;
-  text-align: left;
-}
-
-.prompt__label {
-  margin: 0 0 10px;
-  font-size: 13px;
-  opacity: 0.92;
-  text-align: center;
-}
-
-.prompt__fallback {
-  margin: 10px 0 0;
-  font-size: 12px;
-  opacity: 0.82;
-  text-align: center;
-}
-
-.prompt__fallback-link {
-  color: inherit;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
-  text-decoration: none;
-  transition: border-color 0.15s ease;
-}
-.prompt__fallback-link:hover,
-.prompt__fallback-link:focus-visible {
-  border-bottom-color: rgba(255, 255, 255, 0.9);
-}
-
-.footer {
-  padding: 22px 24px 28px;
-  text-align: center;
-  font-size: 13px;
-  opacity: 0.92;
-}
-
-.footer__link,
-.footer__badge {
-  color: inherit;
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  padding-bottom: 1px;
-  transition: border-color 0.15s ease;
-}
-.footer__link {
-  border-bottom-color: rgba(255, 255, 255, 0.32);
-}
-.footer__link:hover,
-.footer__link:focus-visible {
-  border-bottom-color: rgba(255, 255, 255, 0.85);
-}
-
-.footer__sep {
-  margin: 0 8px;
-}
-</style>

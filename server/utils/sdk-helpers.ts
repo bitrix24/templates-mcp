@@ -36,10 +36,30 @@ import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
  */
 
 /**
+ * TRANSPORT CONVENTION (read before adding a tool)
+ * -------------------------------------------------
+ * Bitrix24 runs two REST surfaces: the classic API (`/rest/<uid>/<secret>/…`,
+ * UPPERCASE fields) reached via `callV2`/`batchV2`, and rest-v3
+ * (`/rest/api/…`, camelCase DTOs, `BITRIX_REST_V3_EXCEPTION_*` errors) reached
+ * via `callV3`/`batchV3`. They are NOT interchangeable — calling a classic
+ * method on v3 yields `UNKNOWNDTOPROPERTYEXCEPTION` (wrong field casing) or
+ * "restApi:v3 not support method".
+ *
+ * Bitrix24's migration to rest-v3 is gradual and will take a long time, so the
+ * project default is **v2** for everything that has a classic implementation:
+ *   - v2 (`callV2`):  `tasks.task.{add,list,update,start,pause,complete,`
+ *                      `approve,disapprove,defer,renew}`, `crm.*`, `user.*`,
+ *                      `task.*` (singular: commentitem/checklistitem/…).
+ *   - v3 (`callV3`):  only methods that are v3-ONLY with no working v2 form —
+ *                      currently `tasks.task.get` and `tasks.task.result.*`.
+ * When in doubt, check apidocs: a `/rest/api/` URL + camelCase fields = v3.
+ */
+
+/**
  * Call a v3 REST method and return its `result` payload.
  *
  * @param b24 — client from `useBitrix24()`.
- * @param method — REST method name (e.g. `tasks.task.start`).
+ * @param method — REST method name (e.g. `tasks.task.get`).
  * @param params — params object (passed straight to `actions.v3.call.make`).
  * @param errorContext — fallback error message when the SDK gives nothing
  *   useful. Reads "Failed to <verb> Bitrix24 task <id>" / similar.

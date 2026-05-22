@@ -21,15 +21,17 @@ const tool = (await import('../../../../server/mcp/tools/tasks/pause-task')).def
 
 describe('bitrix24_pause_task', () => {
   beforeEach(() => {
-    fake.v3Call.mockReset()
+    fake.v2Call.mockReset()
   })
 
-  it('calls actions.v3.call.make with tasks.task.pause and returns the paused-task summary', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk({ task: { id: 11, title: 'thing', status: '2', responsibleId: '5' } }))
+  it('calls actions.v2.call.make with tasks.task.pause and returns the paused-task summary', async () => {
+    fake.v2Call.mockResolvedValue(fakeOk({ task: { id: 11, title: 'thing', status: '2', responsibleId: '5' } }))
 
     const result = await tool.handler({ taskId: 11 })
 
-    expect(fake.v3Call).toHaveBeenCalledWith({ method: 'tasks.task.pause', params: { taskId: 11 } })
+    expect(fake.v2Call).toHaveBeenCalledWith({ method: 'tasks.task.pause', params: { taskId: 11 } })
+    // Regression guard: classic tasks.task.pause must NOT go through the v3 transport.
+    expect(fake.v3Call).not.toHaveBeenCalled()
     expect(JSON.parse(result.content[0]!.text)).toEqual({
       paused: true,
       id: 11,
@@ -40,14 +42,14 @@ describe('bitrix24_pause_task', () => {
   })
 
   it('falls back to a re-list message when Bitrix24 returns no task body', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk({}))
+    fake.v2Call.mockResolvedValue(fakeOk({}))
     const result = await tool.handler({ taskId: 99 })
     expect(result.content[0]!.text).toMatch(/99/)
     expect(result.content[0]!.text).toMatch(/Re-list/i)
   })
 
   it('wraps SDK errors with the task id in the fallback', async () => {
-    fake.v3Call.mockRejectedValue(new Error('action not allowed'))
+    fake.v2Call.mockRejectedValue(new Error('action not allowed'))
     await expect(tool.handler({ taskId: 7 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'action not allowed',

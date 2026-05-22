@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
-const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url).pathname, 'utf-8')) as { version: string }
+const { version } = JSON.parse(readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8')) as { version: string }
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -35,6 +36,7 @@ export default defineNuxtConfig({
     // the optimizer pick them up on startup instead.
     optimizeDeps: {
       include: [
+        '@bitrix24/b24icons-vue/editor',
         '@bitrix24/b24icons-vue/social',
         '@bitrix24/b24icons-vue/solid',
       ],

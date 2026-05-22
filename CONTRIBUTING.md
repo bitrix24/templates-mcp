@@ -33,7 +33,7 @@ Open Nuxt DevTools (in the browser console it prints the URL) and pick the MCP I
 All commits must follow [Conventional Commits](https://www.conventionalcommits.org/).
 
 Prefixes: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `ci`, `perf`, `build`, `revert`.
-Optional scopes: `tools`, `client`, `auth`, `security`, `deploy`, `evals`, `skill`, `feedback`, `deps`, `docs`, `ci`, `tsconfig`, `lint`, `types`, `test`, `app`, `utils`.
+Optional scopes: `tools`, `client`, `auth`, `security`, `deploy`, `evals`, `skill`, `feedback`, `deps`, `docs`, `ci`, `tsconfig`, `lint`, `types`, `test`, `app`, `dxt`, `utils`.
 
 Examples:
 

@@ -2,22 +2,29 @@ import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { callV3 } from '~/server/utils/sdk-helpers'
+import { callV2 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 
 /**
  * Creates a Bitrix24 task.
  *
- * Bitrix24 REST: tasks.task.add
+ * Bitrix24 REST: tasks.task.add (classic / v2 transport)
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-add.html
  *
- * The REST method expects UPPERCASE field keys (`TITLE`, `RESPONSIBLE_ID`, …).
- * We accept camelCase from the agent and translate.
+ * This is the classic `tasks.task.*` API, served on the v2 transport
+ * (`callV2`), NOT rest-v3 — the v3 `TaskDto` rejects these UPPERCASE keys with
+ * `UNKNOWNDTOPROPERTYEXCEPTION`. The method expects UPPERCASE field keys
+ * (`TITLE`, `RESPONSIBLE_ID`, …); we accept camelCase from the agent and
+ * translate.
+ *
+ * NOTE: this tool does not set `CREATED_BY`, so Bitrix24 attributes the task
+ * to the webhook user — which may not be the person requesting it. Controlled
+ * creator attribution is tracked in issue #125.
  */
 export default defineMcpTool({
   name: 'bitrix24_create_task',
   description:
-    'Create a new Bitrix24 task. Requires a title and a responsibleId (Bitrix24 user id — call bitrix24_current_user first if you only have your own). Optional: description, deadline (ISO 8601 with timezone), groupId, priority. Returns the new task id and a short summary.',
+    'Create a new Bitrix24 task. Requires a title and a responsibleId (Bitrix24 user id — call bitrix24_current_user first if you only have your own). Optional: description, deadline (ISO 8601 with timezone), groupId, priority. Returns the new task id and a short summary. Note: the task creator is not set here, so Bitrix24 records the webhook user as creator — this may differ from the person actually requesting the task.',
   inputSchema: {
     title: z.string().min(1).max(255).describe('Task title — max 255 chars.'),
     responsibleId: z
@@ -60,7 +67,7 @@ export default defineMcpTool({
     if (auditors?.length) fields.AUDITORS = auditors
 
     const b24 = useBitrix24()
-    const result = await callV3<SingleTaskEnvelope>(
+    const result = await callV2<SingleTaskEnvelope>(
       b24,
       'tasks.task.add',
       { fields },

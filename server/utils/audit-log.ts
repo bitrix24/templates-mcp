@@ -170,6 +170,12 @@ const MAX_UA_LEN = 512
  * tests can verify the resolver without touching the host filesystem (ESM
  * forbids spying on `node:fs/promises`).
  *
+ * The validated value is returned as-is. `path.resolve` is intentionally
+ * avoided — on Windows it prepends the current drive letter, converting
+ * `/audit` to `C:\audit`. `path.join` in {@link recordAuditEvent} normalises
+ * double slashes when building the per-day filename, so no normalisation is
+ * needed here.
+ *
  * Operator note: point this at a **dedicated** directory. The logger only
  * ever appends its own `YYYY-MM-DD.jsonl` files (never overwrites), but a
  * shared directory mixes audit records with unrelated files and complicates
@@ -179,17 +185,23 @@ export function resolveAuditDir(): string {
   const fromEnv = process.env.NUXT_AUDIT_DIR?.trim()
   if (!fromEnv || fromEnv.length === 0) return DEFAULT_AUDIT_DIR
 
-  // Reject `..` segments anywhere — we don't want the env value SAYING
-  // "../etc" even before `path.resolve` would collapse it.
-  if (fromEnv.split(path.sep).includes('..')) {
+  // Reject `..` segments — checked before isAbsolute so that relative
+  // traversal paths (e.g. `../../etc/cron.d`) surface as "path-traversal"
+  // rather than merely "not absolute". Split on both '/' and '\' so the
+  // guard works on Windows dev machines as well as Linux production.
+  if (fromEnv.split(/[/\\]/).some(seg => seg === '..')) {
     throw new Error(`NUXT_AUDIT_DIR rejected: path-traversal segment "..": ${fromEnv}`)
   }
 
+  // path.isAbsolute is intentionally platform-aware here: on Linux (production)
+  // it accepts POSIX absolute paths (/data/audit); on Windows (dev/test) it
+  // also accepts Windows absolute paths (C:\...\Temp\audit-log-test-xxx) so
+  // the test suite can use os.tmpdir() without special-casing.
   if (!path.isAbsolute(fromEnv)) {
     throw new Error(`NUXT_AUDIT_DIR rejected: must be an absolute path, got: ${fromEnv}`)
   }
 
-  return path.resolve(fromEnv)
+  return fromEnv
 }
 
 let writeChain: Promise<void> = Promise.resolve()
