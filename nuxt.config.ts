@@ -1,3 +1,8 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+const { version } = JSON.parse(readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8')) as { version: string }
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2025-01-01',
@@ -8,7 +13,7 @@ export default defineNuxtConfig({
   mcp: {
     route: '/mcp',
     name: 'bx24-template-mcp',
-    version: '0.1.0-alpha.1',
+    version,
   },
 
   runtimeConfig: {
@@ -31,6 +36,7 @@ export default defineNuxtConfig({
     // the optimizer pick them up on startup instead.
     optimizeDeps: {
       include: [
+        '@bitrix24/b24icons-vue/editor',
         '@bitrix24/b24icons-vue/social',
         '@bitrix24/b24icons-vue/solid',
       ],

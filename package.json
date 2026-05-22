@@ -37,9 +37,9 @@
     "@bitrix24/b24icons-vue": "^2.0.7",
     "@bitrix24/b24jssdk": "^1.1.2",
     "@bitrix24/b24jssdk-nuxt": "^1.1.2",
-    "@bitrix24/b24ui-nuxt": "^2.7.1",
+    "@bitrix24/b24ui-nuxt": "^2.8.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@nuxtjs/mcp-toolkit": "^0.16.1",
+    "@nuxtjs/mcp-toolkit": "^0.17.2",
     "nuxt": "^4.4.5",
     "tailwindcss": "^4.3.0",
     "zod": "^4.4.3"

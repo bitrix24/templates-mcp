@@ -1,6 +1,6 @@
 # Bitrix24 MCP Server — Project Brief
 
-> **Status**: planning. This document is the source of truth for what we are building. Implementation lives on `claude/bitrix24-mcp-server-*` branches and merges into `main` once the MVP is wired up.
+> **Status**: active development, pre-v1. This document is the source of truth for what we are building. Shipped tooling lives on `main`; new capabilities branch off `feat/*` or `claude/*`.
 
 ## Goal
 

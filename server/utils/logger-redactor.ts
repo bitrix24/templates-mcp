@@ -50,6 +50,13 @@ import type { LoggerInterface, LogLevel } from '@bitrix24/b24jssdk'
  */
 const WEBHOOK_URL_RE = /(https?:\/\/[^/\s"'<>]+\/rest\/(?:api\/)?\d+\/)([A-Za-z0-9_-]+)/g
 
+/**
+ * Credential-bearing key names whose values should be masked regardless of
+ * content. Mirrors the SDK's own `redactSensitiveParams` list so that any
+ * response-body fields the SDK does not yet cover are still caught here.
+ */
+const SENSITIVE_KEYS = new Set(['auth', 'password', 'token', 'secret', 'access_token', 'refresh_token'])
+
 /** Redact webhook secrets out of any string. Non-URL strings pass through. */
 export function redactString(input: string): string {
   return input.replace(WEBHOOK_URL_RE, '$1<REDACTED>')
@@ -69,11 +76,16 @@ export function redactString(input: string): string {
  * logger; mutating them would corrupt SDK state.
  */
 export function redactValue(value: unknown): unknown {
+  return redactValueWithKey(value)
+}
+
+function redactValueWithKey(value: unknown, key?: string): unknown {
+  if (key && SENSITIVE_KEYS.has(key)) return '<REDACTED>'
   if (typeof value === 'string') return redactString(value)
-  if (Array.isArray(value)) return value.map(redactValue)
+  if (Array.isArray(value)) return value.map(v => redactValueWithKey(v))
   if (value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
     const out: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(value)) out[k] = redactValue(v)
+    for (const [k, v] of Object.entries(value)) out[k] = redactValueWithKey(v, k)
     return out
   }
   return value

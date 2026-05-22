@@ -147,6 +147,40 @@ describe('redactValue', () => {
     expect(redactValue(date)).toBe(date)
   })
 
+  it('masks values under credential-bearing keys regardless of content', () => {
+    const input = {
+      auth: 'tok_secret_abc',
+      password: 'hunter2',
+      token: '12345',
+      secret: 'shhhh',
+      access_token: 'bearer_xyz',
+      refresh_token: 'refresh_abc',
+      otherField: 'visible',
+    }
+    const out = redactValue(input) as typeof input
+    expect(out.auth).toBe('<REDACTED>')
+    expect(out.password).toBe('<REDACTED>')
+    expect(out.token).toBe('<REDACTED>')
+    expect(out.secret).toBe('<REDACTED>')
+    expect(out.access_token).toBe('<REDACTED>')
+    expect(out.refresh_token).toBe('<REDACTED>')
+    expect(out.otherField).toBe('visible')
+  })
+
+  it('masks credential keys at any nesting depth', () => {
+    const input = { response: { data: { access_token: 'deep_secret', id: 42 } } }
+    const out = redactValue(input) as typeof input
+    expect(out.response.data.access_token).toBe('<REDACTED>')
+    expect(out.response.data.id).toBe(42)
+  })
+
+  it('masks credential key even when its value is a non-string (number, object)', () => {
+    const input = { token: 12345, secret: { nested: 'val' } }
+    const out = redactValue(input) as { token: unknown; secret: unknown }
+    expect(out.token).toBe('<REDACTED>')
+    expect(out.secret).toBe('<REDACTED>')
+  })
+
   it('does NOT mutate the input object', () => {
     // The walker creates fresh objects so SDK-internal state is never altered
     // by logging. Critical for correctness: the SDK reuses its own context

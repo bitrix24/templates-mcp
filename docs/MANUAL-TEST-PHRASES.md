@@ -189,7 +189,7 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 **Tools shipped:**
 - `bitrix24_add_checklist_item` — `{ taskId, title, parentId?, sortIndex?, isImportant? }`. `parentId: 0` (or omitted) creates a new checklist; the `title` becomes the heading.
 - `bitrix24_list_checklist_items` — `{ taskId, order? }` (order: `{ field, direction }`, sort fields per apidocs).
-- `bitrix24_complete_checklist_item` — `{ taskId, itemId | itemId[] }` (single or batch up to 25).
+- `bitrix24_complete_checklist_item` — `{ taskId, itemId | itemId[] }` (single or batch up to 50).
 - `bitrix24_renew_checklist_item` — `{ taskId, itemId | itemId[] }`.
 - `bitrix24_delete_checklist_item` — `{ taskId, itemId | itemId[] }`. Heading deletion removes the whole checklist (heading + children) — confirm with the operator before deleting a heading.
 

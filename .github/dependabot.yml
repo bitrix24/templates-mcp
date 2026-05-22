@@ -1,0 +1,34 @@
+version: 2
+updates:
+  # GitHub Actions — Renovate does not cover these in the current config
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Europe/Minsk
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # Docker base images
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Europe/Minsk
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # npm dependency updates and security alerts are handled by Renovate
+  # (see renovate.json — vulnerabilityAlerts.enabled: true). No Dependabot
+  # npm block is needed; adding one with open-pull-requests-limit: 0 only
+  # creates noise without adding coverage.

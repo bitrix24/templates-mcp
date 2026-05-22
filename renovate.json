@@ -12,6 +12,8 @@
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "rangeStrategy": "bump",
+  "github-actions": { "enabled": false },
+  "docker": { "enabled": false },
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 6am on monday"]
