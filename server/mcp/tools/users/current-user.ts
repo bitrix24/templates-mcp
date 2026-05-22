@@ -13,15 +13,12 @@ interface CurrentUserResponse {
   ID?: string | number
   NAME?: string
   LAST_NAME?: string
-  EMAIL?: string
-  ADMIN?: boolean
-  SERVER_NAME?: string
 }
 
 export default defineMcpTool({
   name: 'bitrix24_current_user',
   description:
-    'Get the Bitrix24 user that owns the configured incoming webhook. Use this as a connectivity check or when you need the operator id/name/email before any subsequent Bitrix24 calls.',
+    'Get the Bitrix24 user that owns the configured incoming webhook. Use this as a connectivity check or when you need the operator id/name before any subsequent Bitrix24 calls.',
   inputSchema: {},
   handler: async () => {
     const b24 = useBitrix24()
@@ -54,9 +51,6 @@ export default defineMcpTool({
             id: user.ID ?? null,
             name: user.NAME ?? null,
             lastName: user.LAST_NAME ?? null,
-            email: user.EMAIL ?? null,
-            isAdmin: user.ADMIN === true,
-            portal: user.SERVER_NAME ?? null,
           }),
         },
       ],
