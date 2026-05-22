@@ -75,6 +75,9 @@ import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24 } from '~/server/utils/bitrix24'
 import { callV2 } from '~/server/utils/sdk-helpers'
 
+// Local interface describing the subset of the REST response you surface.
+interface CurrentUserResponse { ID?: string | number, NAME?: string, LAST_NAME?: string }
+
 export default defineMcpTool({
   name: 'bitrix24_current_user',
   description:
@@ -107,7 +110,9 @@ Four things the example bakes in, and why they matter for a human writing the ne
 - **Compact JSON.** Use `JSON.stringify(payload)`, not `JSON.stringify(payload, null, 2)`
   — every space and newline is tokens out of the agent's budget.
 - **Every Zod field gets `.describe()`** — that text is what the LLM reads to fill
-  the argument correctly.
+  the argument correctly. Zod also validates the input *before* your handler runs, so
+  treat the handler arguments as already-validated typed values, not raw strings to
+  re-parse.
 
 ## v2 vs v3 — the one rule that bites
 
@@ -132,10 +137,14 @@ You won't need these for a first read tool, but know they exist:
 - **A family of tools sharing the same wire signature** (e.g. the seven task
   lifecycle verbs) → build on the `defineActionTool` factory in
   `server/utils/define-action-tool.ts` instead of re-implementing dispatch.
-- **A `delete_` / `remove_` tool** → it MUST gate on `confirmDelete: true`
-  (Ground Rule #9), and stack a second confirm flag if the delete cascades
-  (Rule #10). Use the shared `confirmDeleteSchema()` / `assertConfirmedDelete()`
-  helpers — don't hand-roll the refusal.
+- **A `bitrix24_delete_*` / `bitrix24_remove_*` tool** → it MUST gate on
+  `confirmDelete: true` (Ground Rule #9), and stack a second confirm flag if the
+  delete cascades to more than the named target (Rule #10). Use the shared
+  `confirmDeleteSchema()` / `assertConfirmedDelete()` helpers from
+  `~/server/utils/define-action-tool` — don't hand-roll the refusal. Call
+  `assertConfirmedDelete()` as the **first line of the handler**, before any wire
+  call, so an unconfirmed delete short-circuits without spending a round-trip. For a
+  cascade pre-flight on a batch, do **one** shared check, not one per id.
 
 All three are documented in full, with reference implementations, in the
 [agent skill](../skills/manage-bx24-template-mcp/adding-tools.md).
@@ -145,19 +154,24 @@ All three are documented in full, with reference implementations, in the
 - Funnel every error through `toToolError(err, fallback)` from
   `~/server/utils/errors`. For project-defined codes (refusal gates, batch-cap),
   throw `Bitrix24ToolError` with a `Bitrix24ErrorCode.*` constant — not a raw string.
-- Don't `import console`. Use `useLogger()` from `~/server/utils/logger`.
+  The `fallback` string is shown to the LLM verbatim — never interpolate the webhook
+  URL, a token, or raw user input into it.
+- Don't `import console`. Use `useLogger()` from `~/server/utils/logger`. Don't log
+  secrets, the webhook URL, or tokens.
 
 ## Tests and evals
 
 Both are required by CI:
 
 - **Unit test** co-located at `tests/unit/tools/<group>/<name>.test.ts`, mocking the
-  SDK via `makeFakeBitrix24`. Assert the call routed through the right transport and
-  the response shape is correct.
+  SDK via `makeFakeBitrix24` (and the `fakeOk` / `fakeOkEmpty` helpers) from
+  `tests/unit/_helpers/bitrix24-mock.ts`. Assert the call routed through the right
+  transport and the response shape is correct. Runs under `pnpm test`.
 - **Eval case** in `tests/evals/tool-selection.eval.ts` so the tool-selection eval
   confirms natural-language prompts route to your tool — add a disambiguation case
-  if it could be confused with an existing tool. See
-  [`EVALS.md`](./EVALS.md).
+  if it could be confused with an existing tool. Evals run separately via
+  `pnpm test:evals` (needs `DEEPSEEK_API_KEY`) — `pnpm test` does **not** run them.
+  See [`EVALS.md`](./EVALS.md).
 
 The skill has copy-paste skeletons for both.
 
@@ -169,7 +183,8 @@ The skill has copy-paste skeletons for both.
       direct `actions.*.make`, no `callMethod`.
 - [ ] Every Zod field has `.describe()`; compact JSON response.
 - [ ] Unit test + eval case added.
-- [ ] `pnpm lint && pnpm typecheck && pnpm test` all green.
+- [ ] `pnpm lint && pnpm typecheck && pnpm test` all green (eval validated separately
+      with `pnpm test:evals`).
 - [ ] PR title in Conventional Commits form: `feat(tools): add bitrix24_<name>`
       (the `Commit messages` CI job runs commitlint on the title and every commit).
 
