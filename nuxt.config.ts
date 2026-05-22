@@ -21,6 +21,11 @@ export default defineNuxtConfig({
     mcpAuthToken: '',
     githubFeedbackToken: '',
     githubFeedbackRepo: 'bitrix24/templates-mcp',
+    // Documents the NUXT_LOG_LEVEL → logLevel binding for tooling/discoverability.
+    // NOT the runtime source of truth: `server/utils/logger.ts` reads
+    // `process.env.NUXT_LOG_LEVEL ?? LOG_LEVEL` directly (it must resolve before
+    // the Nitro app context exists), so setting this field programmatically does
+    // not change the log level — set the env var instead.
     logLevel: 'info',
   },
 

@@ -123,10 +123,10 @@ Set these in the `.env` file in the deploy directory (consumed by [`docker-compo
 | Variable | Required | Notes |
 |---|---|---|
 | `NUXT_BITRIX24_WEBHOOK_URL` | ✅ | Inbound webhook URL of your portal. Bind it to a dedicated service user, not a person. |
-| `NUXT_MCP_AUTH_TOKEN` | ✅ | Bearer token MCP clients must present on `/mcp`. Generate with `openssl rand -hex 32`. |
+| `NUXT_MCP_AUTH_TOKEN` | ✅ | Bearer token MCP clients must present on `/mcp`. Generate with `openssl rand -hex 32`. `.env.example` ships the `replace-with-secure-token` **placeholder** — leaving it unchanged makes `/mcp` return **503** (treated as "not configured"), never a working endpoint. |
 | `NUXT_GITHUB_FEEDBACK_TOKEN` | ⬜ | Enables `bx24mcp_submit_feedback`. Fine-grained PAT with Issues: read/write. `.env.example` ships a `github_pat_xxx` **placeholder** — clear it or replace it; a copied placeholder is an invalid token, not "disabled". |
 | `NUXT_GITHUB_FEEDBACK_REPO` | ⬜ | `owner/name` for feedback issues. Defaults to `bitrix24/templates-mcp`. |
-| `NUXT_LOG_LEVEL` | ⬜ | `info` (default) / `debug` / `warning` / `error`. |
+| `NUXT_LOG_LEVEL` | ⬜ | `info` (default) / `debug` / `notice` / `warning` (alias `warn`) / `error` / `critical` / `alert` / `emergency`. Unset or unrecognised → `DEBUG` in dev, `INFO` otherwise. |
 | `NUXT_AUDIT_DIR` | ⬜ | Directory for the OAuth/Bearer audit JSONL log. Defaults to `/data/audit/`. Only written by the OAuth flow (Phase 3) — a webhook-only deploy leaves it unused. See [Monitoring & logs](#monitoring--logs). |
 | `NITRO_PORT` | ✅ | Container listen port. Keep `3000` unless you also change `VIRTUAL_PORT` and the Dockerfile `EXPOSE`/`HEALTHCHECK`. Present in `.env.example`. |
 | `NODE_ENV` | ✅ † | `production`. |
@@ -195,7 +195,7 @@ No `NODE_ENV` export is needed here — `docker-compose.example.yml` defaults it
 
 ## Monitoring & logs
 
-- **Health**: `/api/health` is unauthenticated and returns `{ status, service, timestamp }`. Point an external monitor (UptimeRobot / Healthchecks.io) at `https://<PROD_HOST>/api/health` for liveness alerting.
+- **Health**: `/api/health` is unauthenticated and returns `{ status, timestamp }` (no `service` or version field — kept minimal so the probe is not a fingerprinting surface). Point an external monitor (UptimeRobot / Healthchecks.io) at `https://<PROD_HOST>/api/health` for liveness alerting; key your checks on `status: "ok"`, not on a service-name field.
 - **Logs**: container logs go to Docker's JSON driver (`docker compose logs -f`). Configure rotation at the daemon level. Long-term aggregation (Loki / Graylog) is out of scope for the template.
 - **Audit log**: the OAuth/Bearer audit trail (`server/utils/audit-log.ts`) appends JSONL to `/data/audit/` (override with `NUXT_AUDIT_DIR`), creating the directory `0750` and files `0640`. Those modes are applied **only on creation** — if the directory already exists with broader permissions (e.g. after a redeploy or a manually-created mount), re-assert them: `chmod 0750 /data/audit && find /data/audit -name '*.jsonl' -exec chmod 0640 {} +`. **Files grow forever — operators MUST configure rotation/retention** (`logrotate` or `find -mtime`). Records carry `ip`/`ua` (GDPR personal data); cap retention at ~90 days (max 12 months absent a legal hold). Currently exercised only by the OAuth flow (Phase 3); a webhook-only Phase-1 deploy writes nothing here yet. See [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md).
 - **Resources**: the compose service caps at 0.5 CPU / 512 MB — raise these in `docker-compose.yml` if your tool volume needs more.

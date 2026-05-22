@@ -37,7 +37,7 @@ While the project is pre-release, only the latest tag receives fixes. Once a `v0
 | GitHub feedback PAT [^pat] | Host `.env` / laptop `.env` / DXT user_config | Revoke PAT on GitHub → create new → update store → restart service. |
 | `SSH_KEY` (GitHub Actions secret) | GitHub repo secrets | Generate new key pair, add public half to deploy user's `authorized_keys`, replace `SSH_KEY` secret value, remove old public key. |
 
-[^pat]: Env var name differs by transport: HTTP modes read `NUXT_GITHUB_FEEDBACK_TOKEN` (Nuxt runtime-config prefix); the DXT bundle reads `GITHUB_FEEDBACK_TOKEN` (no `NUXT_` prefix — projected directly in `mcp-stdio/nuxt-shims.ts`).
+[^pat]: All transports use `NUXT_GITHUB_FEEDBACK_TOKEN` — HTTP modes read it via Nuxt runtime-config, and the DXT manifest injects that same name. `mcp-stdio/nuxt-shims.ts` resolves `NUXT_GITHUB_FEEDBACK_TOKEN ?? GITHUB_FEEDBACK_TOKEN`, keeping the un-prefixed `GITHUB_FEEDBACK_TOKEN` only as a back-compat fallback for older bundles.
 
 ## Dependency policy
 

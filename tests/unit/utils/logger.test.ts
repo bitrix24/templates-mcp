@@ -38,6 +38,10 @@ describe('useLogger level resolution', () => {
   beforeEach(() => {
     handlerLevels.length = 0
     pushHandler.mockReset()
+    // Reset to a known-clean baseline FIRST (so an inherited NODE_ENV /
+    // LOG_LEVEL from the CI shell can't leak into the first case), then drop
+    // the level-affecting keys.
+    process.env = { ...originalEnv }
     delete process.env.NUXT_LOG_LEVEL
     delete process.env.LOG_LEVEL
     delete process.env.NODE_ENV
@@ -60,6 +64,37 @@ describe('useLogger level resolution', () => {
     const { useLogger } = await loadFresh()
     useLogger()
     expect(handlerLevels).toEqual([3])
+  })
+
+  it.each([
+    ['debug', 0],
+    ['info', 1],
+    ['notice', 2],
+    ['warning', 3],
+    ['warn', 3],
+    ['error', 4],
+    ['critical', 5],
+    ['alert', 6],
+    ['emergency', 7],
+  ])('maps every recognised level name: %s → %i', async (name, expected) => {
+    process.env.NUXT_LOG_LEVEL = name
+    const { useLogger } = await loadFresh()
+    useLogger()
+    expect(handlerLevels).toEqual([expected])
+  })
+
+  it('trims surrounding whitespace and is case-insensitive', async () => {
+    process.env.NUXT_LOG_LEVEL = '  Error  '
+    const { useLogger } = await loadFresh()
+    useLogger()
+    expect(handlerLevels).toEqual([4])
+  })
+
+  it('defaults to INFO when NODE_ENV is a non-development value (e.g. test)', async () => {
+    process.env.NODE_ENV = 'test'
+    const { useLogger } = await loadFresh()
+    useLogger()
+    expect(handlerLevels).toEqual([1])
   })
 
   it('defaults to DEBUG in development when NUXT_LOG_LEVEL is unset', async () => {

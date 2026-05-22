@@ -239,8 +239,11 @@ export interface FeedbackBody {
 export function formatIssueBody(body: FeedbackBody): string {
   const lines = [
     `**Kind**: ${body.kind}`,
-    // `relatedTool` is sanitised to `a-z0-9_` upstream, but escape here too so
-    // `formatIssueBody` stays safe for any future caller that passes raw input.
+    // `relatedTool` is sanitised to `a-z0-9_` upstream; escape here too as
+    // defence-in-depth against HTML injection if a future caller passes raw
+    // input. Note this neutralises HTML only, not Markdown metacharacters
+    // (`*`, `_`, backticks) — fine because it renders inline, not in a code
+    // block, and the upstream charset already excludes them.
     `**Related tool**: ${body.relatedTool ? escapeHtml(body.relatedTool) : 'n/a'}`,
     `**Severity**: ${body.severity ?? 'n/a'}`,
     '',

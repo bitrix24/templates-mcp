@@ -23,7 +23,7 @@
    - **Bitrix24 webhook URL** — вставьте URL целиком, с финальным слэшем.
    - **GitHub feedback token** *(опционально)* — fine-grained PAT с правом `Issues: read/write` на `bitrix24/templates-mcp`. Если оставите пустым, инструмент `bx24mcp_submit_feedback` будет недоступен.
    - **Feedback repository** — оставьте `bitrix24/templates-mcp`, если только не делаете форк.
-   - **Log level** — `info` по умолчанию. `debug` если нужно посмотреть HTTP-вызовы.
+   - **Log level** — `info` по умолчанию. `debug` если нужно посмотреть HTTP-вызовы; `warning`/`error` — тише для повседневной работы. Логи идут в stderr (панель логов расширения), не в stdout.
 
 4. **Включите расширение** галочкой и проверьте: в новом чате попросите Claude — *«Покажи моего текущего пользователя Bitrix24»*. Должно вернуться имя/email учётки, на которой создан вебхук.
 
