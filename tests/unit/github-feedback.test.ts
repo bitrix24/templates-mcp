@@ -74,6 +74,41 @@ describe('createGithubIssue', () => {
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['../../users/admin/repos', 'path traversal / extra segment'],
+    ['', 'empty'],
+    ['justrepo', 'missing slash'],
+    ['a/b/c', 'too many segments'],
+    ['has space/repo', 'whitespace'],
+    ['owner/re po', 'whitespace in name'],
+  ])('throws NOT_CONFIGURED on a malformed repo slug (%s — %s) and never calls fetch', async (repo) => {
+    runtimeConfig.githubFeedbackRepo = repo
+    const { createGithubIssue } = await loadFresh()
+
+    await expect(createGithubIssue({ title: 't', body: 'b', labels: [] })).rejects.toMatchObject({
+      name: 'GithubFeedbackError',
+      code: 'NOT_CONFIGURED',
+    })
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'bitrix24/templates-mcp',
+    'My-Org.x/repo_1.2',
+  ])('accepts a well-formed owner/repo slug (%s) and calls fetch', async (repo) => {
+    runtimeConfig.githubFeedbackRepo = repo
+    mockFetch.mockResolvedValue(
+      okResponse({ html_url: `https://github.com/${repo}/issues/1`, number: 1 }),
+    )
+    const { createGithubIssue } = await loadFresh()
+
+    await expect(createGithubIssue({ title: 't', body: 'b', labels: [] })).resolves.toMatchObject({
+      number: 1,
+    })
+    const [url] = mockFetch.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`https://api.github.com/repos/${repo}/issues`)
+  })
+
   it('maps 401/403 to a friendly UPSTREAM error without leaking the body', async () => {
     mockFetch.mockResolvedValue(errResponse(401))
     const { createGithubIssue } = await loadFresh()
@@ -260,6 +295,23 @@ describe('formatIssueBody', () => {
     expect(body).toContain('<pre><code>')
     expect(body).toContain('&lt;script&gt;alert(1)&lt;/script&gt; &amp; more')
     expect(body).not.toContain('<script>')
+  })
+
+  it('HTML-escapes relatedTool defensively (caller-sanitised, but escaped again here)', async () => {
+    const { formatIssueBody } = await loadFresh()
+    const body = formatIssueBody({
+      kind: 'issue',
+      details: 'x',
+      relatedTool: '<img src=x onerror=alert(1)>',
+    })
+    expect(body).toContain('**Related tool**: &lt;img src=x onerror=alert(1)&gt;')
+    expect(body).not.toContain('<img')
+  })
+
+  it('escapes a bare ampersand in relatedTool', async () => {
+    const { formatIssueBody } = await loadFresh()
+    const body = formatIssueBody({ kind: 'issue', details: 'x', relatedTool: 'a & b' })
+    expect(body).toContain('**Related tool**: a &amp; b')
   })
 
   it('falls back to n/a when relatedTool and severity are absent', async () => {

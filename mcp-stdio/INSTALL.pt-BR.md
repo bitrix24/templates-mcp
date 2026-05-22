@@ -23,7 +23,7 @@ Guia de **instalação local** via extensão do Claude Desktop. O servidor roda 
    - **Bitrix24 webhook URL** — cole a URL inteira, com a barra final.
    - **GitHub feedback token** *(opcional)* — PAT fine-grained com `Issues: read/write` em `bitrix24/templates-mcp`. Deixando em branco, a ferramenta `bx24mcp_submit_feedback` fica desativada.
    - **Feedback repository** — deixe `bitrix24/templates-mcp`, a menos que tenha um fork.
-   - **Log level** — `info` por padrão. Use `debug` se precisar inspecionar as chamadas HTTP.
+   - **Log level** — `info` por padrão. Use `debug` para inspecionar as chamadas HTTP; `warning`/`error` para um log mais silencioso no dia a dia. Os logs vão para stderr (painel de logs da extensão), nunca stdout.
 
 4. **Habilite a extensão** marcando o checkbox e teste em um chat novo: peça ao Claude — *"Mostre meu usuário atual do Bitrix24"*. Deve voltar o nome/e-mail da conta dona do webhook.
 

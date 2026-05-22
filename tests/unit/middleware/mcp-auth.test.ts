@@ -69,6 +69,18 @@ describe('mcp-auth middleware', () => {
     )
   })
 
+  it('returns 503 when the token is left at the .env.example placeholder', () => {
+    runtimeConfig.mcpAuthToken = 'replace-with-secure-token'
+    expect(
+      callMiddleware('/mcp', { authorization: 'Bearer replace-with-secure-token' }),
+    ).toThrow(expect.objectContaining({ statusCode: 503 }))
+  })
+
+  it('returns 503 for the placeholder token even with no Authorization header (fires before the header check)', () => {
+    runtimeConfig.mcpAuthToken = 'replace-with-secure-token'
+    expect(callMiddleware('/mcp')).toThrow(expect.objectContaining({ statusCode: 503 }))
+  })
+
   it('rejects a missing Authorization header with 401', () => {
     expect(callMiddleware('/mcp')).toThrow(
       expect.objectContaining({ statusCode: 401, message: 'Missing Authorization header' }),

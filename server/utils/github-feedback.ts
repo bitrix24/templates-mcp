@@ -46,6 +46,17 @@ export async function createGithubIssue(input: CreateIssueInput): Promise<Create
     )
   }
 
+  // Guard the operator-supplied repo before it lands in the request path. The
+  // host is fixed (no SSRF), but an unvalidated value like `../../users/x`
+  // would still let a misconfiguration retarget the API call to an unintended
+  // resource. GitHub repo slugs are `owner/repo` over a conservative charset.
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(githubFeedbackRepo)) {
+    throw new GithubFeedbackError(
+      'GitHub feedback repo is misconfigured — expected "owner/repo".',
+      'NOT_CONFIGURED',
+    )
+  }
+
   const url = `${GITHUB_API}/repos/${githubFeedbackRepo}/issues`
 
   let response: Response
@@ -228,7 +239,12 @@ export interface FeedbackBody {
 export function formatIssueBody(body: FeedbackBody): string {
   const lines = [
     `**Kind**: ${body.kind}`,
-    `**Related tool**: ${body.relatedTool ?? 'n/a'}`,
+    // `relatedTool` is sanitised to `a-z0-9_` upstream; escape here too as
+    // defence-in-depth against HTML injection if a future caller passes raw
+    // input. Note this neutralises HTML only, not Markdown metacharacters
+    // (`*`, `_`, backticks) — fine because it renders inline, not in a code
+    // block, and the upstream charset already excludes them.
+    `**Related tool**: ${body.relatedTool ? escapeHtml(body.relatedTool) : 'n/a'}`,
     `**Severity**: ${body.severity ?? 'n/a'}`,
     '',
     '## Details',

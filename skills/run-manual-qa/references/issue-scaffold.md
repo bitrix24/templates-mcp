@@ -70,6 +70,9 @@ Mirror of `.env.example` — if that file gains/renames a variable, update here 
 
 ```bash
 NUXT_BITRIX24_WEBHOOK_URL=https://your.bitrix24.com/rest/<service-user-id>/<webhook-code>/
+# Must be a real value: leaving the .env.example placeholder
+# `replace-with-secure-token` makes /mcp return 503 (treated as "not
+# configured"). Worth one R2-auth check: placeholder token → 503, not 401.
 NUXT_MCP_AUTH_TOKEN=$(openssl rand -hex 32)
 NUXT_GITHUB_FEEDBACK_TOKEN=github_pat_xxxxxxxxxxxxxxxxxx
 # Point at the TEST repo, not upstream (.env.example defaults to bitrix24/templates-mcp).

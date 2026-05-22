@@ -4,6 +4,17 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (health payload)**: `/api/health` now returns `{ status, timestamp }` only — the `service` field was removed to avoid a fingerprintable surface. External monitors must key liveness on `status: "ok"`, not on the service name.
+- `NUXT_LOG_LEVEL` is now honoured at runtime (`debug` / `info` / `notice` / `warning` (alias `warn`) / `error` / `critical` / `alert` / `emergency`); previously the level was fixed by `NODE_ENV`. Unset/unrecognised falls back to `DEBUG` in development, `INFO` otherwise. The same resolution applies in the stdio/DXT bundle.
+
+### Security
+
+- `/mcp` returns 503 when `NUXT_MCP_AUTH_TOKEN` is left at the `.env.example` placeholder `replace-with-secure-token`, so a copied-but-unconfigured deployment cannot be guarded by a publicly-known token.
+- `bx24mcp_submit_feedback` validates the configured `owner/repo` before calling the GitHub API, and HTML-escapes the `relatedTool` field in the issue body.
+- `docker-compose.yml` drops all Linux capabilities and forbids privilege escalation (`cap_drop: [ALL]`, `no-new-privileges`).
+
 ## [0.1.0-alpha.1] - 2026-05-19
 
 The first tagged release. Cuts a baseline anchor that ships every tool, every contract, and every operator-facing surface the template offers on day one. Footer of the landing now links here.

@@ -10,8 +10,12 @@ import { ConsoleHandler, Logger, LogLevel, type LoggerInterface } from '@bitrix2
  * as application logs. One sink, no double bookkeeping.
  *
  * Handler stack:
- *   - `ConsoleHandler` at `INFO` when `NODE_ENV !== 'development'`,
- *     `DEBUG` in development. Coloured output where the terminal supports it.
+ *   - `ConsoleHandler` at the level named by `NUXT_LOG_LEVEL`
+ *     (`debug` / `info` / `notice` / `warning` / `error` / `critical` /
+ *     `alert` / `emergency`, case-insensitive; `warn` is accepted as an
+ *     alias for `warning`). When unset or unrecognised it falls back to
+ *     `DEBUG` in development and `INFO` otherwise. Coloured output where the
+ *     terminal supports it.
  *
  * Return type is `LoggerInterface` (not the concrete `Logger`) so callers
  * stay decoupled from the SDK class. If we ever swap loggers (pino, custom
@@ -33,14 +37,40 @@ import { ConsoleHandler, Logger, LogLevel, type LoggerInterface } from '@bitrix2
  */
 let loggerInstance: Logger | null = null
 
+const LEVEL_BY_NAME: Record<string, LogLevel> = {
+  DEBUG: LogLevel.DEBUG,
+  INFO: LogLevel.INFO,
+  NOTICE: LogLevel.NOTICE,
+  WARN: LogLevel.WARNING,
+  WARNING: LogLevel.WARNING,
+  ERROR: LogLevel.ERROR,
+  CRITICAL: LogLevel.CRITICAL,
+  ALERT: LogLevel.ALERT,
+  EMERGENCY: LogLevel.EMERGENCY,
+}
+
+/**
+ * Resolves the console log level. Read from the environment directly (not via
+ * `useRuntimeConfig()`) so the level is available even when the singleton
+ * materialises before the Nitro app context — the same reason `audit-log.ts`
+ * reads its env directly. The env chain mirrors the stdio shim
+ * (`mcp-stdio/nuxt-shims.ts`): `NUXT_LOG_LEVEL` is canonical (the DXT manifest
+ * injects it from `user_config.log_level`), `LOG_LEVEL` is the un-prefixed
+ * back-compat fallback for older bundles / the README dry-run. An explicit,
+ * recognised value always wins; otherwise we keep the historical default
+ * (`DEBUG` in development, `INFO` elsewhere).
+ */
+function resolveLevel(): LogLevel {
+  const configured = (process.env.NUXT_LOG_LEVEL ?? process.env.LOG_LEVEL ?? '').trim().toUpperCase()
+  if (configured && configured in LEVEL_BY_NAME) return LEVEL_BY_NAME[configured]!
+  return process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO
+}
+
 export function useLogger(): LoggerInterface {
   if (loggerInstance) return loggerInstance
 
-  const isDev = process.env.NODE_ENV === 'development'
-  const level = isDev ? LogLevel.DEBUG : LogLevel.INFO
-
   loggerInstance = Logger.create('bx24-template-mcp')
-  loggerInstance.pushHandler(new ConsoleHandler(level))
+  loggerInstance.pushHandler(new ConsoleHandler(resolveLevel()))
 
   return loggerInstance
 }
