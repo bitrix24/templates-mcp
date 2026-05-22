@@ -32,11 +32,11 @@ const tool = (await import('../../../../server/mcp/tools/tasks/create-task')).de
 
 describe('bitrix24_create_task', () => {
   beforeEach(() => {
-    fake.v3Call.mockReset()
+    fake.v2Call.mockReset()
   })
 
   it('passes UPPERCASE fields and returns the new task summary', async () => {
-    fake.v3Call.mockResolvedValue(
+    fake.v2Call.mockResolvedValue(
       fakeOk({ task: { id: 3731, title: 'PR test', responsibleId: '5', deadline: null } }),
     )
 
@@ -48,7 +48,7 @@ describe('bitrix24_create_task', () => {
       priority: '2',
     })
 
-    expect(fake.v3Call).toHaveBeenCalledWith({
+    expect(fake.v2Call).toHaveBeenCalledWith({
       method: 'tasks.task.add',
       params: {
         fields: {
@@ -61,36 +61,39 @@ describe('bitrix24_create_task', () => {
       },
     })
 
+    // Regression guard: classic tasks.task.add must NOT go through the v3 transport.
+    expect(fake.v3Call).not.toHaveBeenCalled()
+
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload).toMatchObject({ created: true, id: 3731, title: 'PR test', responsibleId: '5' })
   })
 
   it('omits optional fields when not provided', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk({ task: { id: 1, title: 'minimal' } }))
+    fake.v2Call.mockResolvedValue(fakeOk({ task: { id: 1, title: 'minimal' } }))
 
     await tool.handler({ title: 'minimal', responsibleId: 1 })
 
-    const args = fake.v3Call.mock.calls[0]![0] as unknown as { params: { fields: Record<string, unknown> } }
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { fields: Record<string, unknown> } }
     expect(Object.keys(args.params.fields).sort()).toEqual(['RESPONSIBLE_ID', 'TITLE'])
   })
 
   it('passes ACCOMPLICES and AUDITORS arrays only when non-empty', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk({ task: { id: 1, title: 'x' } }))
+    fake.v2Call.mockResolvedValue(fakeOk({ task: { id: 1, title: 'x' } }))
 
     await tool.handler({ title: 'x', responsibleId: 1, accomplices: [], auditors: [10, 20] })
-    const args = fake.v3Call.mock.calls[0]![0] as unknown as { params: { fields: Record<string, unknown> } }
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { fields: Record<string, unknown> } }
     expect(args.params.fields.ACCOMPLICES).toBeUndefined()
     expect(args.params.fields.AUDITORS).toEqual([10, 20])
   })
 
   it('falls back to a friendly message when Bitrix24 returns no task body', async () => {
-    fake.v3Call.mockResolvedValue(fakeOkEmpty())
+    fake.v2Call.mockResolvedValue(fakeOkEmpty())
     const result = await tool.handler({ title: 't', responsibleId: 1 })
     expect(result.content[0]!.text).toMatch(/no task body/i)
   })
 
   it('wraps SDK errors into Bitrix24ToolError', async () => {
-    fake.v3Call.mockRejectedValue(Object.assign(new Error('quota exceeded'), { code: 'QUERY_LIMIT_EXCEEDED' }))
+    fake.v2Call.mockRejectedValue(Object.assign(new Error('quota exceeded'), { code: 'QUERY_LIMIT_EXCEEDED' }))
     await expect(tool.handler({ title: 't', responsibleId: 1 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: 'QUERY_LIMIT_EXCEEDED',

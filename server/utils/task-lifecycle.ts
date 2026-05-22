@@ -6,14 +6,18 @@ import {
   idOrIdArraySchema,
   mapBatchRows,
 } from '~/server/utils/define-action-tool'
-import { batchV3, callV3 } from '~/server/utils/sdk-helpers'
+import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
 
 /**
  * Factory for the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}`
  * lifecycle wrappers. Each REST method takes the same shape — `{ taskId }` in,
- * `{ result: { task: {...} } }` out. Keeping the boilerplate in one place
+ * `{ result: { task: {...} } }` out.
+ *
+ * These are classic `tasks.task.*` methods, served on the v2 transport
+ * (`callV2`/`batchV2`), NOT rest-v3 — see the transport convention in
+ * `server/utils/sdk-helpers.ts`. Keeping the boilerplate in one place
  * means there's only one error-handling and response-projection contract to
  * review across all seven tools.
  *
@@ -71,8 +75,8 @@ export interface LifecycleToolSpec {
  *
  *   3. Task lookup: if the operator names a task in free text instead of an
  *      id ("ту задачу про склад"), call `bitrix24_list_tasks` with a
- *      `%title` filter first (camelCase — `list_tasks` speaks the same
- *      v3-style contract as every other task tool).
+ *      `%title` filter first (camelCase — `list_tasks` accepts the same
+ *      camelCase-friendly contract as every other task tool).
  */
 const LIFECYCLE_USAGE_NOTES =
   ' Accepts a single task id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. The Bitrix24 SDK paces outbound calls and retries transient errors automatically — no need to throttle on the agent side. If the task is already in the target status, Bitrix24 returns "action not allowed" — treat as already-applied, do not retry. If the operator names a task in free text instead of an id, resolve via `bitrix24_list_tasks` with a `%title` filter first.'
@@ -117,7 +121,7 @@ async function runOne(spec: LifecycleToolSpec, taskId: number) {
   // `extractTasks` (which also handles list-shaped responses) and take
   // the first element so there's one shared parser across all task
   // tools — same code path as `update_task`.
-  const result = await callV3<SingleTaskEnvelope>(
+  const result = await callV2<SingleTaskEnvelope>(
     b24,
     spec.method,
     { taskId },
@@ -154,7 +158,7 @@ async function runOne(spec: LifecycleToolSpec, taskId: number) {
 
 async function runBatch(spec: LifecycleToolSpec, taskIds: number[]): Promise<LifecycleBatchRow[]> {
   const b24 = useBitrix24()
-  const rows = await batchV3<SingleTaskEnvelope>(
+  const rows = await batchV2<SingleTaskEnvelope>(
     b24,
     taskIds.map((id) => [spec.method, { taskId: id }]),
     `Failed to ${spec.verb} a batch of ${taskIds.length} task(s)`,

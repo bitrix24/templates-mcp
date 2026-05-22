@@ -170,6 +170,7 @@ Infrastructure:
 - **MCP resources** for static dictionaries (pipelines, stages, users) with TTL cache
 - **MCP prompts** for typical scenarios
 - **Client-side rate limiting** on Bitrix24 (2 req/sec, queue) — ✅ **provided by the SDK out of the box**. `@bitrix24/b24jssdk` 1.1+ ships `RestrictionManager` (leaky-bucket, default burst 50 / drain 2 req/sec, adaptive delay on `QUERY_LIMIT_EXCEEDED`, retry × 3 with backoff), initialised in `B24Hook`'s constructor via `ParamsFactory.getDefault()`. No project-side wrapper. Configurable per-tariff (`getEnterprise`, `getBatchProcessing`, `getRealtime`). Issue #7's bulk input on the 8 mutation tools shipped on top of this.
+  - **Temporary local fix awaiting an SDK update** (issue #127, upstream [`bitrix24/b24jssdk#46`](https://github.com/bitrix24/b24jssdk/issues/46)): the `RestrictionManager` retries the permanent tasks rejection `1048582` ("action not available", returned on invalid lifecycle transitions like pausing an already-paused task) 3× before failing, instead of failing fast. As a stopgap, `server/utils/bitrix24.ts` registers `1048582` as a `hardErrorCode` so it is treated as non-retryable. **Once the SDK ships the upstream fix (#46), remove this local override** and rely on the SDK's built-in classification.
 
 ### Post-pilot expansion (after the pilot launch — incremental, via the new-tool process)
 

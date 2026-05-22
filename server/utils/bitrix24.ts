@@ -1,8 +1,23 @@
-import { B24Hook } from '@bitrix24/b24jssdk'
+import { B24Hook, ParamsFactory } from '@bitrix24/b24jssdk'
 import { makeRedactingLogger, redactString } from '~/server/utils/logger-redactor'
 import { useLogger } from '~/server/utils/logger'
 
 let client: B24Hook | null = null
+
+/**
+ * Bitrix24 tasks error `1048582` — "Действие не доступно" / "action not
+ * available": the permanent rejection returned when a lifecycle transition is
+ * invalid from the current status (e.g. pausing an already-paused task).
+ *
+ * TEMPORARY LOCAL FIX (#127 / upstream `bitrix24/b24jssdk#46`): the SDK's
+ * `RestrictionManager` only skips retries for codes it recognises as hard/soft;
+ * an unrecognised numeric code like this one is treated as transient and
+ * retried 3× with backoff (~7s wasted) before failing. Registering it as a
+ * `hardErrorCode` makes the SDK throw on the first attempt — matching how the
+ * same error already behaves for `tasks.task.start` (which surfaces as
+ * `ERR_BAD_REQUEST`). REMOVE this once the SDK ships the fix upstream (#46).
+ */
+const TASKS_ACTION_NOT_AVAILABLE_CODE = '1048582'
 
 /**
  * Returns a process-singleton Bitrix24 client backed by the incoming webhook
@@ -87,6 +102,22 @@ export function useBitrix24(): B24Hook {
   // it reaches the inner logger. See `server/utils/logger-redactor.ts` and
   // `docs/SECURITY-AUDIT.md` (with the dependency-bump procedure).
   client.setLogger(makeRedactingLogger(useLogger()))
+
+  // Register the permanent tasks rejection code as non-retryable (see
+  // TASKS_ACTION_NOT_AVAILABLE_CODE above). `setRestrictionManagerParams`
+  // assigns the manager's config synchronously (before its first await), so
+  // the code is in effect before any request runs even though we don't await
+  // here; we only guard the async tail (limiter re-config) against an
+  // unhandled rejection. The base params mirror the SDK constructor's default.
+  const params = ParamsFactory.getDefault()
+  void client
+    .setRestrictionManagerParams({
+      ...params,
+      hardErrorCodes: [...(params.hardErrorCodes ?? []), TASKS_ACTION_NOT_AVAILABLE_CODE],
+    })
+    .catch((err: unknown) => {
+      useLogger().error('Failed to register Bitrix24 hard error code 1048582', { err })
+    })
 
   return client
 }
