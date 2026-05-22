@@ -100,18 +100,20 @@ bx24-template-mcp/
 │       ├── deployment.md
 │       ├── contributing.md
 │       └── feedback.md                  # when and how an AI should send feedback
-├── docs/                                # shipped: README, AGENT, DEPLOYMENT, EVALS,
-│   ├── README.md                        #   FEEDBACK, MANUAL-TEST-PHRASES, SECURITY-AUDIT.
-│   ├── AGENT.md                         # the rest below are planned stubs.
+├── docs/                                # shipped: README, AGENT, ARCHITECTURE,
+│   ├── README.md                        #   DEPLOYMENT, EVALS, FEEDBACK, MANUAL-TEST-PHRASES,
+│   ├── AGENT.md                         #   REVERSE-PROXY, RUNBOOK, SECURITY, SECURITY-AUDIT.
+│   ├── ARCHITECTURE.md                  # the rest below are planned stubs.
 │   ├── DEPLOYMENT.md
 │   ├── EVALS.md
 │   ├── FEEDBACK.md
 │   ├── MANUAL-TEST-PHRASES.md
+│   ├── REVERSE-PROXY.md
+│   ├── RUNBOOK.md
+│   ├── SECURITY.md
 │   ├── SECURITY-AUDIT.md
-│   ├── ARCHITECTURE.md                  # planned
 │   ├── ADDING-TOOLS.md                  # planned
-│   ├── TESTING.md                       # planned
-│   └── RUNBOOK.md                       # planned
+│   └── TESTING.md                       # planned
 ├── CONTRIBUTING.md
 ├── commitlint.config.js
 ├── nuxt.config.ts
