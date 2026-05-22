@@ -48,10 +48,10 @@ template is built for.
 
 A tool has to be registered **twice**, because the project ships two transports:
 
-1. **HTTP server** — auto-discovery. Dropping the file under `server/mcp/tools/**`
-   is enough; it's picked up automatically.
-2. **DXT / stdio bundle** — a hand-maintained registry. You must add an `import`
-   and an array entry in
+1. **HTTP server** — file-based discovery. Dropping the file under
+   `server/mcp/tools/**` is all the HTTP transport needs — no registration step here.
+2. **DXT / stdio bundle** — a hand-maintained registry, and the step that's easy to
+   miss: you must add **both** an `import` and an array entry in
    [`../mcp-stdio/tools.ts`](../mcp-stdio/tools.ts).
 
 The two are cross-checked by `tests/unit/mcp-stdio/tools.parity.test.ts` — **CI
@@ -63,6 +63,8 @@ contributor forgets, so it's the first thing to remember.
 - **Bitrix24 tools**: `bitrix24_<verb>_<entity>` — e.g. `bitrix24_complete_task`.
 - **Meta tools**: `bx24mcp_<verb>` — e.g. `bx24mcp_submit_feedback`. These never
   touch Bitrix24.
+- A tool whose primary effect is removing a record (`bitrix24_delete_*` /
+  `bitrix24_remove_*`) is subject to the confirm-delete gate — see "Bigger shapes".
 
 ## Anatomy of a real tool
 
@@ -82,7 +84,8 @@ export default defineMcpTool({
   name: 'bitrix24_current_user',
   description:
     'Get the Bitrix24 user that owns the configured incoming webhook. Use this as a '
-    + 'connectivity check or when you need the operator id/name before subsequent calls.',
+    + 'connectivity check or when you need the operator id/name before any subsequent '
+    + 'Bitrix24 calls.',
   inputSchema: {},                       // Zod raw shape; every field gets a .describe()
   handler: async () => {
     const b24 = useBitrix24()            // the webhook-backed client
@@ -112,7 +115,8 @@ Four things the example bakes in, and why they matter for a human writing the ne
 - **Every Zod field gets `.describe()`** — that text is what the LLM reads to fill
   the argument correctly. Zod also validates the input *before* your handler runs, so
   treat the handler arguments as already-validated typed values, not raw strings to
-  re-parse.
+  re-parse. (The SDK *response*, by contrast, is typed but not schema-validated —
+  check fields for `undefined` before use, as the example does with `?? null`.)
 
 ## v2 vs v3 — the one rule that bites
 
@@ -142,9 +146,9 @@ You won't need these for a first read tool, but know they exist:
   delete cascades to more than the named target (Rule #10). Use the shared
   `confirmDeleteSchema()` / `assertConfirmedDelete()` helpers from
   `~/server/utils/define-action-tool` — don't hand-roll the refusal. Call
-  `assertConfirmedDelete()` as the **first line of the handler**, before any wire
-  call, so an unconfirmed delete short-circuits without spending a round-trip. For a
-  cascade pre-flight on a batch, do **one** shared check, not one per id.
+  `assertConfirmedDelete()` **before any wire call** in the handler, so an
+  unconfirmed delete short-circuits without spending a round-trip. For a cascade
+  pre-flight on a batch, do **one** shared check, not one per id.
 
 All three are documented in full, with reference implementations, in the
 [agent skill](../skills/manage-bx24-template-mcp/adding-tools.md).
@@ -155,7 +159,11 @@ All three are documented in full, with reference implementations, in the
   `~/server/utils/errors`. For project-defined codes (refusal gates, batch-cap),
   throw `Bitrix24ToolError` with a `Bitrix24ErrorCode.*` constant — not a raw string.
   The `fallback` string is shown to the LLM verbatim — never interpolate the webhook
-  URL, a token, or raw user input into it.
+  URL, a token, or raw user input into it. The same applies to `err.message`:
+  `toToolError` propagates the SDK's message, so never construct or re-throw an error
+  whose message embeds a secret or raw input. Need a new project code? See the agent
+  skill for the four-step process (append to the registry, throw, assert, update the
+  completeness test).
 - Don't `import console`. Use `useLogger()` from `~/server/utils/logger`. Don't log
   secrets, the webhook URL, or tokens.
 

@@ -112,7 +112,7 @@ bx24-template-mcp/
 │   ├── RUNBOOK.md
 │   ├── SECURITY.md
 │   ├── SECURITY-AUDIT.md
-│   ├── ADDING-TOOLS.md                  # planned
+│   ├── ADDING-TOOLS.md
 │   └── TESTING.md                       # planned
 ├── CONTRIBUTING.md
 ├── commitlint.config.js
