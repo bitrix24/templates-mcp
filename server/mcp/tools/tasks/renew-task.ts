@@ -4,7 +4,7 @@ import { defineTaskLifecycleTool } from '~/server/utils/task-lifecycle'
  * Renew a Bitrix24 task — reopens a completed or deferred task by moving it
  * back to Pending (2).
  *
- * Bitrix24 REST: tasks.task.renew (v3)
+ * Bitrix24 REST: tasks.task.renew (classic / v2 transport)
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-renew.html
  */
 export default defineTaskLifecycleTool({

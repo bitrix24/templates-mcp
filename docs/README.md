@@ -7,16 +7,24 @@ Welcome. Pick the door for your role.
 Start here if you are about to change code.
 
 1. [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — commits, PR rules, CI gates.
-2. [`../skills/manage-bx24-template-mcp/adding-tools.md`](../skills/manage-bx24-template-mcp/adding-tools.md) — how to add a new MCP tool (modern template: `callV3` / `callV2` / `batchV3` helpers, error funnel, unit-test skeleton, persona walk).
-3. [`EVALS.md`](./EVALS.md) — automated tool-selection eval (Evalite + DeepSeek); how to run, how to add cases.
-4. [`../PROJECT-BRIEF.md`](../PROJECT-BRIEF.md) — system design and roadmap, source of truth for everything that hasn't earned its own doc yet.
+2. [`ARCHITECTURE.md`](./ARCHITECTURE.md) — 15-minute orientation: layers, decisions, hot spots.
+3. [`../skills/manage-bx24-template-mcp/adding-tools.md`](../skills/manage-bx24-template-mcp/adding-tools.md) — how to add a new MCP tool (modern template: `callV3` / `callV2` / `batchV3` helpers, error funnel, unit-test skeleton, persona walk).
+4. [`EVALS.md`](./EVALS.md) — automated tool-selection eval (Evalite + DeepSeek); how to run, how to add cases.
+5. [`../PROJECT-BRIEF.md`](../PROJECT-BRIEF.md) — system design and roadmap, source of truth for everything that hasn't earned its own doc yet.
+
+> **Testing strategy** is not a separate doc — see `CONTRIBUTING.md` for the unit/integration split and CI gates, and `EVALS.md` for the LLM tool-selection layer.
 
 ## Operator
 
 Start here if you are running the service.
 
-1. [`FEEDBACK.md`](./FEEDBACK.md) — agent-feedback channel (`bx24mcp_submit_feedback`) and its GitHub integration.
-2. [`MANUAL-TEST-PHRASES.md`](./MANUAL-TEST-PHRASES.md) — natural-language test pack for verifying tool descriptions and LLM behaviour against a real portal.
+1. [`DEPLOYMENT.md`](./DEPLOYMENT.md) — production deploy procedure, secrets bootstrap, rollback.
+2. [`RUNBOOK.md`](./RUNBOOK.md) — incident response, alert → action table.
+3. [`REVERSE-PROXY.md`](./REVERSE-PROXY.md) — pick your TLS terminator (nginx-proxy / Caddy / Traefik / plain nginx+certbot).
+4. [`SECURITY.md`](./SECURITY.md) — disclosure, threat model, secret rotation.
+5. [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md) — dependency-level audit (SDK logger surface).
+6. [`FEEDBACK.md`](./FEEDBACK.md) — agent-feedback channel (`bx24mcp_submit_feedback`) and its GitHub integration.
+7. [`MANUAL-TEST-PHRASES.md`](./MANUAL-TEST-PHRASES.md) — natural-language test pack for verifying tool descriptions and LLM behaviour against a real portal.
 
 ## AI agent
 
@@ -29,11 +37,5 @@ Start here if you are an AI assistant working with this MCP.
 
 ## Not yet authored
 
-The following operator / contributor docs are referenced in `PROJECT-BRIEF.md` but not yet written. **Don't improvise local stubs** — open a GitHub issue and link the work, so the doc lands once authoritatively rather than drifting in parallel:
+- `TROUBLESHOOTING.md` — known issues and recovery procedures (the Alert→Action table in `RUNBOOK.md` covers the prod-incident slice; this one would be the dev/laptop slice).
 
-- `DEPLOYMENT.md` — release process, nginx-proxy + acme-companion, secrets management
-- `RUNBOOK.md` — on-call playbook for prod incidents
-- `SECURITY.md` — threat model, secret rotation, sanitisation rationale
-- `TESTING.md` — running unit / integration / eval layers locally
-- `TROUBLESHOOTING.md` — known issues and recovery procedures
-- `ARCHITECTURE.md` — system design (today this lives inside `PROJECT-BRIEF.md`; eventual split when the brief gets trimmed)

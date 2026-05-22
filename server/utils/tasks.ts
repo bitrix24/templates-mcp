@@ -98,6 +98,19 @@ export const TASK_STATUS = {
  * Without this normaliser, LLM-driven workflows would have to switch
  * contracts mid-flow — friction we can absorb in one place and forget.
  */
+/** Reserved JS identifiers that must never reach the REST wire as field
+ *  names — mirrors `FORBIDDEN_KEYS` in `v3-filter.ts` (issue #22). `JSON.parse`
+ *  makes `__proto__` an own enumerable property in modern V8, so an
+ *  LLM-routed `{"__proto__": …}` arrives as a normal key here. */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+/** True if `key` is forbidden either verbatim or after stripping an operator
+ *  prefix (`!`/`%`/`<`/`>`/`=`) — so both `__proto__` and `!__proto__` are
+ *  caught, matching the two-stage check in `v3-filter.ts`. */
+function isForbiddenKey(key: string): boolean {
+  return FORBIDDEN_KEYS.has(key) || FORBIDDEN_KEYS.has(key.replace(/^[!%<>=]+/, ''))
+}
+
 export function normalizeBitrix24Key(key: string): string {
   const match = /^([!%<>=]*)(.+)$/.exec(key)
   if (!match) return key
@@ -126,6 +139,7 @@ export function normalizeBitrix24Key(key: string): string {
 export function normalizeBitrix24Filter(filter: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(filter)) {
+    if (isForbiddenKey(k)) continue
     const normalised = normalizeBitrix24Key(k)
     if (Object.prototype.hasOwnProperty.call(out, normalised)) {
       throw new Error(
@@ -144,6 +158,7 @@ export function normalizeBitrix24Filter(filter: Record<string, unknown>): Record
 export function normalizeBitrix24Order<T>(order: Record<string, T>): Record<string, T> {
   const out: Record<string, T> = {}
   for (const [k, v] of Object.entries(order)) {
+    if (isForbiddenKey(k)) continue
     const normalised = normalizeBitrix24Key(k)
     if (Object.prototype.hasOwnProperty.call(out, normalised)) {
       throw new Error(
@@ -166,6 +181,7 @@ export function normalizeBitrix24Select(select: string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   for (const key of select) {
+    if (isForbiddenKey(key)) continue
     const normalised = normalizeBitrix24Key(key)
     if (seen.has(normalised)) continue
     seen.add(normalised)

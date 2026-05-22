@@ -2,9 +2,10 @@
  * `toV3Filter` — convert an LLM-friendly filter object into the Bitrix24 v3
  * REST list-filter contract.
  *
- * v3 list endpoints (`tasks.task.result.list`, `crm.deal.list`,
- * `crm.contact.list`, …) reject the v2 object-shaped `{ key: value }` form
- * and require an array of conditions instead:
+ * v3 list endpoints (`tasks.task.result.list`, … — the genuinely v3-only
+ * `/rest/api/` methods; NOT classic CRM lists like `crm.deal.list`, which
+ * stay on v2 and keep the object-shaped filter) reject the v2 object-shaped
+ * `{ key: value }` form and require an array of conditions instead:
  *
  *   - Equality: `[field, value]`
  *   - With operator: `[operator, field, value]`

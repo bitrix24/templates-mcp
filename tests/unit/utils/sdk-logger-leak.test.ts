@@ -542,13 +542,17 @@ describe('Issue #26 — SDK logger does not leak webhook URL or secret', () => {
       } catch (err) {
         captured = err
       }
-      // We don't depend on whether SDK actually rejects the malformed
-      // input — only that IF it does, the error our wrapper throws does
-      // not contain the sentinel.
-      if (captured) {
-        const errString = String((captured as Error).message ?? captured)
-        expect(errString, 'useBitrix24 rewrap leaked the webhook secret').not.toContain(SENTINEL_SECRET)
-      }
+      // The pin only has teeth if the SDK actually rejected the input. If
+      // a future SDK version becomes lenient about the `!!INVALID!!` suffix,
+      // this assert flips the test red so we replace the trigger with one
+      // the SDK still rejects — rather than silently turning the test into
+      // a no-op.
+      expect(
+        captured,
+        'SDK accepted malformed webhook URL; pick a stricter sentinel input',
+      ).toBeDefined()
+      const errString = String((captured as Error).message ?? captured)
+      expect(errString, 'useBitrix24 rewrap leaked the webhook secret').not.toContain(SENTINEL_SECRET)
     })
   })
 })

@@ -3,7 +3,7 @@ import { defineTaskLifecycleTool } from '~/server/utils/task-lifecycle'
 /**
  * Pause an in-progress Bitrix24 task — sends it back to the pending queue.
  *
- * Bitrix24 REST: tasks.task.pause (v3)
+ * Bitrix24 REST: tasks.task.pause (classic / v2 transport)
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-pause.html
  */
 export default defineTaskLifecycleTool({

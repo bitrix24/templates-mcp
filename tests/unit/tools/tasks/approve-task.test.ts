@@ -21,15 +21,17 @@ const tool = (await import('../../../../server/mcp/tools/tasks/approve-task')).d
 
 describe('bitrix24_approve_task', () => {
   beforeEach(() => {
-    fake.v3Call.mockReset()
+    fake.v2Call.mockReset()
   })
 
-  it('calls actions.v3.call.make with tasks.task.approve and returns the approved-task summary', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk({ task: { id: 8017, title: 'x', status: '5', responsibleId: '547' } }))
+  it('calls actions.v2.call.make with tasks.task.approve and returns the approved-task summary', async () => {
+    fake.v2Call.mockResolvedValue(fakeOk({ task: { id: 8017, title: 'x', status: '5', responsibleId: '547' } }))
 
     const result = await tool.handler({ taskId: 8017 })
 
-    expect(fake.v3Call).toHaveBeenCalledWith({ method: 'tasks.task.approve', params: { taskId: 8017 } })
+    expect(fake.v2Call).toHaveBeenCalledWith({ method: 'tasks.task.approve', params: { taskId: 8017 } })
+    // Regression guard: classic tasks.task.approve must NOT go through the v3 transport.
+    expect(fake.v3Call).not.toHaveBeenCalled()
     expect(JSON.parse(result.content[0]!.text)).toEqual({
       approved: true,
       id: 8017,
@@ -40,13 +42,13 @@ describe('bitrix24_approve_task', () => {
   })
 
   it('falls back to a re-list message when Bitrix24 returns no task body', async () => {
-    fake.v3Call.mockResolvedValue(fakeOk({}))
+    fake.v2Call.mockResolvedValue(fakeOk({}))
     const result = await tool.handler({ taskId: 1 })
     expect(result.content[0]!.text).toMatch(/Re-list/i)
   })
 
   it('wraps SDK errors with the task id in the fallback', async () => {
-    fake.v3Call.mockRejectedValue(new Error('action not allowed'))
+    fake.v2Call.mockRejectedValue(new Error('action not allowed'))
     await expect(tool.handler({ taskId: 7 })).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       message: 'action not allowed',

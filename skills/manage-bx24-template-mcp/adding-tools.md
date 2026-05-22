@@ -25,8 +25,10 @@ One tool per file, `kebab-name.ts`. File-based discovery picks them up automatic
 
 ## The reference template
 
+> **Transport: pick v2 vs v3 correctly (this matters).** Bitrix24 has two REST surfaces and they are NOT interchangeable. The classic API (`/rest/<uid>/<secret>/…`, UPPERCASE fields) is reached via `callV2`/`batchV2`; rest-v3 (`/rest/api/…`, camelCase DTOs, `BITRIX_REST_V3_EXCEPTION_*` errors) via `callV3`/`batchV3`. Calling a classic method on v3 fails with `UNKNOWNDTOPROPERTYEXCEPTION` (wrong casing) or "restApi:v3 not support method". Bitrix24's migration to rest-v3 is slow, so **default to v2** for anything with a classic implementation — `tasks.task.{add,list,update,start,pause,complete,approve,disapprove,defer,renew}`, `crm.*`, `user.*`, `task.*` (singular). Use **v3 only** for methods that are v3-ONLY with no working v2 form — currently `tasks.task.get` and `tasks.task.result.*`. When unsure, check apidocs: a `/rest/api/` URL + camelCase fields = v3. See the convention block in `server/utils/sdk-helpers.ts`.
+
 This is what a single-call tool looks like end-to-end. Two key invariants:
-1. The SDK call goes through the **typed `callV3` / `callV2` helpers** from `server/utils/sdk-helpers.ts`. Never call `b24.actions.v3.call.make` directly from a tool — the helpers own the `isSuccess` / `getErrorMessages` boilerplate and the transport-error wrap. The deprecated `b24.callMethod` is forbidden.
+1. The SDK call goes through the **typed `callV3` / `callV2` helpers** from `server/utils/sdk-helpers.ts`. Never call `b24.actions.v3.call.make` directly from a tool — the helpers own the `isSuccess` / `getErrorMessages` boilerplate and the transport-error wrap. The deprecated `b24.callMethod` is forbidden. The example below uses `tasks.task.get`, which really is a v3 method; for a classic method (e.g. `tasks.task.add`) use `callV2` instead.
 2. Compact `JSON.stringify(payload)` (no `null, 2` pretty-print) — every newline / space costs tokens in the LLM tool response.
 
 ```ts
@@ -129,7 +131,7 @@ The scaffold owns:
 
 Each wrapper factory supplies only the v2/v3-specific parts (REST namespace, params shape, response projection, optional pre-flight) via `runOne` / `runBatch` callbacks. Five precedents in the codebase:
 
-- `server/utils/task-lifecycle.ts` — wraps the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}` v3 methods. Thin per-tool files (~10 LOC) because the runOne / runBatch callbacks live in the shared factory.
+- `server/utils/task-lifecycle.ts` — wraps the seven `tasks.task.{start,pause,complete,approve,disapprove,defer,renew}` classic (v2) methods. Thin per-tool files (~10 LOC) because the runOne / runBatch callbacks live in the shared factory.
 - `server/utils/checklist.ts` — wraps the three `task.checklistitem.{complete,renew,delete}` v2 methods with positional `[taskId, itemId]` params and optional heading-delete pre-flight.
 - `server/mcp/tools/tasks/delete-elapsed-time.ts` — single-tool consumer demonstrating object-form `{TASKID, ITEMID}` params and the universal `confirmDelete` gate (SKILL.md Ground Rule #9). Callbacks live inline (no shared factory file) — that's the right shape when you have one delete tool per REST family, not a fan-out like lifecycle / checklist.
 - `server/mcp/tools/tasks/add-task-dependency.ts` — single-tool consumer where the dispatched id-or-array (`taskIdFrom`) is paired with TWO fixed-per-call inputs (`taskIdTo`, `linkType`) that ride along on `input`. Shows that the factory shape extends naturally beyond "one fixed parent id" — any number of constants can bleed in via closure over `input`.
@@ -192,22 +194,24 @@ If your tool isn't in this table and you find yourself adding a `confirm<Cascade
 
 ## When you need a batch
 
-If the tool acts on a collection (10–50 ids), use **`batchV3`** (for v3 methods) or **`batchV2`** (for v2 methods) — one HTTP round-trip with up to 50 sub-calls. Don't loop `callV3` / `callV2` sequentially; that pattern existed briefly and was replaced (it lost the SDK's transactional report shape and ran ~25× slower).
+If the tool acts on a collection (10–50 ids), use **`batchV2`** (for classic methods — the default) or **`batchV3`** (for v3-only methods) — one HTTP round-trip with up to 50 sub-calls. Don't loop `callV2` / `callV3` sequentially; that pattern existed briefly and was replaced (it lost the SDK's transactional report shape and ran ~25× slower).
 
 **Inside a factory built on `defineActionTool`**, project the rows via `mapBatchRows` (see "Shared factory pattern" above) — never re-implement the row loop. The example below is for **standalone** batch tools (e.g. `rate-task.ts`) where the factory abstraction doesn't fit.
 
 ```ts
-import { batchV3 } from '~/server/utils/sdk-helpers'
+// tasks.task.start is a classic method → batchV2. Use batchV3 only for
+// genuinely v3 methods (e.g. tasks.task.result.*).
+import { batchV2 } from '~/server/utils/sdk-helpers'
 import { Bitrix24ToolError } from '~/server/utils/errors'
 
-const rows = await batchV3<{ task: TaskItem }>(
+const rows = await batchV2<{ task: TaskItem }>(
   b24,
   taskIds.map((id) => ['tasks.task.start', { taskId: id }]),
   `Failed to start a batch of ${taskIds.length} task(s)`,
 )
 
 // rows is Array<AjaxResult<{ task: TaskItem }>> aligned with taskIds[].
-// `isHaltOnError: false` + `returnAjaxResult: true` are applied by batchV3
+// `isHaltOnError: false` + `returnAjaxResult: true` are applied by batchV2
 // for you — per-call failures land in rows[i] with isSuccess === false.
 const results = rows.map((row, index) => {
   const taskId = taskIds[index]
@@ -295,7 +299,7 @@ describe('bitrix24_get_task', () => {
 })
 ```
 
-For tools that use batch mode, mock `fake.v3Batch` similarly — see `tests/unit/tools/tasks/rate-task.test.ts` for the canonical batch-mock pattern.
+For tools that use batch mode, mock `fake.v2Batch` (or `fake.v3Batch` for a v3-only method) similarly — see `tests/unit/tools/tasks/rate-task.test.ts` (a v2 batch tool) for the canonical batch-mock pattern. Match the mock to the transport the tool actually uses, and assert the other one was NOT called.
 
 ## Eval cases
 
@@ -338,7 +342,7 @@ Pick the broadest scope that applies — a refactor across `server/utils/*` is `
 ## Checklist before the PR
 
 - [ ] One file under `server/mcp/tools/<group>/<kebab>.ts`.
-- [ ] Uses `callV3` / `callV2` / `batchV3` from `server/utils/sdk-helpers.ts`. Zero direct `actions.*.{call,batch}.make` references in the handler; zero `callMethod` references anywhere.
+- [ ] Uses `callV2` / `callV3` / `batchV2` / `batchV3` from `server/utils/sdk-helpers.ts`, with the **correct transport** for the method (default v2; v3 only for v3-only methods — see the convention block in `sdk-helpers.ts`). Zero direct `actions.*.{call,batch}.make` references in the handler; zero `callMethod` references anywhere.
 - [ ] All Zod fields have `.describe()`.
 - [ ] `isSuccess` is checked before reading `getData()`.
 - [ ] Errors funnel through `toToolError()`; no `console.error`.

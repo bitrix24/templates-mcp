@@ -32,16 +32,16 @@ export interface ElapsedTimeShort {
 export function toElapsedTimeShort(raw: unknown): ElapsedTimeShort | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as BitrixElapsedTimeRaw & Record<string, unknown>
-  const id = toNumber(pick(r as Record<string, unknown>, 'id', 'ID'))
-  const taskId = toNumber(pick(r as Record<string, unknown>, 'taskId', 'TASK_ID'))
+  const id = toNumber(pick(r, 'id', 'ID'))
+  const taskId = toNumber(pick(r, 'taskId', 'TASK_ID'))
   if (id === null || taskId === null) return null
   return {
     id,
     taskId,
-    userId: toNumber(pick(r as Record<string, unknown>, 'userId', 'USER_ID')),
+    userId: toNumber(pick(r, 'userId', 'USER_ID')),
     // COMMENT_TEXT may be missing or empty on a stopwatch-only entry; default
     // to '' so the projection shape stays stable.
-    commentText: pick<string>(r as Record<string, unknown>, 'commentText', 'COMMENT_TEXT') ?? '',
+    commentText: pick<string>(r, 'commentText', 'COMMENT_TEXT') ?? '',
     // SECONDS is the canonical duration. Missing → 0 (Bitrix24 occasionally
     // ships zero-second entries for stopwatch start markers; surfacing
     // them as 0 keeps the projection shape stable). Sibling parsers like
@@ -49,9 +49,9 @@ export function toElapsedTimeShort(raw: unknown): ElapsedTimeShort | null {
     // here is intentionally different because `seconds` is the headline
     // field every agent reads, and `null` would force the LLM through a
     // null-check it doesn't need for the stopwatch-marker case.
-    seconds: toNumber(pick(r as Record<string, unknown>, 'seconds', 'SECONDS')) ?? 0,
-    createdDate: pick<string>(r as Record<string, unknown>, 'createdDate', 'CREATED_DATE') || null,
-    dateStart: pick<string>(r as Record<string, unknown>, 'dateStart', 'DATE_START') || null,
-    dateStop: pick<string>(r as Record<string, unknown>, 'dateStop', 'DATE_STOP') || null,
+    seconds: toNumber(pick(r, 'seconds', 'SECONDS')) ?? 0,
+    createdDate: pick<string>(r, 'createdDate', 'CREATED_DATE') || null,
+    dateStart: pick<string>(r, 'dateStart', 'DATE_START') || null,
+    dateStop: pick<string>(r, 'dateStop', 'DATE_STOP') || null,
   }
 }

@@ -187,12 +187,16 @@ const aiSdkTools = Object.fromEntries(
   ]),
 ) as ToolSet
 
-const deepseek = createOpenAI({
+// @ai-sdk/openai v3 defaults the callable provider to the Responses API
+// (`/responses` endpoint), which DeepSeek does not support. Use `.chat()`
+// explicitly to force the Chat Completions path (`/chat/completions`).
+const deepseekProvider = createOpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com',
   // The eval skips when DEEPSEEK_API_KEY is unset (see runner switch below),
   // so an empty key here is fine — generateText is never reached.
   apiKey: process.env.DEEPSEEK_API_KEY ?? '',
 })
+const deepseek = (modelId: string) => deepseekProvider.chat(modelId)
 
 interface Case {
   input: string

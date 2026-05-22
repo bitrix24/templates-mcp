@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import type { TaskListEnvelope } from '~/server/types/bitrix24'
 import { useBitrix24 } from '~/server/utils/bitrix24'
-import { callV3 } from '~/server/utils/sdk-helpers'
+import { callV2 } from '~/server/utils/sdk-helpers'
 import {
   normalizeBitrix24Filter,
   normalizeBitrix24Order,
@@ -20,12 +20,14 @@ const DEFAULT_SELECT_WIRE = normalizeBitrix24Select(DEFAULT_SELECT_CAMEL)
  * Bitrix24 REST: tasks.task.list
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-list.html
  *
- * The wire contract for `filter` / `order` / `select` is legacy
- * `UPPER_SNAKE_CASE` even though the method is namespaced under v3
- * `tasks.task.*`. We accept v3-friendly camelCase from the LLM (matching
- * every other task tool in this MCP) and translate to UPPER_SNAKE at the
- * boundary via `normalizeBitrix24Key`. Legacy UPPERCASE input is passed
- * through unchanged, so callers that learned the old contract still work.
+ * This is the classic `tasks.task.*` API, served on the v2 transport
+ * (`callV2`). rest-v3 does NOT implement `tasks.task.list` ("restApi:v3 not
+ * support method tasks.task.list"), so it must go through v2. The wire
+ * contract for `filter` / `order` / `select` is legacy `UPPER_SNAKE_CASE`.
+ * We accept camelCase from the LLM (matching every other task tool in this
+ * MCP) and translate to UPPER_SNAKE at the boundary via `normalizeBitrix24Key`.
+ * Legacy UPPERCASE input is passed through unchanged, so callers that learned
+ * the old contract still work.
  *
  * Page size is fixed at 50 by Bitrix24. Use `start` to paginate
  * (start = (pageNumber - 1) * 50).
@@ -62,7 +64,7 @@ export default defineMcpTool({
   },
   handler: async ({ filter, order, select, start }) => {
     const b24 = useBitrix24()
-    const data = await callV3<TaskListEnvelope>(
+    const data = await callV2<TaskListEnvelope>(
       b24,
       'tasks.task.list',
       {

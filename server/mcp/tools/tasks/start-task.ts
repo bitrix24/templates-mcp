@@ -3,7 +3,7 @@ import { defineTaskLifecycleTool } from '~/server/utils/task-lifecycle'
 /**
  * Move a Bitrix24 task into "In progress" status.
  *
- * Bitrix24 REST: tasks.task.start (v3)
+ * Bitrix24 REST: tasks.task.start (classic / v2 transport)
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-start.html
  */
 export default defineTaskLifecycleTool({
