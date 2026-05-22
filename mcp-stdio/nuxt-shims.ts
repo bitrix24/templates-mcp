@@ -31,14 +31,24 @@ interface RuntimeConfig {
   logLevel: string
 }
 
+// Canonical env names are `NUXT_`-prefixed — identical to what the Nuxt HTTP
+// server consumes (Nuxt maps `NUXT_<KEY>` onto `runtimeConfig.<key>`). The DXT
+// manifest now injects these same names, so one variable name works in both
+// deployment modes. The un-prefixed forms are kept as a back-compat fallback
+// for bundles built before the unification and for the README dry-run.
 const runtimeConfig: RuntimeConfig = {
-  bitrix24WebhookUrl: process.env.BITRIX24_WEBHOOK_URL ?? '',
+  bitrix24WebhookUrl:
+    process.env.NUXT_BITRIX24_WEBHOOK_URL ?? process.env.BITRIX24_WEBHOOK_URL ?? '',
   // Bearer auth is not used in stdio — the host (Claude Desktop) provides
   // transport-level trust. Keep the shape so middleware imports type-check.
   mcpAuthToken: '',
-  githubFeedbackToken: process.env.GITHUB_FEEDBACK_TOKEN ?? '',
-  githubFeedbackRepo: process.env.GITHUB_FEEDBACK_REPO ?? 'bitrix24/templates-mcp',
-  logLevel: process.env.LOG_LEVEL ?? 'info',
+  githubFeedbackToken:
+    process.env.NUXT_GITHUB_FEEDBACK_TOKEN ?? process.env.GITHUB_FEEDBACK_TOKEN ?? '',
+  githubFeedbackRepo:
+    process.env.NUXT_GITHUB_FEEDBACK_REPO
+    ?? process.env.GITHUB_FEEDBACK_REPO
+    ?? 'bitrix24/templates-mcp',
+  logLevel: process.env.NUXT_LOG_LEVEL ?? process.env.LOG_LEVEL ?? 'info',
 }
 
 ;(globalThis as unknown as { useRuntimeConfig: () => RuntimeConfig }).useRuntimeConfig = () =>

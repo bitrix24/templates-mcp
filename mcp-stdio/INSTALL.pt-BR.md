@@ -55,7 +55,7 @@ Reinicie o Claude Desktop para a variável ser herdada pelo processo da extensã
 
 - Claude Desktop: **Configurações → Extensions → bx24-template-mcp → View logs** — mostra o stderr do processo.
 - Erros mais frequentes:
-  - `BITRIX24_WEBHOOK_URL is not set` — o campo obrigatório do passo 3 ficou em branco.
+  - `NUXT_BITRIX24_WEBHOOK_URL is not set` — o campo obrigatório do passo 3 ficou em branco.
   - `Request failed with status code 401/403` — webhook revogado ou sem permissão para o método chamado.
   - `unable to verify the first certificate` — Self-Hosted com CA interna sem `NODE_EXTRA_CA_CERTS` configurado.
 

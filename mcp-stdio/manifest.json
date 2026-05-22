@@ -21,10 +21,10 @@
       "command": "node",
       "args": ["${__dirname}/server/index.mjs"],
       "env": {
-        "BITRIX24_WEBHOOK_URL": "${user_config.webhook_url}",
-        "GITHUB_FEEDBACK_TOKEN": "${user_config.github_feedback_token}",
-        "GITHUB_FEEDBACK_REPO": "${user_config.github_feedback_repo}",
-        "LOG_LEVEL": "${user_config.log_level}",
+        "NUXT_BITRIX24_WEBHOOK_URL": "${user_config.webhook_url}",
+        "NUXT_GITHUB_FEEDBACK_TOKEN": "${user_config.github_feedback_token}",
+        "NUXT_GITHUB_FEEDBACK_REPO": "${user_config.github_feedback_repo}",
+        "NUXT_LOG_LEVEL": "${user_config.log_level}",
         "NODE_ENV": "production"
       }
     }

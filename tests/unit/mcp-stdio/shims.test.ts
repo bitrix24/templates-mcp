@@ -25,6 +25,10 @@ interface ShimRuntimeConfig {
 }
 
 const ENV_VARS = [
+  'NUXT_BITRIX24_WEBHOOK_URL',
+  'NUXT_GITHUB_FEEDBACK_TOKEN',
+  'NUXT_GITHUB_FEEDBACK_REPO',
+  'NUXT_LOG_LEVEL',
   'BITRIX24_WEBHOOK_URL',
   'GITHUB_FEEDBACK_TOKEN',
   'GITHUB_FEEDBACK_REPO',
@@ -76,6 +80,33 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
       githubFeedbackRepo: 'acme/forked',
       logLevel: 'debug',
     })
+  })
+
+  it('projects the canonical `NUXT_`-prefixed env vars (same names as the Nuxt HTTP server)', async () => {
+    process.env.NUXT_BITRIX24_WEBHOOK_URL = 'https://example.bitrix24.ru/rest/1/abc/'
+    process.env.NUXT_GITHUB_FEEDBACK_TOKEN = 'ghp_test123'
+    process.env.NUXT_GITHUB_FEEDBACK_REPO = 'acme/forked'
+    process.env.NUXT_LOG_LEVEL = 'debug'
+    await import('../../../mcp-stdio/nuxt-shims')
+    const cfg = (globalThis as unknown as { useRuntimeConfig: () => ShimRuntimeConfig }).useRuntimeConfig()
+    expect(cfg).toEqual({
+      bitrix24WebhookUrl: 'https://example.bitrix24.ru/rest/1/abc/',
+      mcpAuthToken: '',
+      githubFeedbackToken: 'ghp_test123',
+      githubFeedbackRepo: 'acme/forked',
+      logLevel: 'debug',
+    })
+  })
+
+  it('prefers the `NUXT_`-prefixed name over the un-prefixed back-compat fallback', async () => {
+    process.env.NUXT_BITRIX24_WEBHOOK_URL = 'https://canonical.bitrix24.ru/rest/1/abc/'
+    process.env.BITRIX24_WEBHOOK_URL = 'https://legacy.bitrix24.ru/rest/9/zzz/'
+    process.env.NUXT_GITHUB_FEEDBACK_REPO = 'acme/canonical'
+    process.env.GITHUB_FEEDBACK_REPO = 'acme/legacy'
+    await import('../../../mcp-stdio/nuxt-shims')
+    const cfg = (globalThis as unknown as { useRuntimeConfig: () => ShimRuntimeConfig }).useRuntimeConfig()
+    expect(cfg.bitrix24WebhookUrl).toBe('https://canonical.bitrix24.ru/rest/1/abc/')
+    expect(cfg.githubFeedbackRepo).toBe('acme/canonical')
   })
 
   it('defaults `githubFeedbackRepo` to the upstream repo and `logLevel` to info', async () => {

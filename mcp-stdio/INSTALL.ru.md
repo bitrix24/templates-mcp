@@ -54,7 +54,7 @@ export NODE_EXTRA_CA_CERTS=/path/to/your-internal-ca-bundle.pem
 
 - В Claude Desktop: **Настройки → Extensions → bx24-template-mcp → View logs** — там stderr процесса.
 - Самые частые ошибки:
-  - `BITRIX24_WEBHOOK_URL is not set` — не заполнили обязательное поле в шаге 3.
+  - `NUXT_BITRIX24_WEBHOOK_URL is not set` — не заполнили обязательное поле в шаге 3.
   - `Request failed with status code 401/403` — вебхук отозван или не имеет прав на нужный метод.
   - `unable to verify the first certificate` — Self-Hosted с внутренним УЦ, не выставлен `NODE_EXTRA_CA_CERTS`.
 

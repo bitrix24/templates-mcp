@@ -24,9 +24,9 @@ import { registerToolFromDefinition } from './register.js'
 const { tools } = await import('./tools.js')
 
 async function main() {
-  if (!process.env.BITRIX24_WEBHOOK_URL) {
+  if (!process.env.NUXT_BITRIX24_WEBHOOK_URL && !process.env.BITRIX24_WEBHOOK_URL) {
     process.stderr.write(
-      'BITRIX24_WEBHOOK_URL is not set. Claude Desktop should pass it through '
+      'NUXT_BITRIX24_WEBHOOK_URL is not set. Claude Desktop should pass it through '
         + 'the DXT user_config; if you are running the bundle directly, set it '
         + 'in the environment first.\n',
     )

@@ -48,7 +48,7 @@ The webhook secret is stored in Claude Desktop's OS-backed encrypted user_config
 
 ```bash
 pnpm build:dxt
-BITRIX24_WEBHOOK_URL='https://your.bitrix24.com/rest/.../...' \
+NUXT_BITRIX24_WEBHOOK_URL='https://your.bitrix24.com/rest/.../...' \
   node dist/dxt/server/index.mjs
 ```
 
