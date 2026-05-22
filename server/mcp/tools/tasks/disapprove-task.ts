@@ -4,7 +4,7 @@ import { defineTaskLifecycleTool } from '~/server/utils/task-lifecycle'
  * Reject a "Supposedly completed" Bitrix24 task and send it back to the
  * responsible user. Only meaningful when task control is enabled on the task.
  *
- * Bitrix24 REST: tasks.task.disapprove (v3)
+ * Bitrix24 REST: tasks.task.disapprove (classic / v2 transport)
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-disapprove.html
  */
 export default defineTaskLifecycleTool({

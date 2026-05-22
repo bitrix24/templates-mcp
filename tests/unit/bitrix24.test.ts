@@ -3,9 +3,11 @@ import type * as Bitrix24Module from '../../server/utils/bitrix24'
 
 const fromWebhookUrl = vi.fn()
 const setLogger = vi.fn()
+const setRestrictionManagerParams = vi.fn()
 
 vi.mock('@bitrix24/b24jssdk', () => ({
   B24Hook: { fromWebhookUrl },
+  ParamsFactory: { getDefault: () => ({}) },
 }))
 
 vi.mock('~/server/utils/logger', () => ({
@@ -31,9 +33,13 @@ describe('useBitrix24', () => {
   beforeEach(() => {
     fromWebhookUrl.mockReset()
     setLogger.mockReset()
-    // Returns an object with `setLogger` so the wrapper in `useBitrix24` —
-    // which calls `client.setLogger(useLogger())` — doesn't crash.
-    fromWebhookUrl.mockImplementation((url: string) => ({ url, setLogger }))
+    setRestrictionManagerParams.mockReset()
+    // `useBitrix24` registers a hard error code via this async method; resolve
+    // it so the fire-and-forget `.catch` chain doesn't reject in tests.
+    setRestrictionManagerParams.mockResolvedValue(undefined)
+    // Returns an object with `setLogger` + `setRestrictionManagerParams` so the
+    // bootstrap in `useBitrix24` doesn't crash.
+    fromWebhookUrl.mockImplementation((url: string) => ({ url, setLogger, setRestrictionManagerParams }))
     runtimeConfig.bitrix24WebhookUrl = ''
   })
 
@@ -54,6 +60,18 @@ describe('useBitrix24', () => {
     const { useBitrix24 } = await loadFresh()
     useBitrix24()
     expect(setLogger).toHaveBeenCalledTimes(1)
+  })
+
+  it('registers Bitrix24 error 1048582 as a non-retryable hard error code (#127)', async () => {
+    // 1048582 ("action not available") is a permanent lifecycle-transition
+    // rejection; without this the SDK retries it 3x with backoff. Remove once
+    // upstream bitrix24/b24jssdk#46 ships the built-in.
+    runtimeConfig.bitrix24WebhookUrl = 'https://example.bitrix24.ru/rest/1/abc/'
+    const { useBitrix24 } = await loadFresh()
+    useBitrix24()
+    expect(setRestrictionManagerParams).toHaveBeenCalledTimes(1)
+    const passed = setRestrictionManagerParams.mock.calls[0]![0] as { hardErrorCodes?: string[] }
+    expect(passed.hardErrorCodes).toContain('1048582')
   })
 
   it('returns the same instance on subsequent calls (singleton)', async () => {
