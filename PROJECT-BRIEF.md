@@ -778,99 +778,8 @@ The documents below are not optional. Each one has a clear audience, a fixed sco
 | `skills/manage-bx24-template-mcp/contributing.md` | AI agent | PR rules | mirror of `CONTRIBUTING.md` in agent-friendly form |
 | `skills/manage-bx24-template-mcp/feedback.md` | AI agent | when to call `bx24mcp_submit_feedback` | prompts, examples, thresholds |
 
-### `README.md` (root) — outline
-
-The root README is the first thing visitors see. Keep it skimmable; everything deep lives in `docs/`.
-
-Sections:
-
-1. **What this is** — one paragraph: "Starter template for building Bitrix24 MCP servers — ships example tools for tasks and users, fork it to add your own."
-2. **Status badges** — CI, license, Node version, latest release
-3. **Why** — one paragraph about the problem (no off-the-shelf Bitrix24 MCP, need a production-quality starter)
-4. **Features** — bullet list of capabilities by phase
-5. **Quick start (local)** — copy-paste sequence:
-   ```bash
-   git clone https://github.com/bitrix24/templates-mcp.git
-   cd templates-mcp
-   cp .env.example .env
-   # edit .env, set NUXT_BITRIX24_WEBHOOK_URL and NUXT_MCP_AUTH_TOKEN
-   pnpm install
-   pnpm dev
-   ```
-   Plus: how to verify with `curl http://localhost:3000/api/health` and how to open the Inspector in Nuxt DevTools.
-6. **Connecting Claude** — link to the section above, no duplication
-7. **Available tools** — table with name + one-line description (generated or hand-kept)
-8. **Repository layout** — tree, two levels deep
-9. **Documentation** — link list to `docs/*`
-10. **Contributing** — one-liner + link to `CONTRIBUTING.md`
-11. **License** — MIT, link to `LICENSE`
-
-### `docs/README.md` — outline
-
-Index for the `docs/` tree.
-
-- One-line summary for each document
-- Recommended reading order for three personas: contributor, operator, AI agent
-- Pointer to `skills/manage-bx24-template-mcp/SKILL.md`
-
-### `docs/ARCHITECTURE.md` — outline
-
-For maintainers and reviewers. Explains how the pieces fit and why.
-
-Sections:
-
-1. **System overview** — ASCII diagram: `Claude → HTTPS → nginx-proxy → Nitro (/mcp) → b24jssdk → Bitrix24 REST`
-2. **Layers**
-   - HTTP layer: h3 routes, middleware, auth
-   - MCP layer: tools, resources, prompts, discovery
-   - Domain layer: `useBitrix24()`, error mapping
-   - Infrastructure: Docker, nginx-proxy, GH Actions
-3. **Data flow** — request lifecycle: incoming MCP call → schema validation → Bitrix24 call → response shaping → return
-4. **Key decisions** (ADR-lite, one paragraph each)
-   - Why Nuxt + `@nuxtjs/mcp-toolkit` instead of bare SDK
-   - Why webhook in Phase 1, OAuth in Phase 3
-   - Why file-based tool discovery
-   - Why DeepSeek for evals
-   - Why nginx-proxy instead of Caddy/Traefik
-   - Why pnpm
-5. **State and persistence** — none in MVP, what changes in Phase 2 (cache for resources)
-6. **Concurrency model** — Node event loop, no shared state between requests, singleton client
-7. **Logging and observability** — SDK `Logger` (one channel for app + SDK events), request IDs via h3 context, what gets logged where
-8. **Failure modes** — Bitrix24 down, GitHub API down, exhausted rate limit, expired webhook
-9. **Open questions** — list of things explicitly deferred
-
-### `docs/DEPLOYMENT.md` — outline
-
-For the person shipping a release.
-
-Sections:
-
-1. **Topology** — host runs `nginx-proxy` stack + this service stack, shared `proxy-net` network
-2. **Release process** — bump version in `package.json`, tag `vX.Y.Z`, push tag, watch GH Actions
-3. **What the deploy workflow does** — every step, with the workflow file linked
-4. **First-time setup** — what to install on a fresh host (`docker`, `docker compose`, create `/opt/bx24-template-mcp`, drop `docker-compose.yml`, configure `.env`)
-5. **Rolling back** — re-tag with previous version, or change `image:` tag in compose and `up -d`
-6. **Health check** — what `/api/health` returns, how the workflow polls it
-7. **Secrets matrix** — table of secrets, where each lives (GH Actions, server `.env`), how to rotate
-8. **TLS** — handled by `acme-companion`, what to do if a cert fails to renew
-9. **Hard reset** — only if everything is on fire: `docker compose down && docker compose pull && docker compose up -d`
-
-### `docs/RUNBOOK.md` — outline
-
-For on-call. Each scenario is structured as: **Symptom → Quick check → Likely cause → Fix → Postmortem hook**.
-
-Initial scenarios:
-
-- `/api/health` returns 502
-- `/api/health` returns 500
-- Claude returns "MCP unavailable"
-- All Bitrix24 calls fail with 401
-- All Bitrix24 calls fail with 429
-- Disk full on the host
-- TLS cert expired
-- Renovate PR keeps failing CI
-- `bx24mcp_submit_feedback` returns "rate limit exceeded"
-- GitHub Actions deploy stuck on health check
+Only one planned doc below remains unwritten; its outline is kept. Outlines for the
+now-authored docs have been removed — their scope lives in the table above.
 
 ### `docs/TESTING.md` — outline
 
@@ -886,51 +795,6 @@ Sections:
 6. **Fixtures** — where they live (`tests/fixtures/`), how to add one
 7. **CI behavior** — what runs in PRs, what runs nightly, what runs on tag
 8. **Test portal hygiene** — rules: clean up created entities, prefer prefixes like `[test]`
-
-### `docs/SECURITY.md` — outline
-
-Sections:
-
-1. **Threat model** — who attackers are: lost MCP token, lost GitHub feedback token, malicious Bitrix24 admin, compromised dependency
-2. **Auth** — Bearer token between Claude and us, webhook URL between us and Bitrix24
-3. **Secrets handling** — `.env` local only, GH Actions secrets in CI, container env on prod, rotation procedure
-4. **Bitrix24 webhook scope** — minimal CRM/Tasks rights, no admin
-5. **Supply chain** — Renovate for updates, vulnerability alerts, lockfile integrity
-6. **Logging** — never log webhook URLs, never log tokens, redact request bodies that contain creds
-7. **Rate limits** — MCP per-token rate limit, feedback issue rate limit, Bitrix24 client throttle
-8. **Reporting a vulnerability** — email + 90-day disclosure policy
-
-### `docs/FEEDBACK.md` — outline
-
-Mostly mirrors the "Agent Feedback" section of this brief.
-
-Sections:
-
-1. **Why** — link to the brief, one paragraph
-2. **Tool contract** — name, schema, return type, what creates a GitHub issue
-3. **GitHub flow** — issue title format, labels, who triages, SLA (best effort)
-4. **Rate limit** — 5/hour per MCP token, how the limit is enforced, what the agent sees when limited
-5. **Sanitization** — what's truncated, what's escaped
-6. **Mocking in tests** — how to disable real issue creation
-7. **Operator tasks** — how to rotate the GitHub feedback token, how to revoke a noisy agent
-
-### `docs/AGENT.md` — outline
-
-One-page redirect to `skills/manage-bx24-template-mcp/SKILL.md` for any agent that landed in `docs/` first.
-
-### `skills/manage-bx24-template-mcp/SKILL.md` — outline
-
-Already drafted in the brief; final version stays terse and rule-oriented:
-
-- Project context (5 bullet points)
-- Ground rules (numbered, ≤ 7)
-- Feedback mechanism (one paragraph)
-- Commit and PR conventions (link to `contributing.md`)
-- Renovate Bot (one paragraph)
-- "When asked to add a new tool" — numbered steps
-- "When asked to upgrade dependencies" — numbered steps
-- "Things you must NOT do without asking" — bullet list
-- Pointers to sub-skills
 
 ### Documentation conventions
 
