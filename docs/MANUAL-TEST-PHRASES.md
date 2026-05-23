@@ -46,7 +46,7 @@ Bitrix24 has two parallel REST API generations:
 | `bitrix24_delete_task_result` | `tasks.task.result.delete` | **v3** ✓ — author-only; destructive. |
 | `bx24mcp_submit_feedback` | _(no Bitrix24 call)_ | meta-tool — files a GitHub issue |
 
-All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through `actions.v3.batch.make` as one HTTP round-trip. The 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) accept `itemId: number[]` for batch mode too, but loop sequentially (the v2 `task.checklistitem.*` namespace isn't exposed to `actions.v3.batch.make`).
+All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through the `batchV2` helper as one HTTP round-trip. The 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) likewise accept `itemId: number[]` for batch mode (up to 50; `force: true` overrides) and also go through `batchV2` as one round-trip.
 
 When you see a Bitrix24 method name in a tool's source, sanity-check it has the `tasks.` (with `s`) prefix or lives under a documented v3 URL. The phrase pack below assumes v3 throughout.
 
@@ -213,7 +213,7 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 | 8.6 | Отложи задачу 123, пока без приоритета. | `defer_task { taskId: 123 }` |
 | 8.7 | Восстанови задачу 123 из закрытых. | `renew_task { taskId: 123 }` |
 | 8.8 | Start working on task 123 and add a comment "поехали". | Chain: `start_task` then `add_task_comment` |
-| 8.9 | Закрой задачи 5, 7 и 12 одним вызовом. | `complete_task { taskId: [5, 7, 12] }` — batch mode via `actions.v3.batch.make`, returns `{ batch, total, ok, failed, results }`. |
+| 8.9 | Закрой задачи 5, 7 и 12 одним вызовом. | `complete_task { taskId: [5, 7, 12] }` — batch mode via the `batchV2` helper, returns `{ batch, total, ok, failed, results }`. |
 
 Trade-off recorded for the future: seven separate tools (one per verb) rather than one `bitrix24_change_task_status` with an enum, so the LLM gets per-action description text. Tracked as `rfc(evals): measure cost — N specialized lifecycle tools vs 1 enum-based tool` in issue #9.
 
