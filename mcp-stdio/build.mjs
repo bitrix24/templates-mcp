@@ -90,9 +90,10 @@ await build({
   logLevel: 'info',
 })
 
-console.error('[dxt] copying README/LICENSE')
+console.error('[dxt] copying README/LICENSE/icon')
 await cp(resolve(projectRoot, 'LICENSE'), join(outDir, 'LICENSE'))
 await cp(resolve(__dirname, 'README.md'), join(outDir, 'README.md'))
+await cp(resolve(__dirname, 'icon.png'), join(outDir, 'icon.png'))
 
 console.error(`[dxt] zipping → ${dxtPath}`)
 await zipDirectory(outDir, dxtPath)
