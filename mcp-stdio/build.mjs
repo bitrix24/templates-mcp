@@ -40,6 +40,11 @@ manifest.version = pkg.version
 const manifestOut = join(outDir, 'manifest.json')
 await writeFile(manifestOut, JSON.stringify(manifest, null, 2), 'utf8')
 
+// The MCPB validator resolves `manifest.icon` relative to the manifest's
+// directory, so the file must exist before `validateManifest` runs. Copy it
+// in alongside the manifest, then validate, then bundle the rest.
+await cp(resolve(__dirname, 'icon.png'), join(outDir, 'icon.png'))
+
 // Validate against the official DXT/MCPB schema before bundling. Claude
 // Desktop runs the same check at install time and refuses the whole package
 // on any unrecognised key (e.g. an `options` enum on a user_config field),

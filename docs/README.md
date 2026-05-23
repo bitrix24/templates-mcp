@@ -38,4 +38,3 @@ Start here if you are an AI assistant working with this MCP.
 ## Not yet authored
 
 - `TROUBLESHOOTING.md` — known issues and recovery procedures (the Alert→Action table in `RUNBOOK.md` covers the prod-incident slice; this one would be the dev/laptop slice).
-

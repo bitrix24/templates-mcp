@@ -1,5 +1,7 @@
 # Adding a new MCP tool
 
+`Last reviewed: 2026-05-23`
+
 Practical template for an AI agent (or human) adding a Bitrix24 MCP tool to this project. Read [`SKILL.md`](./SKILL.md) first — this doc fills in the concrete shape that the ground rules and persona walk describe.
 
 ## Where the tool goes
@@ -334,7 +336,7 @@ Apply SKILL.md "Persona walk" to your tool's description and eval cases. Specifi
 The `Commit messages` CI job runs `commitlint` against both the PR title and every commit in the PR. Conventional Commits format is enforced via `commitlint.config.js`:
 
 - **Allowed types**: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `ci`, `perf`, `build`, `revert`
-- **Allowed scopes**: `tools`, `client`, `auth`, `security`, `deploy`, `evals`, `skill`, `feedback`, `deps`, `docs`, `ci`, `tsconfig`, `lint`, `types`, `test`, `utils`
+- **Allowed scopes**: `tools`, `client`, `auth`, `security`, `deploy`, `evals`, `skill`, `feedback`, `deps`, `docs`, `ci`, `tsconfig`, `lint`, `types`, `test`, `app`, `dxt`, `utils`
 - **Header max length**: 120 chars
 - **Subject case**: lowercase first word (rest free — `JSDoc`, `BatchCall` etc. are fine mid-sentence)
 

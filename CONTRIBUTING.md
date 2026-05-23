@@ -33,7 +33,7 @@ Open Nuxt DevTools (in the browser console it prints the URL) and pick the MCP I
 All commits must follow [Conventional Commits](https://www.conventionalcommits.org/).
 
 Prefixes: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`, `ci`, `perf`, `build`, `revert`.
-Optional scopes: `tools`, `client`, `auth`, `deploy`, `evals`, `skill`, `feedback`, `deps`, `docs`, `ci`.
+Optional scopes: `tools`, `client`, `auth`, `security`, `deploy`, `evals`, `skill`, `feedback`, `deps`, `docs`, `ci`, `tsconfig`, `lint`, `types`, `test`, `app`, `dxt`, `utils`.
 
 Examples:
 
@@ -97,17 +97,17 @@ See [`docs/EVALS.md`](./docs/EVALS.md) for the eval layer; the unit and integrat
 
 Short version:
 
-1. Pick a group: `tasks` / `users` / `meta` (or create a new group directory for your own entities — e.g. `deals`, `crm`).
+1. Pick a group: `tasks` / `users` / `deals` / `meta` (or create a new group directory for your own entities — e.g. `crm`, `contacts`).
 2. Create `server/mcp/tools/<group>/<kebab-name>.ts` (file-based discovery).
 3. Use `defineMcpTool({ name, description, inputSchema, handler })`.
 4. Name pattern: `bitrix24_<verb>_<entity>` for Bitrix24 tools, `bx24mcp_<verb>` for meta-tools.
 5. Every Zod field gets `.describe()` — the LLM reads it at runtime.
 6. Call Bitrix24 via `useBitrix24()`. Never bypass.
-7. Add a unit test in `tests/unit/tools/<name>.test.ts` mocking `useBitrix24`.
+7. Add a unit test in `tests/unit/tools/<group>/<name>.test.ts` mocking `useBitrix24`.
 8. Optionally add an eval case in `tests/evals/tool-selection.eval.ts`.
 9. Commit: `feat(tools): add bitrix24_<name>`.
 
-Full template — including the `callV3` / `callV2` / `batchV3` helpers, `AjaxError` handling, persona-walk checklist, and unit-test skeleton with `makeFakeBitrix24` — lives in [`skills/manage-bx24-template-mcp/adding-tools.md`](./skills/manage-bx24-template-mcp/adding-tools.md).
+Full template — including the `callV3` / `callV2` / `batchV2` / `batchV3` helpers, `AjaxError` handling, persona-walk checklist, and unit-test skeleton with `makeFakeBitrix24` — lives in [`skills/manage-bx24-template-mcp/adding-tools.md`](./skills/manage-bx24-template-mcp/adding-tools.md).
 
 ## Secrets
 

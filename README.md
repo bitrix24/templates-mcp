@@ -107,7 +107,7 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 
 30 Bitrix24 + 1 meta = **31 tools total**.
 
-The 8 task-mutation tools above (`start_task` / `pause_task` / `complete_task` / `approve_task` / `disapprove_task` / `defer_task` / `renew_task` / `rate_task`) accept a single id **or** an array for batch mode (up to **25**; pass `force: true` to override) and go through one HTTP round-trip via `actions.v3.batch.make`. The 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) also accept single or batch (up to **50**; `force: true` to override) via `actions.v2.batch.make`. `add_checklist_item` and `list_checklist_items` are single-call only by design. Rate limiting, retry, and adaptive back-pressure are provided by the [`@bitrix24/b24jssdk`](https://www.npmjs.com/package/@bitrix24/b24jssdk) `RestrictionManager` — initialised with `ParamsFactory.getDefault()` (standard tariff: burst 50, drain 2 req/sec, 3 retries on transient errors). Override at runtime via `client.setRestrictionManagerParams(ParamsFactory.getEnterprise())` etc.
+The 8 task-mutation tools above (`start_task` / `pause_task` / `complete_task` / `approve_task` / `disapprove_task` / `defer_task` / `renew_task` / `rate_task`) accept a single id **or** an array for batch mode (up to **25**; pass `force: true` to override) and go through one HTTP round-trip via the `batchV2` helper. The 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) also accept single or batch (up to **50**; `force: true` to override) via `batchV2`. `delete_elapsed_time` and `remove_task_dependency` likewise take a single id or an array for batch deletion (up to **50**; `force: true` to override; each still gated by `confirmDelete: true`). `add_checklist_item` and `list_checklist_items` are single-call only by design. Rate limiting, retry, and adaptive back-pressure are provided by the [`@bitrix24/b24jssdk`](https://www.npmjs.com/package/@bitrix24/b24jssdk) `RestrictionManager` — initialised with `ParamsFactory.getDefault()` (standard tariff: burst 50, drain 2 req/sec, 3 retries on transient errors). Override at runtime via `client.setRestrictionManagerParams(ParamsFactory.getEnterprise())` etc.
 
 ## Connecting Claude
 
@@ -263,13 +263,18 @@ Bitrix24 stores `DEADLINE` and related datetime fields in **portal-local time**.
 │   ├── api/health.get.ts        # public health endpoint
 │   ├── middleware/mcp-auth.ts   # Bearer auth on /mcp
 │   ├── mcp/tools/               # file-based MCP tool discovery
+│   ├── plugins/                 # Nitro plugins (audit-log drain)
+│   ├── types/                   # Bitrix24 REST response shapes
 │   └── utils/                   # Bitrix24 client singleton, error mapping
 ├── mcp-stdio/                   # local-stdio DXT bundle (build:dxt)
 │   ├── server.ts                # stdio entrypoint
 │   ├── manifest.json            # DXT manifest (trilingual user_config)
 │   ├── INSTALL.ru.md            # 🇷🇺 локализованный гайд
 │   └── INSTALL.pt-BR.md         # 🇧🇷 guia localizado
-├── tests/unit/                  # Vitest unit tests
+├── tests/
+│   ├── unit/                    # Vitest unit tests
+│   ├── integration/             # live test-portal checks (opt-in via env)
+│   └── evals/                   # Evalite + DeepSeek tool-selection evals
 ├── docs/
 │   ├── REVERSE-PROXY.md         # Caddy / Traefik / nginx+certbot alternatives
 │   └── …                        # architecture, security, runbook

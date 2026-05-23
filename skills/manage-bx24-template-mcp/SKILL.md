@@ -1,5 +1,7 @@
 # bx24-template-mcp — Agent Skill
 
+`Last reviewed: 2026-05-23`
+
 You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. Read this before making changes.
 
 ## Project context
@@ -122,7 +124,7 @@ The bar here is lower than for the SDK (no credential-leak surface to defend), b
 8. Run `pnpm lint && pnpm typecheck && pnpm test`.
 9. Commit: `feat(tools): add bitrix24_<name>`.
 
-Full template — including v3 `actions.call.make` usage, `AjaxError` handling, the `useLogger()` recipe, batch-tool conventions, and a copy-paste unit-test skeleton — lives in [`adding-tools.md`](./adding-tools.md).
+Full template — including the `callV3` / `callV2` / `batchV2` / `batchV3` helper usage, `AjaxError` handling, the `useLogger()` recipe, batch-tool conventions, and a copy-paste unit-test skeleton — lives in [`adding-tools.md`](./adding-tools.md).
 
 ## When asked to do UI / frontend work
 
