@@ -3,6 +3,7 @@
   "name": "bx24-template-mcp",
   "display_name": "Bitrix24 (b24-mcp)",
   "version": "0.1.0",
+  "icon": "icon.png",
   "description": "Bitrix24 MCP server — tasks, checklists, elapsed time, dependencies, and feedback. Local stdio bundle. / Bitrix24 MCP-сервер — задачи, чек-листы, учёт времени, зависимости, обратная связь. Локальный stdio-бандл. / Servidor MCP do Bitrix24 — tarefas, checklists, apontamento de tempo, dependências e feedback. Pacote stdio local.",
   "long_description": "Gives AI assistants direct access to a Bitrix24 portal via an incoming webhook. Tasks (CRUD + 8 lifecycle actions + rating), checklist items, task results, elapsed time, dependencies, user search, plus a meta-tool to file structured feedback as a GitHub issue. Runs entirely on your machine — no server to operate, no public URL, no Bearer token. The webhook secret stays in Claude Desktop's encrypted user_config storage and never leaves the device.\n\nWorks with Bitrix24 Cloud (any TLD — .com / .ru / .com.br / .es / .de / …) and Bitrix24 Self-Hosted (on-premise). For self-hosted portals on a private CA, set NODE_EXTRA_CA_CERTS in your shell before launching Claude Desktop.\n\nLocalised install guides:\n• Русский: mcp-stdio/INSTALL.ru.md\n• Português (BR): mcp-stdio/INSTALL.pt-BR.md\n\nFull tool list and project status: https://github.com/bitrix24/templates-mcp",
   "author": {
