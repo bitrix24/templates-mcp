@@ -52,20 +52,14 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
   /* eslint-enable no-console */
 
   beforeEach(() => {
-    // Snapshot AND delete: each case must start from a known-empty env, not
-    // from whatever `.env` Vite auto-loaded for the developer. The widened
-    // `envPrefix: ['VITE_', 'NUXT_', 'DEEPSEEK_']` in `vitest.config.ts`
-    // (needed for the integration / eval suites to see their `NUXT_*` /
-    // `DEEPSEEK_*` config) means a real `NUXT_BITRIX24_WEBHOOK_URL` from
-    // `.env` ends up in `process.env` before this file runs — and the shim
-    // reads `NUXT_*` first, so a developer with a real webhook locally
-    // would see the projection / defaults cases fail with their own creds
-    // bleeding in while CI (no `.env`) stays green. Wiping every supported
-    // name here pins each case to the values it sets itself.
-    for (const key of ENV_VARS) {
-      savedEnv[key] = process.env[key]
-      Reflect.deleteProperty(process.env, key)
-    }
+    // Snapshot each supported env var so afterEach can restore it. We do NOT
+    // need to wipe `process.env` here: `vitest.config.ts` narrows `envPrefix`
+    // to `['VITE_', 'NUXT_BITRIX24_TEST_', 'DEEPSEEK_']`, so the `NUXT_*`
+    // names the shim reads (`NUXT_BITRIX24_WEBHOOK_URL`, `NUXT_MCP_AUTH_TOKEN`,
+    // `NUXT_GITHUB_FEEDBACK_TOKEN`, `NUXT_GITHUB_FEEDBACK_REPO`,
+    // `NUXT_LOG_LEVEL`) are never autoloaded from `.env`. The snapshot here
+    // exists solely to undo per-case `process.env[…] = …` mutations.
+    for (const key of ENV_VARS) savedEnv[key] = process.env[key]
     // The shim is a singleton — it mutates `globalThis.useRuntimeConfig` and
     // `console.*` on first import. Reset module cache so each test sees a
     // fresh module evaluation under the env values it set up.
