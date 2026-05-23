@@ -40,14 +40,14 @@ const ENV_VARS = [
 describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
   const savedEnv: Partial<Record<(typeof ENV_VARS)[number], string | undefined>> = {}
   // Snapshot the original console methods so afterEach can restore them after
-  // the shim re-binds log/info/debug/warn to console.error.
+  // the shim re-binds log/info/debug/warn to console.error. `error` itself is
+  // not re-bound by the shim, so it is not snapshotted here.
   /* eslint-disable no-console -- reading method references for restore */
   const savedConsole = {
     log: console.log,
     info: console.info,
     debug: console.debug,
     warn: console.warn,
-    error: console.error,
   }
   /* eslint-enable no-console */
 
@@ -114,19 +114,28 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
   })
 
   it('prefers the `NUXT_`-prefixed name over the un-prefixed back-compat fallback', async () => {
+    // Pin the precedence for every paired field so a future reorder of the
+    // `?? `-chain in nuxt-shims.ts cannot regress one of them silently.
     process.env.NUXT_BITRIX24_WEBHOOK_URL = 'https://canonical.bitrix24.ru/rest/1/abc/'
     process.env.BITRIX24_WEBHOOK_URL = 'https://legacy.bitrix24.ru/rest/9/zzz/'
+    process.env.NUXT_GITHUB_FEEDBACK_TOKEN = 'ghp_canonical'
+    process.env.GITHUB_FEEDBACK_TOKEN = 'ghp_legacy'
     process.env.NUXT_GITHUB_FEEDBACK_REPO = 'acme/canonical'
     process.env.GITHUB_FEEDBACK_REPO = 'acme/legacy'
+    process.env.NUXT_LOG_LEVEL = 'debug'
+    process.env.LOG_LEVEL = 'trace'
     await import('../../../mcp-stdio/nuxt-shims')
     const cfg = (globalThis as unknown as { useRuntimeConfig: () => ShimRuntimeConfig }).useRuntimeConfig()
     expect(cfg.bitrix24WebhookUrl).toBe('https://canonical.bitrix24.ru/rest/1/abc/')
+    expect(cfg.githubFeedbackToken).toBe('ghp_canonical')
     expect(cfg.githubFeedbackRepo).toBe('acme/canonical')
+    expect(cfg.logLevel).toBe('debug')
   })
 
   it('defaults `githubFeedbackRepo` to the upstream repo and `logLevel` to info', async () => {
-    delete process.env.GITHUB_FEEDBACK_REPO
-    delete process.env.LOG_LEVEL
+    // beforeEach has already wiped every supported env var; this case sets
+    // only the webhook URL so the projection is well-formed, then asserts the
+    // two defaults the shim hard-codes when the source env vars are absent.
     process.env.BITRIX24_WEBHOOK_URL = 'https://example.bitrix24.ru/rest/1/abc/'
     await import('../../../mcp-stdio/nuxt-shims')
     const cfg = (globalThis as unknown as { useRuntimeConfig: () => ShimRuntimeConfig }).useRuntimeConfig()
@@ -149,6 +158,10 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
     // If we install a spy on `console.error` BEFORE that import, the bound
     // function the shim creates closes over the spy, so calling
     // `console.log(x)` after the shim transitively invokes the spy.
+    // NOTE: this depends on the re-binding happening at top level on import.
+    // If the shim is ever refactored to do the re-binding inside a function
+    // that runs later, the spy here will silently miss the call and this test
+    // will go falsely green — re-anchor the spy then.
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       await import('../../../mcp-stdio/nuxt-shims')

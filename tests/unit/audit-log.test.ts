@@ -23,6 +23,13 @@ async function loadFresh(): Promise<typeof AuditLog> {
 
 let tmpDir: string
 
+// Snapshot the developer's pre-test value of `NUXT_AUDIT_DIR` so afterEach can
+// restore it instead of unconditionally deleting. Without this, a real
+// `.env` value (or shell export) is lost for the rest of the test process
+// once this file's first afterEach fires — harmless under vitest's per-file
+// isolation today, but a fragile invariant to rely on.
+const originalAuditDir = process.env.NUXT_AUDIT_DIR
+
 beforeEach(async () => {
   // Each test gets its own tmpdir + ENV pointer so `resolveAuditDir()`
   // never crosses between tests. The audit module reads the env on every
@@ -32,7 +39,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  delete process.env.NUXT_AUDIT_DIR
+  if (originalAuditDir === undefined) delete process.env.NUXT_AUDIT_DIR
+  else process.env.NUXT_AUDIT_DIR = originalAuditDir
   vi.useRealTimers()
   await rm(tmpDir, { recursive: true, force: true })
 })
