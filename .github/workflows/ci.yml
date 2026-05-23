@@ -38,6 +38,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Pin envPrefix (guard against the #144 regression)
+        # `vitest.config.ts` `envPrefix` is the entire reason a developer's
+        # production `NUXT_*` from `.env` does not leak into the unit suite
+        # (see #144 and CONTRIBUTING.md "Secrets"). Widening it back to a
+        # permissive `'NUXT_'` would silently undo that. This step pins the
+        # exact array; when you change `envPrefix` on purpose, update the
+        # expected line below in the same commit.
+        run: |
+          expected="envPrefix: ['VITE_', 'NUXT_BITRIX24_TEST_', 'DEEPSEEK_'],"
+          if ! grep -qF "$expected" vitest.config.ts; then
+            echo "::error file=vitest.config.ts::envPrefix line drifted from the pinned value."
+            echo "Expected to find: $expected"
+            echo "If you changed envPrefix on purpose, update this guard in .github/workflows/ci.yml (lint job)."
+            echo "If not, revert your change — widening invalidates the unit-suite isolation contract (see #144)."
+            exit 1
+          fi
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:

@@ -2,31 +2,21 @@ import { defineConfig } from 'vitest/config'
 import { fileURLToPath } from 'node:url'
 
 /**
- * `envPrefix` is intentionally narrow — narrower than the default
- * `['NUXT_', ...]` you might reach for. Only three prefixes are autoloaded
+ * `envPrefix` is intentionally narrow. Only three prefixes are autoloaded
  * from `.env` into `process.env` when Vitest (and the evalite CLI, which
  * reuses this config) runs:
  *
- * - `VITE_*` — the framework default; we keep it for parity.
- * - `NUXT_BITRIX24_TEST_*` — used by the integration suite via
- *   `NUXT_BITRIX24_TEST_WEBHOOK_URL` (`tests/integration/`).
- * - `DEEPSEEK_*` — used by the evals CLI via `DEEPSEEK_API_KEY` and
- *   `DEEPSEEK_BASE_URL` (`tests/evals/`).
+ * - `VITE_*` — required by Vite's own plugin ecosystem; kept for completeness.
+ * - `NUXT_BITRIX24_TEST_*` — integration suite (`NUXT_BITRIX24_TEST_WEBHOOK_URL`).
+ * - `DEEPSEEK_*` — evals CLI (`DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`).
  *
- * What this deliberately does NOT load: `NUXT_BITRIX24_WEBHOOK_URL`,
- * `NUXT_MCP_AUTH_TOKEN`, `NUXT_GITHUB_FEEDBACK_TOKEN`, `NUXT_AUDIT_DIR`,
- * `NUXT_LOG_LEVEL` and any other `NUXT_*` a developer keeps in `.env` for
- * `pnpm dev`. A unit test that writes to those names is now asserting
- * against a known-empty `process.env`, which is the whole point of
- * #144 — it removes the per-file `Reflect.deleteProperty` boilerplate
- * PR #142 had to add when the prefix was a permissive `NUXT_*`.
- *
- * When adding a NEW env var that a test should read from `.env`:
- *   - If it is part of the integration test setup, name it
- *     `NUXT_BITRIX24_TEST_<thing>` so it falls under this prefix.
- *   - If it is for evals, name it `DEEPSEEK_<thing>`.
- *   - Anything else means you almost certainly want it set in the shell
- *     for that one test invocation, not committed to `.env`.
+ * Production-shaped names a developer keeps in `.env` for `pnpm dev`
+ * (`NUXT_BITRIX24_WEBHOOK_URL`, `NUXT_MCP_AUTH_TOKEN`, `NUXT_GITHUB_FEEDBACK_TOKEN`,
+ * `NUXT_LOG_LEVEL`, `NUXT_AUDIT_DIR`) are deliberately NOT loaded — see #144.
+ * Any new env var a test reads from `.env` MUST use one of the three prefixes
+ * above; new contributor-facing documentation lives in `CONTRIBUTING.md`.
+ * A CI step (`.github/workflows/ci.yml` "Pin envPrefix") fails the build if
+ * this line widens back to a permissive `NUXT_*`.
  */
 
 const repoRoot = fileURLToPath(new URL('.', import.meta.url))

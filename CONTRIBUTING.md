@@ -116,6 +116,8 @@ Full template — including the `callV3` / `callV2` / `batchV2` / `batchV3` help
 - If you accidentally commit a secret: rotate it immediately, then open a PR removing it (history scrub is a separate operation).
 - `NUXT_BITRIX24_TEST_WEBHOOK_URL` (locally) and `BITRIX24_TEST_WEBHOOK_URL` (GitHub Actions secret) must point at an isolated/staging Bitrix24 portal — the integration suite issues live REST calls and should never run against production data.
 - The `Integration tests (Bitrix24)` CI job is informational: it is skipped on forks and emits a warning (not a failure) when the secret is absent, so do not promote it to a required status check.
+- **Test env-var naming**: any variable a test needs to read from `.env` must use the `NUXT_BITRIX24_TEST_*` prefix (integration) or the `DEEPSEEK_*` prefix (evals). `vitest.config.ts` narrows Vite's `envPrefix` to exactly these families so production-shaped names you keep in `.env` for `pnpm dev` (`NUXT_BITRIX24_WEBHOOK_URL`, `NUXT_MCP_AUTH_TOKEN`, `NUXT_GITHUB_FEEDBACK_TOKEN`, …) never autoload into `process.env` during tests. Picking any other prefix means your test will silently see `undefined` locally and skip without a useful error. A CI step pins the `envPrefix` line so widening it back to a permissive `NUXT_*` fails the lint job (see #144).
+- **Shell exports are NOT covered**: running `export NUXT_BITRIX24_WEBHOOK_URL=… && pnpm test:unit` still puts the value in `process.env` and bypasses the `envPrefix` guard. `tests/unit/mcp-stdio/shims.test.ts` defends against that one specific path with a per-case wipe of its known names — for any new test that reads sensitive `NUXT_*` directly, mirror that wipe.
 
 ## Dependency updates
 
