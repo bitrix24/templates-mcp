@@ -12,7 +12,7 @@ A starter template for building Model Context Protocol (MCP) servers on top of B
 
 > **What is Bitrix24?** An all-in-one CRM + task management + comms suite, ~12 million organisations. Strongest in Russia/CIS, Brazil/LatAm, Eastern Europe, and SMB segments globally. Competes with HubSpot/Pipedrive on the CRM side and Asana/Monday on tasks. This project gives AI assistants access to a Bitrix24 portal you already operate — it is **not** a Bitrix24 alternative.
 
-> **Status**: stable template, currently at **v0.1.0-alpha.1** (see [`CHANGELOG.md`](./CHANGELOG.md)); Phase 2 in progress. Tasks (CRUD + lifecycle + checklists + results + elapsed time + dependencies) are shipped. **CRM tools (deals/contacts/leads) are post-pilot** — see [`PROJECT-BRIEF.md`](./PROJECT-BRIEF.md). Fork it and extend with your own tools. This README will be rewritten for end-users on the first non-alpha `v0.1.0` tag.
+> **Status**: stable template, currently at **v0.1.0-alpha.1** (see [`CHANGELOG.md`](./CHANGELOG.md)); Phase 2 in progress. **Pilot scope is tasks only** — CRM (deals / contacts / leads) is the planned post-pilot expansion, see [`PROJECT-BRIEF.md`](./PROJECT-BRIEF.md). Tasks (CRUD + lifecycle + checklists + results + elapsed time + dependencies) are shipped. Fork it and extend with your own tools. This README will be rewritten for end-users on the first non-alpha `v0.1.0` tag.
 
 ## Choose your path
 

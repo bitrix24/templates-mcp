@@ -17,33 +17,39 @@ Bitrix24 has two parallel REST API generations:
 - **v3** (modern, recommended) — methods under the `tasks.*` namespace. URL pattern `apidocs.bitrix24.com/api-reference/rest-v3/…`.
 - **v2** (legacy / deprecated for new development) — methods like `task.*` (without the `s.`), `task.item.*`. Still work, but docs flag them with "Метод устарел".
 
-**Always prefer v3.** Our coverage today (23 Bitrix24 tools + 1 meta-tool):
+**Default to v2 (per `SKILL.md` rule #7); v3 only for v3-only methods.** Our coverage today (29 Bitrix24 tools + 1 meta-tool):
 
-| Tool | Method | API |
+| Tool | Method | Transport |
 |---|---|---|
 | `bitrix24_current_user` | `user.current` | v2 (no v3 equivalent — user identity predates v3) |
 | `bitrix24_find_user` | `user.search` | v2 (same reason as above) |
-| `bitrix24_create_task` | `tasks.task.add` | **v3** ✓ |
-| `bitrix24_list_tasks` | `tasks.task.list` | **v3** ✓ (legacy UPPER_SNAKE filter shape; tool accepts both camelCase and UPPER) |
-| `bitrix24_update_task` | `tasks.task.update` | **v3** ✓ |
-| `bitrix24_add_task_comment` | `task.commentitem.add` | **v2 deprecated** — v3 replacement is `tasks.task.chat.message.send`. Migration queued; no issue filed yet. |
-| `bitrix24_start_task` | `tasks.task.start` | **v3** ✓ |
-| `bitrix24_pause_task` | `tasks.task.pause` | **v3** ✓ |
-| `bitrix24_complete_task` | `tasks.task.complete` | **v3** ✓ |
-| `bitrix24_approve_task` | `tasks.task.approve` | **v3** ✓ |
-| `bitrix24_disapprove_task` | `tasks.task.disapprove` | **v3** ✓ |
-| `bitrix24_defer_task` | `tasks.task.defer` | **v3** ✓ |
-| `bitrix24_renew_task` | `tasks.task.renew` | **v3** ✓ |
-| `bitrix24_rate_task` | `tasks.task.update` (field `MARK`) | **v3** ✓ — no dedicated rate method; we write `MARK: "P" \| "N" \| null` |
-| `bitrix24_add_checklist_item` | `task.checklistitem.add` | **v2 only** — no v3 equivalent for task checklists (v3 `tasks.template.checklist.*` is for templates). |
-| `bitrix24_list_checklist_items` | `task.checklistitem.getlist` | **v2 only** — same reason. |
-| `bitrix24_complete_checklist_item` | `task.checklistitem.complete` | **v2 only** — same reason. |
-| `bitrix24_renew_checklist_item` | `task.checklistitem.renew` | **v2 only** — same reason. |
-| `bitrix24_delete_checklist_item` | `task.checklistitem.delete` | **v2 only** — same reason. |
-| `bitrix24_add_task_result` | `tasks.task.result.add` | **v3** ✓ |
-| `bitrix24_list_task_results` | `tasks.task.result.list` | **v3** ✓ — taskId filter is required by the endpoint; we bake it into the schema. |
-| `bitrix24_update_task_result` | `tasks.task.result.update` | **v3** ✓ — author-only. |
-| `bitrix24_delete_task_result` | `tasks.task.result.delete` | **v3** ✓ — author-only; destructive. |
+| `bitrix24_create_task` | `tasks.task.add` | v2 (classic method routed through `callV2` per PR #105) |
+| `bitrix24_list_tasks` | `tasks.task.list` | v2 (classic; rest-v3 returns "restApi:v3 not support method tasks.task.list") |
+| `bitrix24_update_task` | `tasks.task.update` | v2 (classic) |
+| `bitrix24_add_task_comment` | `task.commentitem.add` | v2 (deprecated — v3 replacement `tasks.task.chat.message.send` queued, no issue filed yet) |
+| `bitrix24_start_task` | `tasks.task.start` | v2 (classic) |
+| `bitrix24_pause_task` | `tasks.task.pause` | v2 (classic) |
+| `bitrix24_complete_task` | `tasks.task.complete` | v2 (classic) |
+| `bitrix24_approve_task` | `tasks.task.approve` | v2 (classic) |
+| `bitrix24_disapprove_task` | `tasks.task.disapprove` | v2 (classic) |
+| `bitrix24_defer_task` | `tasks.task.defer` | v2 (classic) |
+| `bitrix24_renew_task` | `tasks.task.renew` | v2 (classic) |
+| `bitrix24_rate_task` | `tasks.task.update` (field `MARK`) | v2 — no dedicated rate method; we write `MARK: "P" \| "N" \| null` |
+| `bitrix24_add_checklist_item` | `task.checklistitem.add` | v2 only — v3 `tasks.template.checklist.*` is for templates, not task instances |
+| `bitrix24_list_checklist_items` | `task.checklistitem.getlist` | v2 only (same reason) |
+| `bitrix24_complete_checklist_item` | `task.checklistitem.complete` | v2 only (same reason) |
+| `bitrix24_renew_checklist_item` | `task.checklistitem.renew` | v2 only (same reason) |
+| `bitrix24_delete_checklist_item` | `task.checklistitem.delete` | v2 only (same reason) |
+| `bitrix24_add_task_result` | `tasks.task.result.add` | **v3** ✓ (v3-only method) |
+| `bitrix24_list_task_results` | `tasks.task.result.list` | **v3** ✓ — taskId filter required; baked into the schema |
+| `bitrix24_update_task_result` | `tasks.task.result.update` | **v3** ✓ — author-only |
+| `bitrix24_delete_task_result` | `tasks.task.result.delete` | **v3** ✓ — author-only; destructive |
+| `bitrix24_add_elapsed_time` | `task.elapseditem.add` | v2 only (no v3 equivalent for task time tracking) |
+| `bitrix24_list_elapsed_time` | `task.elapseditem.getlist` | v2 only (same reason) |
+| `bitrix24_update_elapsed_time` | `task.elapseditem.update` | v2 only — author-or-admin |
+| `bitrix24_delete_elapsed_time` | `task.elapseditem.delete` | v2 only — author-or-admin; destructive (`confirmDelete: true`) |
+| `bitrix24_add_task_dependency` | `task.dependence.add` | v2 only (no v3 equivalent; read-back via `getdependson` is deprecated upstream — see issue #33) |
+| `bitrix24_remove_task_dependency` | `task.dependence.delete` | v2 only — destructive (`confirmDelete: true`) |
 | `bx24mcp_submit_feedback` | _(no Bitrix24 call)_ | meta-tool — files a GitHub issue |
 
 All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through the `batchV2` helper as one HTTP round-trip. The 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) likewise accept `itemId: number[]` for batch mode (up to 50; `force: true` overrides) and also go through `batchV2` as one round-trip.
