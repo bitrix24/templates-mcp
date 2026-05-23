@@ -59,8 +59,6 @@ bx24-template-mcp/
 │   │   │   │   ├── list-tasks.ts         #   elapsed-time, dependencies
 │   │   │   │   ├── update-task.ts
 │   │   │   │   └── add-task-comment.ts   # … + 23 more
-│   │   │   ├── deals/
-│   │   │   │   └── find-deal.ts           # reference CRM tool (read-only); create/update/etc are forker territory
 │   │   │   ├── users/
 │   │   │   │   ├── current-user.ts
 │   │   │   │   └── find-user.ts
@@ -432,7 +430,7 @@ Optional scopes: `tools`, `client`, `auth`, `deploy`, `evals`, `skill`, `feedbac
 Examples:
 
 ```
-feat(tools): add list-deals
+feat(tools): add list-task-comments
 fix(client): handle 429 from Bitrix24 with exponential backoff
 docs(adding-tools): clarify Zod describe step
 chore(deps): bump @nuxtjs/mcp-toolkit to 0.15.3

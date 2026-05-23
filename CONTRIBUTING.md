@@ -38,7 +38,7 @@ Optional scopes: `tools`, `client`, `auth`, `security`, `deploy`, `evals`, `skil
 Examples:
 
 ```
-feat(tools): add list-deals
+feat(tools): add list-task-comments
 fix(client): handle 429 from Bitrix24 with exponential backoff
 docs(adding-tools): clarify Zod describe step
 chore(deps): bump @nuxtjs/mcp-toolkit to 0.15.3
@@ -97,7 +97,7 @@ See [`docs/EVALS.md`](./docs/EVALS.md) for the eval layer; the unit and integrat
 
 Short version:
 
-1. Pick a group: `tasks` / `users` / `deals` / `meta` (or create a new group directory for your own entities — e.g. `crm`, `contacts`).
+1. Pick a group: `tasks` / `users` / `meta` (or create a new group directory for your own entities — e.g. `crm` for the planned post-pilot deals/contacts/leads expansion, `calendars`, `disk`, `im`).
 2. Create `server/mcp/tools/<group>/<kebab-name>.ts` (file-based discovery).
 3. Use `defineMcpTool({ name, description, inputSchema, handler })`.
 4. Name pattern: `bitrix24_<verb>_<entity>` for Bitrix24 tools, `bx24mcp_<verb>` for meta-tools.

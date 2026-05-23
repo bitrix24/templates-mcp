@@ -26,8 +26,8 @@ export default defineMcpTool({
     fields: z
       .record(
         // Constrain keys to the Bitrix24 UPPER_SNAKE_CASE field shape so an LLM
-        // can't smuggle arbitrary strings into the REST payload. Bitrix24 task
-        // fields (incl. user fields like UF_CRM_TASK) all match this.
+        // can't smuggle arbitrary strings into the REST payload. Every Bitrix24
+        // task field — built-in and user-defined (UF_*) — matches this.
         z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'field keys must be UPPER_SNAKE_CASE (e.g. TITLE, RESPONSIBLE_ID)'),
         z.unknown(),
       )

@@ -37,8 +37,10 @@ const TASKS_ACTION_NOT_AVAILABLE_CODE = '1048582'
  * introspection.
  *
  * REST calls go through `client.actions.v3.call.make({ method, params })`
- * for v3 methods (`tasks.task.*`, `crm.*`, …) and `client.actions.v2.call.make`
- * for v2 (`user.*`, `task.commentitem.*`, …). The deprecated `callMethod` is
+ * for v3 methods (currently `tasks.task.get`, `tasks.task.result.*`) and
+ * `client.actions.v2.call.make` for v2 (`tasks.task.{add,list,update,…}`,
+ * `user.*`, `task.commentitem.*`, `task.checklistitem.*`, …). The deprecated
+ * `callMethod` is
  * forbidden — it disappears in SDK 2.0. Use the {@link callV3} / {@link callV2}
  * helpers from `server/utils/sdk-helpers.ts` instead of calling `actions.*`
  * directly — they own the `isSuccess` / `getErrorMessages` boilerplate.

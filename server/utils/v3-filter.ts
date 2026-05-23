@@ -3,9 +3,10 @@
  * REST list-filter contract.
  *
  * v3 list endpoints (`tasks.task.result.list`, … — the genuinely v3-only
- * `/rest/api/` methods; NOT classic CRM lists like `crm.deal.list`, which
- * stay on v2 and keep the object-shaped filter) reject the v2 object-shaped
- * `{ key: value }` form and require an array of conditions instead:
+ * `/rest/api/` methods; NOT classic v2 lists like `tasks.task.list` or
+ * `task.checklistitem.getlist`, which stay on v2 and keep the object-shaped
+ * filter) reject the v2 object-shaped `{ key: value }` form and require an
+ * array of conditions instead:
  *
  *   - Equality: `[field, value]`
  *   - With operator: `[operator, field, value]`

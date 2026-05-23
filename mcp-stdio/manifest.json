@@ -14,7 +14,7 @@
   "documentation": "https://github.com/bitrix24/templates-mcp#readme",
   "support": "https://github.com/bitrix24/templates-mcp/issues",
   "license": "MIT",
-  "keywords": ["bitrix24", "tasks", "crm", "productivity", "mcp"],
+  "keywords": ["bitrix24", "tasks", "productivity", "mcp"],
   "server": {
     "type": "node",
     "entry_point": "server/index.mjs",

@@ -4,6 +4,10 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING (tools)**: `bitrix24_find_deal` and the whole `server/mcp/tools/deals/` group are gone. CRM is out of scope for the pilot and will only return after it (see issue #128). Tool count drops from 30 Bitrix24 + 1 meta to **29 Bitrix24 + 1 meta**. The landing demo prompt's "Stalled CRM deals" section was reframed as "Stalled active tasks" so the report stays a two-table risk picture without any CRM call. CRM-flavoured examples in `sdk-helpers.ts`, `v3-filter.ts`, `update-task.ts`, `bitrix24.ts`, the agent skill, and `docs/ADDING-TOOLS.md` were swapped for task / user examples; the privacy guidance in `bx24mcp_submit_feedback` and `docs/FEEDBACK.md` still mentions CRM records as an example of data not to paste into issues.
+
 ### Changed
 
 - **BREAKING (health payload)**: `/api/health` now returns `{ status, timestamp }` only — the `service` field was removed to avoid a fingerprintable surface. External monitors must key liveness on `status: "ok"`, not on the service name.

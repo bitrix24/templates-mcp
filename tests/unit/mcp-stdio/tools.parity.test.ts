@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest'
  * `~/` alias) as an `import … from '~/server/mcp/tools/…'` line in
  * `mcp-stdio/tools.ts`.
  *
- * Failure mode this catches: developer adds `server/mcp/tools/deals/list-deals.ts`,
+ * Failure mode this catches: developer adds `server/mcp/tools/tasks/get-task.ts`,
  * forgets to update `mcp-stdio/tools.ts`. The DXT bundle would ship without
  * the new tool, symptom surfacing only at runtime when an agent calls it.
  */

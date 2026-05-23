@@ -48,7 +48,7 @@ import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
  * Bitrix24's migration to rest-v3 is gradual and will take a long time, so the
  * project default is **v2** for everything that has a classic implementation:
  *   - v2 (`callV2`):  `tasks.task.{add,list,update,start,pause,complete,`
- *                      `approve,disapprove,defer,renew}`, `crm.*`, `user.*`,
+ *                      `approve,disapprove,defer,renew}`, `user.*`,
  *                      `task.*` (singular: commentitem/checklistitem/…).
  *   - v3 (`callV3`):  only methods that are v3-ONLY with no working v2 form —
  *                      currently `tasks.task.get` and `tasks.task.result.*`.
@@ -91,8 +91,8 @@ export async function callV3<T>(
  * `task.checklistitem.*`, …) and return its `result` payload. Same contract
  * as {@link callV3}.
  *
- * Accepts an object-shaped `TypeCallParams` for the common case (CRM, tasks
- * list, etc.) OR a positional `unknown[]` for v2 methods documented with
+ * Accepts an object-shaped `TypeCallParams` for the common case (tasks list,
+ * user search, etc.) OR a positional `unknown[]` for v2 methods documented with
  * positional args (e.g. `task.checklistitem.{complete,renew}`,
  * https://apidocs.bitrix24.ru/api-reference/tasks/checklist-item/). The
  * runtime serialiser handles both shapes; the union return keeps callers

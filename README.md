@@ -102,10 +102,9 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `bitrix24_delete_elapsed_time` | Delete elapsed-time entries. Requires `confirmDelete: true`. Author-or-admin only. |
 | `bitrix24_add_task_dependency` | Create a "previous task" dependency (`taskIdFrom` → `taskIdTo`) for Gantt-style scheduling. |
 | `bitrix24_remove_task_dependency` | Remove a "previous task" dependency. Requires `confirmDelete: true`. |
-| `bitrix24_find_deal` | Find CRM deals (sales opportunities — "Negociação" in PT-BR; ≈ Salesforce Opportunity) by title fragment or by structured filters (contactId / companyId / stageId / categoryId / assignedById / closedOnly), with optional `order`. Read-only reference implementation — the canonical "first tool to fork" mirroring the prompt advertised on the landing. |
 | `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 
-30 Bitrix24 + 1 meta = **31 tools total**.
+29 Bitrix24 + 1 meta = **30 tools total**.
 
 The 8 task-mutation tools above (`start_task` / `pause_task` / `complete_task` / `approve_task` / `disapprove_task` / `defer_task` / `renew_task` / `rate_task`) accept a single id **or** an array for batch mode (up to **25**; pass `force: true` to override) and go through one HTTP round-trip via the `batchV2` helper. The 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) also accept single or batch (up to **50**; `force: true` to override) via `batchV2`. `delete_elapsed_time` and `remove_task_dependency` likewise take a single id or an array for batch deletion (up to **50**; `force: true` to override; each still gated by `confirmDelete: true`). `add_checklist_item` and `list_checklist_items` are single-call only by design. Rate limiting, retry, and adaptive back-pressure are provided by the [`@bitrix24/b24jssdk`](https://www.npmjs.com/package/@bitrix24/b24jssdk) `RestrictionManager` — initialised with `ParamsFactory.getDefault()` (standard tariff: burst 50, drain 2 req/sec, 3 retries on transient errors). Override at runtime via `client.setRestrictionManagerParams(ParamsFactory.getEnterprise())` etc.
 

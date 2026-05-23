@@ -13,8 +13,6 @@
 import users_currentUser from '~/server/mcp/tools/users/current-user'
 import users_findUser from '~/server/mcp/tools/users/find-user'
 
-import deals_findDeal from '~/server/mcp/tools/deals/find-deal'
-
 import tasks_createTask from '~/server/mcp/tools/tasks/create-task'
 import tasks_listTasks from '~/server/mcp/tools/tasks/list-tasks'
 import tasks_updateTask from '~/server/mcp/tools/tasks/update-task'
@@ -48,7 +46,6 @@ import meta_submitFeedback from '~/server/mcp/tools/meta/submit-feedback'
 export const tools = [
   users_currentUser,
   users_findUser,
-  deals_findDeal,
   tasks_createTask,
   tasks_listTasks,
   tasks_updateTask,

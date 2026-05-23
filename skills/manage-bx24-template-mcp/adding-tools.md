@@ -10,12 +10,12 @@ Practical template for an AI agent (or human) adding a Bitrix24 MCP tool to this
 server/mcp/tools/
 ├── tasks/    – everything touching the tasks module (tasks.task.*, task.*)
 ├── users/    – user lookup / identity (user.current, user.search)
-├── deals/    – CRM deals (crm.deal.*)
 └── meta/     – MCP meta-tools (e.g. bx24mcp_submit_feedback)
 ```
 
-The template ships these four groups. If you're adding a tool for a different
-domain (CRM contacts, products, calendars, …), create the directory yourself
+The template ships these three groups. If you're adding a tool for a different
+domain (CRM is the planned post-pilot expansion: deals / contacts / leads;
+calendars, disk, im, … are also fair game), create the directory yourself
 under `server/mcp/tools/` — that's the canonical "fork and extend" path this
 starter template is designed around.
 
@@ -28,7 +28,7 @@ One tool per file, `kebab-name.ts`. File-based discovery picks them up automatic
 
 ## The reference template
 
-> **Transport: pick v2 vs v3 correctly (this matters).** Bitrix24 has two REST surfaces and they are NOT interchangeable. The classic API (`/rest/<uid>/<secret>/…`, UPPERCASE fields) is reached via `callV2`/`batchV2`; rest-v3 (`/rest/api/…`, camelCase DTOs, `BITRIX_REST_V3_EXCEPTION_*` errors) via `callV3`/`batchV3`. Calling a classic method on v3 fails with `UNKNOWNDTOPROPERTYEXCEPTION` (wrong casing) or "restApi:v3 not support method". Bitrix24's migration to rest-v3 is slow, so **default to v2** for anything with a classic implementation — `tasks.task.{add,list,update,start,pause,complete,approve,disapprove,defer,renew}`, `crm.*`, `user.*`, `task.*` (singular). Use **v3 only** for methods that are v3-ONLY with no working v2 form — currently `tasks.task.get` and `tasks.task.result.*`. When unsure, check apidocs: a `/rest/api/` URL + camelCase fields = v3. See the convention block in `server/utils/sdk-helpers.ts`.
+> **Transport: pick v2 vs v3 correctly (this matters).** Bitrix24 has two REST surfaces and they are NOT interchangeable. The classic API (`/rest/<uid>/<secret>/…`, UPPERCASE fields) is reached via `callV2`/`batchV2`; rest-v3 (`/rest/api/…`, camelCase DTOs, `BITRIX_REST_V3_EXCEPTION_*` errors) via `callV3`/`batchV3`. Calling a classic method on v3 fails with `UNKNOWNDTOPROPERTYEXCEPTION` (wrong casing) or "restApi:v3 not support method". Bitrix24's migration to rest-v3 is slow, so **default to v2** for anything with a classic implementation — `tasks.task.{add,list,update,start,pause,complete,approve,disapprove,defer,renew}`, `user.*`, `task.*` (singular). Use **v3 only** for methods that are v3-ONLY with no working v2 form — currently `tasks.task.get` and `tasks.task.result.*`. When unsure, check apidocs: a `/rest/api/` URL + camelCase fields = v3. See the convention block in `server/utils/sdk-helpers.ts`.
 
 This is what a single-call tool looks like end-to-end. Two key invariants:
 1. The SDK call goes through the **typed `callV3` / `callV2` helpers** from `server/utils/sdk-helpers.ts`. Never call `b24.actions.v3.call.make` directly from a tool — the helpers own the `isSuccess` / `getErrorMessages` boilerplate and the transport-error wrap. The deprecated `b24.callMethod` is forbidden. The example below uses `tasks.task.get`, which really is a v3 method; for a classic method (e.g. `tasks.task.add`) use `callV2` instead.
@@ -190,7 +190,6 @@ Every delete tool needs the universal `confirmDelete` flag (Rule #9). Some addit
 | `task.dependence.delete` (single or batch) | none — removes one predecessor edge only | — | — | universal `confirmDelete` only (Ground Rule #9) | `server/mcp/tools/tasks/remove-task-dependency.ts` ✅ shipped in PR-C |
 | `sonet_group.delete` *(future)* | every task / file / discussion in the workgroup | the workgroup id itself | `sonet_group.get { ID }` + `tasks.task.list { GROUP_ID }` | `confirmDeleteWorkgroup` | not implemented |
 | `tasks.task.delete` *(future)* | every comment / checklist item / time entry / result / dependency on the task | the task id itself | `tasks.task.get` (cheap) | `confirmDeleteTask` | not implemented; consider deferring — Bitrix24 UI hides hard-delete behind a per-portal toggle |
-| `crm.deal.delete` *(post-pilot)* | every activity / quote / invoice linked to the deal | the deal id itself | `crm.activity.list { OWNER_TYPE_ID, OWNER_ID }` | `confirmDeleteDeal` | post-pilot |
 | `disk.folder.deletetree` *(future)* | every file / sub-folder under the disk folder | folder type vs file type | `disk.folder.get { id }` | `confirmDeleteFolder` | not implemented |
 
 If your tool isn't in this table and you find yourself adding a `confirm<Cascade>` flag for a NEW cascade pattern, add a row to keep the registry useful. NB: every delete tool needs `confirmDelete: true` per Ground Rule #9 — the table above is specifically for CASCADE flags that stack on top of that universal gate.

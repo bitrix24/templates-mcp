@@ -14,7 +14,7 @@ The point is to see how a real LLM **disambiguates phrasing** — not to assert 
 
 Bitrix24 has two parallel REST API generations:
 
-- **v3** (modern, recommended) — methods under the `tasks.*` / `crm.*` namespaces. URL pattern `apidocs.bitrix24.com/api-reference/rest-v3/…`.
+- **v3** (modern, recommended) — methods under the `tasks.*` namespace. URL pattern `apidocs.bitrix24.com/api-reference/rest-v3/…`.
 - **v2** (legacy / deprecated for new development) — methods like `task.*` (without the `s.`), `task.item.*`. Still work, but docs flag them with "Метод устарел".
 
 **Always prefer v3.** Our coverage today (23 Bitrix24 tools + 1 meta-tool):
@@ -443,5 +443,5 @@ The same intent — "create a task to approve a contract, assign to user 5, dead
 
 - **Delete task** — destructive, easy to misuse, not in MVP. If a user really wants it, they can complete + delete in UI.
 - **"Similar task" / "related task" semantic search** — Bitrix24 doesn't expose embeddings or RAG. The LLM does this from keyword extraction over `list_tasks` (composite).
-- **CRM linkage (`UF_CRM_TASK`)** — exposed via `create_task.fields` passthrough already; no dedicated tool, agents that need it can pass the encoded value.
-- **File attachments** — out of MVP scope; queued for Phase 2 alongside CRM tools.
+- **CRM linkage (`UF_CRM_TASK`)** — the task-side user field is exposed via `create_task.fields` / `update_task.fields` passthrough already; no dedicated tool, agents that need it can pass the encoded value. The CRM module itself (deals / contacts / leads) is post-pilot, see [`PROJECT-BRIEF.md`](../PROJECT-BRIEF.md).
+- **File attachments** — out of MVP scope; queued for after the pilot.

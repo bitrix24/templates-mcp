@@ -35,12 +35,12 @@ MCP client ── /mcp ──▶ defineMcpTool handler
 server/mcp/tools/
 ├── tasks/   – the tasks module (tasks.task.*, task.*)
 ├── users/   – user lookup / identity (user.current, user.search)
-├── deals/   – CRM deals (crm.deal.*)
 └── meta/    – MCP meta-tools that don't call Bitrix24 (e.g. bx24mcp_submit_feedback)
 ```
 
 One tool per file, named `kebab-case.ts`. Adding a tool for a domain that doesn't
-have a folder yet (contacts, products, calendars, …)? Create the directory under
+have a folder yet (CRM is the planned post-pilot expansion: deals / contacts /
+leads; calendars, disk, im, … are also fair game)? Create the directory under
 `server/mcp/tools/` — extending into new Bitrix24 modules is exactly what this
 template is built for.
 
@@ -126,7 +126,7 @@ through `callV3`/`batchV3`. Calling a classic method on v3 fails with
 `UNKNOWNDTOPROPERTYEXCEPTION`.
 
 **Default to v2.** Bitrix24's v3 migration is slow, so most methods (`tasks.task.{add,list,update,…}`,
-`crm.*`, `user.*`, `task.*`) are v2. Use v3 *only* for methods that are v3-only with
+`user.*`, `task.*`) are v2. Use v3 *only* for methods that are v3-only with
 no working v2 form (currently `tasks.task.get` and `tasks.task.result.*`). When in
 doubt: a `/rest/api/` URL with camelCase fields means v3. The authoritative
 convention block is at the top of
