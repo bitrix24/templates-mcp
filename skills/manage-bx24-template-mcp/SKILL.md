@@ -124,7 +124,7 @@ The bar here is lower than for the SDK (no credential-leak surface to defend), b
 8. Run `pnpm lint && pnpm typecheck && pnpm test`.
 9. Commit: `feat(tools): add bitrix24_<name>`.
 
-Full template — including the `callV3` / `callV2` / `batchV3` helper usage, `AjaxError` handling, the `useLogger()` recipe, batch-tool conventions, and a copy-paste unit-test skeleton — lives in [`adding-tools.md`](./adding-tools.md).
+Full template — including the `callV3` / `callV2` / `batchV2` / `batchV3` helper usage, `AjaxError` handling, the `useLogger()` recipe, batch-tool conventions, and a copy-paste unit-test skeleton — lives in [`adding-tools.md`](./adding-tools.md).
 
 ## When asked to do UI / frontend work
 

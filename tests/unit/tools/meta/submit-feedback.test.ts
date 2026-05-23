@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type * as GhFeedback from '../../../server/utils/github-feedback'
+import type * as GhFeedback from '../../../../server/utils/github-feedback'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
   defineMcpTool: <T,>(spec: T) => spec,
@@ -10,7 +10,7 @@ const consumeFeedbackQuota = vi.fn()
 
 vi.mock('~/server/utils/github-feedback', async () => {
   const actual = await vi.importActual<typeof GhFeedback>(
-    '../../../server/utils/github-feedback',
+    '../../../../server/utils/github-feedback',
   )
   return {
     ...actual,
@@ -31,7 +31,7 @@ interface ToolInput {
   severity?: 'low' | 'medium' | 'high'
 }
 
-const tool = (await import('../../../server/mcp/tools/meta/submit-feedback')).default as unknown as {
+const tool = (await import('../../../../server/mcp/tools/meta/submit-feedback')).default as unknown as {
   // The toolkit's handler signature is (args, extra) — our tests don't supply
   // `extra`, so the cast is intentionally narrower than the production type.
   handler: (input: ToolInput) => Promise<ToolContent>
@@ -162,7 +162,7 @@ describe('bx24mcp_submit_feedback', () => {
   })
 
   it('returns a friendly message and does not throw on GithubFeedbackError', async () => {
-    const { GithubFeedbackError } = await import('../../../server/utils/github-feedback')
+    const { GithubFeedbackError } = await import('../../../../server/utils/github-feedback')
     createGithubIssue.mockRejectedValue(
       new GithubFeedbackError('GitHub rejected the feedback token (401/403).', 'UPSTREAM'),
     )

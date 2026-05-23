@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fakeOk, fakeOkEmpty, makeFakeBitrix24 } from '../_helpers/bitrix24-mock'
+import { fakeOk, fakeOkEmpty, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
   defineMcpTool: <T,>(spec: T) => spec,
@@ -11,7 +11,7 @@ vi.mock('~/server/utils/bitrix24', () => ({
   useBitrix24: () => fake.b24,
 }))
 
-const tool = (await import('../../../server/mcp/tools/users/current-user')).default as {
+const tool = (await import('../../../../server/mcp/tools/users/current-user')).default as {
   handler: (input: Record<string, never>) => Promise<unknown>
 }
 
