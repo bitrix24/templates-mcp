@@ -36,7 +36,7 @@ bx24mcp_submit_feedback({
 ### Writing the `summary`
 
 - One line, declarative, no Markdown.
-- Lead with the observable: `"bitrix24_current_user response missed EMAIL on portal X"`, not `"problem with current user tool"`.
+- Lead with the observable: `"b24_user_me response missed EMAIL on portal X"`, not `"problem with current user tool"`.
 - Avoid "please" or "could you" — this is a structured report, not a request.
 
 ### Writing the `details`

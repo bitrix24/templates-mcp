@@ -29,7 +29,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/add-checklist-ite
   inputSchema: { title: z.ZodString; taskId: z.ZodNumber }
 }
 
-describe('bitrix24_add_checklist_item', () => {
+describe('b24_task_checklist_item_add', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

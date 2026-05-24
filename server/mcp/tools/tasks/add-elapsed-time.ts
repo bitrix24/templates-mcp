@@ -20,11 +20,11 @@ import { callV2 } from '~/server/utils/sdk-helpers'
  * confirm what landed.
  */
 export default defineMcpTool({
-  name: 'bitrix24_add_elapsed_time',
+  name: 'b24_task_elapsed_time_add',
   description:
-    'Log a manual elapsed-time entry on a Bitrix24 task. Operators use these to record after-the-fact "how long did this take" — separate from the Bitrix24 stopwatch which fires automatically during in-progress / paused transitions. `seconds` is capped at 86400 (24h) — split multi-day work into separate entries per day. Returns the new entry id. To read existing entries on a task, use `bitrix24_list_elapsed_time`. To correct or remove an entry, use `bitrix24_update_elapsed_time` / `bitrix24_delete_elapsed_time`.',
+    'Log a manual elapsed-time entry on a Bitrix24 task. Operators use these to record after-the-fact "how long did this take" — separate from the Bitrix24 stopwatch which fires automatically during in-progress / paused transitions. `seconds` is capped at 86400 (24h) — split multi-day work into separate entries per day. Returns the new entry id. To read existing entries on a task, use `b24_task_elapsed_times_list`. To correct or remove an entry, use `b24_task_elapsed_time_update` / `b24_task_elapsed_time_delete`.',
   inputSchema: {
-    taskId: z.number().int().positive().describe('Task id to attach the entry to. Get it from `bitrix24_list_tasks` or `bitrix24_create_task`.'),
+    taskId: z.number().int().positive().describe('Task id to attach the entry to. Get it from `b24_tasks_list` or `b24_task_create`.'),
     seconds: z
       .number()
       .int()
@@ -78,7 +78,7 @@ export default defineMcpTool({
         content: [
           {
             type: 'text' as const,
-            text: `Elapsed-time entry posted on task ${taskId}, but Bitrix24 returned an unexpected body shape. Re-list with bitrix24_list_elapsed_time to find the new id.`,
+            text: `Elapsed-time entry posted on task ${taskId}, but Bitrix24 returned an unexpected body shape. Re-list with b24_task_elapsed_times_list to find the new id.`,
           },
         ],
       }

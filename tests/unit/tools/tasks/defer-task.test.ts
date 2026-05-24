@@ -19,7 +19,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/defer-task')).def
   handler: (input: { taskId: number }) => Promise<ToolContent>
 }
 
-describe('bitrix24_defer_task', () => {
+describe('b24_task_defer', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

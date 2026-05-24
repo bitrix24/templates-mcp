@@ -40,7 +40,7 @@ import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
 
 const DEFAULT_BATCH_CAP = 50
 const USAGE_NOTES =
-  ` Accepts a single entry id OR an array of ids (batch mode, up to ${DEFAULT_BATCH_CAP} — pass \`force: true\` to override). Batch mode goes through one HTTP round-trip and returns a \`{ batch, total, ok, failed, results }\` summary; per-id errors do not abort the batch. If the operator names entries in free text, list the entries first via \`bitrix24_list_elapsed_time\` and match by commentText / seconds / dateStart.`
+  ` Accepts a single entry id OR an array of ids (batch mode, up to ${DEFAULT_BATCH_CAP} — pass \`force: true\` to override). Batch mode goes through one HTTP round-trip and returns a \`{ batch, total, ok, failed, results }\` summary; per-id errors do not abort the batch. If the operator names entries in free text, list the entries first via \`b24_task_elapsed_times_list\` and match by commentText / seconds / dateStart.`
 
 interface DeleteElapsedTimeInput extends ActionToolInput {
   taskId: number
@@ -55,16 +55,16 @@ interface DeleteElapsedTimeBatchRow {
 }
 
 export default defineActionTool<DeleteElapsedTimeInput, DeleteElapsedTimeBatchRow>({
-  name: 'bitrix24_delete_elapsed_time',
+  name: 'b24_task_elapsed_time_delete',
   description:
-    'Delete elapsed-time entries on a Bitrix24 task. Use for cleanup of duplicate / miss-clicked entries, or to remove a stopwatch session that ended up not counting. REQUIRES `confirmDelete: true` (SKILL.md Ground Rule #9 — every delete needs explicit operator agreement). Only the entry author (or someone with admin rights) can delete. To CORRECT an entry instead of removing it, use `bitrix24_update_elapsed_time`.',
+    'Delete elapsed-time entries on a Bitrix24 task. Use for cleanup of duplicate / miss-clicked entries, or to remove a stopwatch session that ended up not counting. REQUIRES `confirmDelete: true` (SKILL.md Ground Rule #9 — every delete needs explicit operator agreement). Only the entry author (or someone with admin rights) can delete. To CORRECT an entry instead of removing it, use `b24_task_elapsed_time_update`.',
   usageNotes: USAGE_NOTES,
   pastTense: 'deleted',
   batchCap: DEFAULT_BATCH_CAP,
   inputSchema: {
     taskId: z.number().int().positive().describe('Task id the entries belong to.'),
     itemId: idOrIdArraySchema.describe(
-      'Elapsed-time entry id (from `bitrix24_list_elapsed_time`), or an array of ids for batch mode. Pass a number for single-entry semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
+      'Elapsed-time entry id (from `b24_task_elapsed_times_list`), or an array of ids for batch mode. Pass a number for single-entry semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
     ),
     confirmDelete: confirmDeleteSchema(),
     force: forceFlagSchema(DEFAULT_BATCH_CAP),
@@ -85,7 +85,7 @@ function describeTarget(taskId: number, itemId: number | number[]): string {
 }
 
 async function runOne(taskId: number, itemId: number, confirmDelete: boolean) {
-  assertConfirmedDelete('bitrix24_delete_elapsed_time', describeTarget(taskId, itemId), confirmDelete)
+  assertConfirmedDelete('b24_task_elapsed_time_delete', describeTarget(taskId, itemId), confirmDelete)
   const b24 = useBitrix24()
   await callV2<null>(
     b24,
@@ -113,7 +113,7 @@ async function runBatch(
   itemIds: number[],
   confirmDelete: boolean,
 ): Promise<DeleteElapsedTimeBatchRow[]> {
-  assertConfirmedDelete('bitrix24_delete_elapsed_time', describeTarget(taskId, itemIds), confirmDelete)
+  assertConfirmedDelete('b24_task_elapsed_time_delete', describeTarget(taskId, itemIds), confirmDelete)
   const b24 = useBitrix24()
   const rows = await batchV2<null>(
     b24,

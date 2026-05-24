@@ -19,7 +19,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/disapprove-task')
   handler: (input: { taskId: number }) => Promise<ToolContent>
 }
 
-describe('bitrix24_disapprove_task', () => {
+describe('b24_task_disapprove', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

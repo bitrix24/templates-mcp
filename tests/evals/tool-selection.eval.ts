@@ -205,108 +205,108 @@ const CASES: Case[] = [
   // ── find_user (resolve names → ids) ────────────────────────────────────
   {
     input: 'Кто такой Игорь?',
-    expected: 'bitrix24_find_user',
+    expected: 'b24_user_find',
     notes: 'Bare first name — straight to find_user.',
   },
   {
     input: 'Найди мне Игоря Сергеевича Шевченко.',
-    expected: 'bitrix24_find_user',
+    expected: 'b24_user_find',
     notes: 'Full Russian name with patronymic — should hit find_user via free-text query.',
   },
   {
     input: 'Покажи бэкенд-разработчиков.',
-    expected: 'bitrix24_find_user',
+    expected: 'b24_user_find',
     notes: 'Position-based lookup.',
   },
   {
     input: 'Find all the project managers on our portal.',
-    expected: 'bitrix24_find_user',
+    expected: 'b24_user_find',
     notes: 'English position-based lookup.',
   },
 
   // ── current_user (operator refers to themselves) ───────────────────────
   {
     input: 'Кто я?',
-    expected: 'bitrix24_current_user',
+    expected: 'b24_user_me',
     notes: 'Self-reference — connectivity / identity check.',
   },
   {
     input: 'What is my Bitrix24 user id?',
-    expected: 'bitrix24_current_user',
+    expected: 'b24_user_me',
     notes: 'Self-id English variant.',
   },
 
   // ── list_tasks (filtering without name resolution) ─────────────────────
   {
     input: 'Покажи все задачи группы 7.',
-    expected: 'bitrix24_list_tasks',
+    expected: 'b24_tasks_list',
     notes: 'Group filter, no person.',
   },
   {
     input: 'Найди задачи со словом «договор» в названии.',
-    expected: 'bitrix24_list_tasks',
+    expected: 'b24_tasks_list',
     notes: 'LIKE-search on title.',
   },
   {
     input: 'Сколько у нас всего задач на портале?',
-    expected: 'bitrix24_list_tasks',
+    expected: 'b24_tasks_list',
     notes: 'Count via list with select=[ID] — reads `total`.',
   },
   {
     input: 'Show me overdue tasks across the company.',
-    expected: 'bitrix24_list_tasks',
+    expected: 'b24_tasks_list',
     notes: 'Overdue filter, no specific person.',
   },
 
   // ── create_task with explicit numeric id (no name to resolve) ──────────
   {
     input: 'Create a task "Approve contract" for user 12, deadline Friday 18:00.',
-    expected: 'bitrix24_create_task',
+    expected: 'b24_task_create',
     notes: 'Numeric responsibleId given — find_user not needed.',
   },
   {
     input: 'Заведи задачу пользователю с id 5: проверить логи прода.',
-    expected: 'bitrix24_create_task',
+    expected: 'b24_task_create',
     notes: 'Russian phrasing with explicit numeric id.',
   },
 
   // ── create_task → expects find_user FIRST when a name is given ─────────
   {
     input: 'Создай задачу «Согласовать договор» для Игоря, дедлайн пятница.',
-    expected: 'bitrix24_find_user',
+    expected: 'b24_user_find',
     notes: 'Must resolve "Игоря" before creating — first call should be find_user.',
   },
   {
     input: 'Поручи Маше Петровой позвонить клиенту до завтра.',
-    expected: 'bitrix24_find_user',
+    expected: 'b24_user_find',
     notes: '"Поручи" = "assign a task"; name first → find_user.',
   },
 
   // ── update_task ────────────────────────────────────────────────────────
   {
     input: 'Перенеси дедлайн задачи 123 на понедельник.',
-    expected: 'bitrix24_update_task',
+    expected: 'b24_task_update',
     notes: 'Direct field update — taskId is given.',
   },
   {
     input: 'Снизь приоритет задачи 456 до низкого.',
-    expected: 'bitrix24_update_task',
+    expected: 'b24_task_update',
     notes: 'Priority change.',
   },
 
   // ── add_task_comment vs submit_feedback (must not confuse the two) ─────
   {
     input: 'Прокомментируй задачу 123: «Согласовано, можно запускать».',
-    expected: 'bitrix24_add_task_comment',
+    expected: 'b24_task_comment_add',
     notes: 'Comment on a Bitrix24 task — taskId given.',
   },
   {
     input: 'Добавь комментарий "WIP" к задаче 99.',
-    expected: 'bitrix24_add_task_comment',
+    expected: 'b24_task_comment_add',
     notes: 'Short comment.',
   },
   {
-    input: 'Отправь фидбэк разработчикам MCP: описание тула bitrix24_current_user непонятное, агент не понял что оно возвращает.',
+    input: 'Отправь фидбэк разработчикам MCP: описание тула b24_user_me непонятное, агент не понял что оно возвращает.',
     expected: 'bx24mcp_submit_feedback',
     notes: 'Meta-feedback about the MCP server itself — should NOT go to add_task_comment.',
   },
@@ -319,71 +319,71 @@ const CASES: Case[] = [
   // ── Task lifecycle (7 thin v3 wrappers) ────────────────────────────────
   {
     input: 'Возьми задачу 42 в работу.',
-    expected: 'bitrix24_start_task',
+    expected: 'b24_task_start',
     notes: 'Russian "take into work" — start the task.',
   },
   {
     input: 'Поставь задачу 88 на паузу.',
-    expected: 'bitrix24_pause_task',
+    expected: 'b24_task_pause',
     notes: 'Pause an in-progress task.',
   },
   {
     input: 'Отметь задачу 15 как выполненную.',
-    expected: 'bitrix24_complete_task',
+    expected: 'b24_task_complete',
     notes: 'Mark task as done — responsible user closes the task.',
   },
   {
     input: 'Прими работу по задаче 27, всё устраивает.',
-    expected: 'bitrix24_approve_task',
+    expected: 'b24_task_approve',
     notes: 'Creator accepts work after taskControl review — approve, not complete.',
   },
   {
     input: 'Верни задачу 27 на доработку — нужно переделать.',
-    expected: 'bitrix24_disapprove_task',
+    expected: 'b24_task_disapprove',
     notes: 'Creator rejects work after taskControl review.',
   },
   {
     input: 'Отложи задачу 99 на потом.',
-    expected: 'bitrix24_defer_task',
+    expected: 'b24_task_defer',
     notes: 'Defer — postpone, do not close.',
   },
   {
     input: 'Возобнови задачу 10, она снова в работе.',
-    expected: 'bitrix24_renew_task',
+    expected: 'b24_task_renew',
     notes: 'Renew a previously closed/deferred task back to Pending.',
   },
 
   // ── Lifecycle, English (i18n probe — descriptions must read for EN ops) ─
   {
     input: 'Start working on task 42.',
-    expected: 'bitrix24_start_task',
+    expected: 'b24_task_start',
     notes: 'EN equivalent of "возьми в работу".',
   },
   {
     input: 'Mark task 15 as done.',
-    expected: 'bitrix24_complete_task',
+    expected: 'b24_task_complete',
     notes: 'EN "done" — must NOT go to rate_task (positive).',
   },
   {
     input: 'Send task 27 back for rework, the document is wrong.',
-    expected: 'bitrix24_disapprove_task',
+    expected: 'b24_task_disapprove',
     notes: 'EN rejection — must NOT go to update_task.',
   },
 
   // ── Disambiguation (verbs with multiple plausible tools) ───────────────
   {
     input: 'Прими задачу 12.',
-    expected: 'bitrix24_start_task',
+    expected: 'b24_task_start',
     notes: '"Прими" without further context = "take into work" (start). NOT approve_task — approve is for accepting completed work under task control.',
   },
   {
     input: 'Закрой задачу 88.',
-    expected: 'bitrix24_complete_task',
+    expected: 'b24_task_complete',
     notes: '"Закрой" = complete, NOT delete. There is no delete tool yet, but the verb must route to complete.',
   },
   {
     input: 'Верни задачу 15 в работу.',
-    expected: 'bitrix24_renew_task',
+    expected: 'b24_task_renew',
     notes: '"Верни в работу" of a closed task = renew. NOT disapprove (which is "верни на доработку" and only applies under task control).',
   },
 
@@ -393,182 +393,182 @@ const CASES: Case[] = [
   // camelCase filter contract).
   {
     input: 'Закрой задачи 5, 7 и 12.',
-    expected: 'bitrix24_complete_task',
+    expected: 'b24_task_complete',
     notes: 'Explicit ids → straight to batch complete (taskId as [5,7,12]).',
   },
   {
     input: 'Pause tasks 100, 101, 102 — I need to step away.',
-    expected: 'bitrix24_pause_task',
+    expected: 'b24_task_pause',
     notes: 'EN multi-id bulk pause; goes directly to pause_task in batch mode.',
   },
   {
     input: 'Закрой все мои задачи по корпусу №3.',
-    expected: 'bitrix24_list_tasks',
+    expected: 'b24_tasks_list',
     notes: 'No explicit ids → must enumerate first via list_tasks (camelCase filter), then loop complete_task in batch mode.',
   },
   {
     input: 'Approve everything from sprint 14, all looks good.',
-    expected: 'bitrix24_list_tasks',
+    expected: 'b24_tasks_list',
     notes: 'EN bulk approval without explicit ids: enumerate via list_tasks first; approve_task batch follows.',
   },
 
   // ── Task checklist (5 v2 wrappers — add / list / complete / renew / delete) ─
   {
     input: 'Добавь в задачу 123 пункт чек-листа «деплой».',
-    expected: 'bitrix24_add_checklist_item',
+    expected: 'b24_task_checklist_item_add',
     notes: 'Add a regular item — the operator picks a checklist by context; tool defaults to new-checklist when parentId is omitted.',
   },
   {
     input: 'Создай в задаче 123 новый чек-лист «Релиз» с пунктами changelog и smoke.',
-    expected: 'bitrix24_add_checklist_item',
+    expected: 'b24_task_checklist_item_add',
     notes: 'New checklist + items — LLM should still pick add_checklist_item; multiple calls follow.',
   },
   {
     input: 'Покажи чек-лист задачи 123.',
-    expected: 'bitrix24_list_checklist_items',
+    expected: 'b24_task_checklist_items_list',
     notes: 'Read the whole checklist tree.',
   },
   {
     input: 'Какой прогресс по чек-листу задачи 123?',
-    expected: 'bitrix24_list_checklist_items',
+    expected: 'b24_task_checklist_items_list',
     notes: 'Progress = list + count completed; first tool is the list.',
   },
   {
     input: 'Отметь в задаче 123 пункт 47 как выполненный.',
-    expected: 'bitrix24_complete_checklist_item',
+    expected: 'b24_task_checklist_item_complete',
     notes: 'Both ids given — go straight to complete.',
   },
   {
     input: 'Сними галку с пункта 47 в задаче 123, ещё не доделано.',
-    expected: 'bitrix24_renew_checklist_item',
+    expected: 'b24_task_checklist_item_renew',
     notes: 'Un-check = renew; must NOT route to renew_task (the task-level wrapper).',
   },
   {
     input: 'Удали из задачи 123 пункт 47 чек-листа.',
-    expected: 'bitrix24_delete_checklist_item',
+    expected: 'b24_task_checklist_item_delete',
     notes: 'Delete a single item.',
   },
   {
     input: 'Mark checklist item 21 on task 13 as done.',
-    expected: 'bitrix24_complete_checklist_item',
+    expected: 'b24_task_checklist_item_complete',
     notes: 'EN variant — both ids given; tests the description reads in English.',
   },
 
   // ── Task rating (MARK field, P/N/null) ─────────────────────────────────
   {
     input: 'Поставь задаче 55 положительную оценку.',
-    expected: 'bitrix24_rate_task',
+    expected: 'b24_task_rate',
     notes: 'Set positive rating — must NOT route to update_task with raw MARK.',
   },
   {
     input: 'Отметь задачу 56 как плохо выполненную.',
-    expected: 'bitrix24_rate_task',
+    expected: 'b24_task_rate',
     notes: 'Negative rating phrased without the word "rating".',
   },
   {
     input: 'Сними оценку с задачи 57.',
-    expected: 'bitrix24_rate_task',
+    expected: 'b24_task_rate',
     notes: 'Clear an existing rating — rating: none.',
   },
 
   // ── Task results (tasks.task.result.* — separate from comments / status) ───
   {
     input: 'Запиши результат к задаче 51: «работы выполнены, договор подписан».',
-    expected: 'bitrix24_add_task_result',
+    expected: 'b24_task_result_add',
     notes: 'Operator records a task RESULT (outcome) — distinct from a comment or completion.',
   },
   {
     input: 'Add a result to task 12: shipped to production at 18:00, all checks green.',
-    expected: 'bitrix24_add_task_result',
+    expected: 'b24_task_result_add',
     notes: 'EN result entry — must NOT route to add_task_comment or update_task.',
   },
   {
     input: 'Покажи результаты задачи 51.',
-    expected: 'bitrix24_list_task_results',
+    expected: 'b24_task_results_list',
     notes: 'Read results — distinct phrasing from "comments" or "status".',
   },
   {
     input: 'Что записано как итог работы по задаче 51?',
-    expected: 'bitrix24_list_task_results',
+    expected: 'b24_task_results_list',
     notes: 'Synonym for "result" ("итог") — should still hit list_task_results.',
   },
   {
     input: 'Поправь результат 17 — там опечатка, замени на «договор согласован 30.04».',
-    expected: 'bitrix24_update_task_result',
+    expected: 'b24_task_result_update',
     notes: 'Update result text — resultId explicit, not the parent taskId.',
   },
   {
     input: 'Удали результат 17 в задаче 51 — я ошибся, не должен был его записывать.',
-    expected: 'bitrix24_delete_task_result',
+    expected: 'b24_task_result_delete',
     notes: 'Destructive; resultId given explicitly.',
   },
 
   // ── task.elapseditem.* (PR #B — manual time logging) ───────────────────
   {
     input: 'Запиши 30 минут на задачу 691 — собирал договор.',
-    expected: 'bitrix24_add_elapsed_time',
+    expected: 'b24_task_elapsed_time_add',
     notes: 'Manual time entry — LLM must convert "30 минут" to 1800 seconds.',
   },
   {
     input: 'Покажи сколько часов потратили на задачу 691 на этой неделе.',
-    expected: 'bitrix24_list_elapsed_time',
+    expected: 'b24_task_elapsed_times_list',
     notes: 'Read entries — must NOT route to list_tasks.',
   },
   {
     input: 'Исправь запись 5 на задаче 691 — там не 15, а 45 минут.',
-    expected: 'bitrix24_update_elapsed_time',
+    expected: 'b24_task_elapsed_time_update',
     notes: 'Update — entry id explicit, distinguishes from update_task / update_task_result.',
   },
   {
     input: 'Удали записи 7, 8, 9 на задаче 691 — это были миссклики.',
-    expected: 'bitrix24_delete_elapsed_time',
+    expected: 'b24_task_elapsed_time_delete',
     notes: 'Batch delete — array of ids, destructive, must NOT route to delete_task_result.',
   },
 
   // ── task.dependence.* (PR-C — task dependencies; no read tool, see #33) ─
   {
     input: 'Сделай так, чтобы задача 100 шла после задачи 50 — пока 50 не закроют, 100 не стартует.',
-    expected: 'bitrix24_add_task_dependency',
+    expected: 'b24_task_dependency_add',
     notes: 'Add single dependency, FS semantics. taskIdTo=100 depends on taskIdFrom=50; "после" → linkType=2.',
   },
   {
     input: 'Поставь задачу 100 после задач 5, 7 и 9 — все три должны закрыться раньше.',
-    expected: 'bitrix24_add_task_dependency',
+    expected: 'b24_task_dependency_add',
     notes: 'Batch add — three predecessors against one fixed dependent, default FS. Must NOT route to list/remove.',
   },
   {
     input: 'Убери зависимость задачи 100 от задачи 50 — она больше не нужна.',
-    expected: 'bitrix24_remove_task_dependency',
+    expected: 'b24_task_dependency_remove',
     notes: 'Single remove. Destructive — requires confirmDelete; must NOT route to delete_* on other entities.',
   },
   {
     input: 'Сними у задачи 100 связи с задачами 5, 7, 9 — это всё устарело.',
-    expected: 'bitrix24_remove_task_dependency',
+    expected: 'b24_task_dependency_remove',
     notes: 'Batch remove — array of predecessors. Destructive; must NOT route to delete_task_result.',
   },
   {
     input: 'Поставь задачи 10 и 20 стартовать одновременно (одна не может начаться без другой).',
-    expected: 'bitrix24_add_task_dependency',
+    expected: 'b24_task_dependency_add',
     notes: 'SS linkType=0 (start-start). Verifies the model routes to add for non-FS phrasings — "одновременно" / "одна не может начаться без другой" maps to linkType:0, not the default FS.',
   },
   {
     input: 'Сделай чтобы задачи 50 и 51 завершались вместе — пока обе не готовы, ни одна не закрыта.',
-    expected: 'bitrix24_add_task_dependency',
+    expected: 'b24_task_dependency_add',
     notes: 'FF linkType=3 (finish-finish). Another non-FS phrasing — "завершались вместе" maps to linkType:3.',
   },
   {
     input: 'Make task 100 wait for tasks 5, 7, 9 to finish before it can start.',
-    expected: 'bitrix24_add_task_dependency',
+    expected: 'b24_task_dependency_add',
     notes: 'EN batch add, finish-start. Covers the most common dependency operator path in English so dependency family is not RU-only in the eval coverage.',
   },
   {
     input: 'Entferne die Abhängigkeit von Aufgabe 100 zu Aufgabe 50 — sie wird nicht mehr gebraucht.',
-    expected: 'bitrix24_remove_task_dependency',
+    expected: 'b24_task_dependency_remove',
     notes: 'DE single remove. Destructive — requires confirmDelete; pins German routing for dependency-removal vocabulary.',
   },
   {
     input: 'Faire en sorte que la tâche 100 démarre après les tâches 5, 7 et 9.',
-    expected: 'bitrix24_add_task_dependency',
+    expected: 'b24_task_dependency_add',
     notes: 'FR batch add, finish-start. "démarre après" → FS. Pins French routing for the dependency family.',
   },
 
@@ -576,51 +576,51 @@ const CASES: Case[] = [
   // Chinese (zh-CN)
   {
     input: '为用户 5 创建一个任务"批准合同"，截止时间周五。',
-    expected: 'bitrix24_create_task',
+    expected: 'b24_task_create',
     notes: 'zh — create with explicit numeric user id.',
   },
   {
     input: '开始处理任务 42。',
-    expected: 'bitrix24_start_task',
+    expected: 'b24_task_start',
     notes: 'zh — start task lifecycle.',
   },
   {
     input: '给任务 55 一个好评。',
-    expected: 'bitrix24_rate_task',
+    expected: 'b24_task_rate',
     notes: 'zh — positive rating; must NOT route to update_task.',
   },
 
   // Arabic (ar, RTL)
   {
     input: 'أضف تعليقاً للمهمة 123: «تمت الموافقة».',
-    expected: 'bitrix24_add_task_comment',
+    expected: 'b24_task_comment_add',
     notes: 'ar (RTL) — task id given, comment text in Arabic.',
   },
   {
     input: 'ابدأ العمل على المهمة 42.',
-    expected: 'bitrix24_start_task',
+    expected: 'b24_task_start',
     notes: 'ar — start the task.',
   },
   {
     input: 'أرجِع المهمة 27 للمراجعة، المستند خاطئ.',
-    expected: 'bitrix24_disapprove_task',
+    expected: 'b24_task_disapprove',
     notes: 'ar — send back for rework; tests that the Müller/Fatima-flagged rejection terminology lands in Arabic.',
   },
 
   // Japanese (ja)
   {
     input: 'ユーザーID 7 にタスク「契約を承認」を作成、締切は金曜18:00。',
-    expected: 'bitrix24_create_task',
+    expected: 'b24_task_create',
     notes: 'ja — create with explicit numeric user id.',
   },
   {
     input: 'タスク 15 を完了としてマークしてください。',
-    expected: 'bitrix24_complete_task',
+    expected: 'b24_task_complete',
     notes: 'ja — mark task as done; must NOT route to rate_task (positive).',
   },
   {
     input: 'タスク 99 を後回しにしてください。',
-    expected: 'bitrix24_defer_task',
+    expected: 'b24_task_defer',
     notes: 'ja — defer; tests defer-vs-pause disambiguation across scripts.',
   },
 ]

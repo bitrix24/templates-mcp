@@ -73,35 +73,35 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 
 | Tool | What it does |
 |---|---|
-| `bitrix24_current_user` | Returns the Bitrix24 user that owns the configured webhook. Useful as a connectivity check. |
-| `bitrix24_find_user` | Find users by name / surname / position / department, or free-text. **Call this before any tool that takes a userId** — operators speak in names, not numeric ids. |
-| `bitrix24_create_task` | Create a task — title, responsibleId required; description / deadline / groupId / priority / accomplices / auditors optional. |
-| `bitrix24_list_tasks` | List tasks with filter (`{ RESPONSIBLE_ID, STATUS, "!STATUS", ">=DEADLINE", … }`), order, select, and pagination (page size fixed at 50). |
-| `bitrix24_update_task` | Update an existing task by id with a partial UPPERCASE-keyed `fields` object. |
-| `bitrix24_add_task_comment` | Append a comment to a task (BBCode-friendly). |
-| `bitrix24_start_task` | Move a task to In progress (3). |
-| `bitrix24_pause_task` | Move an In-progress task back to Pending (2). |
-| `bitrix24_complete_task` | Mark a task as completed (5), or Supposedly completed (4) when task control is on. |
-| `bitrix24_approve_task` | Creator approves a Supposedly-completed task → Completed (5). |
-| `bitrix24_disapprove_task` | Creator rejects a Supposedly-completed task → Pending (2) for rework. |
-| `bitrix24_defer_task` | Move a task to Deferred (6) — postponed but not closed. |
-| `bitrix24_renew_task` | Reopen a Completed or Deferred task → Pending (2). |
-| `bitrix24_rate_task` | Set or clear the task rating (positive / negative / none — Bitrix24 `MARK` field). |
-| `bitrix24_add_checklist_item` | Add an item to a task checklist. Omit `parentId` (or pass 0) to start a new checklist — the `title` becomes the heading. |
-| `bitrix24_list_checklist_items` | List every checklist item on a task as a flat tree (`parentId: 0` = checklist heading). |
-| `bitrix24_complete_checklist_item` | Check off a checklist item. |
-| `bitrix24_renew_checklist_item` | Un-check a previously completed checklist item. |
-| `bitrix24_delete_checklist_item` | Delete a checklist item. Heading deletion (parentId 0) wipes the whole checklist and is refused without `confirmDeleteHeading: true`. |
-| `bitrix24_add_task_result` | Record a free-form RESULT (outcome text) on a task — separate from comments and from the task body. |
-| `bitrix24_list_task_results` | List the results recorded on a task. Newest-first by default; pagination via limit/offset. |
-| `bitrix24_update_task_result` | Rewrite the text of an existing result. Author-only: Bitrix24 returns `ACCESSDENIEDEXCEPTION` if any other operator (besides a portal admin) tries to edit. |
-| `bitrix24_delete_task_result` | Delete a result by id. Author-only; the task itself is not affected. |
-| `bitrix24_add_elapsed_time` | Log a manual elapsed-time entry on a task ("how long did this take"), separate from the auto stopwatch. `seconds` capped at 86400 (24h). |
-| `bitrix24_list_elapsed_time` | List elapsed-time entries (manual + stopwatch) on tasks. Filter by `taskId` or a custom camelCase filter; paginates at 50. |
-| `bitrix24_update_elapsed_time` | Correct an existing elapsed-time entry (duration / comment / attribution). Author-or-admin only. |
-| `bitrix24_delete_elapsed_time` | Delete elapsed-time entries. Requires `confirmDelete: true`. Author-or-admin only. |
-| `bitrix24_add_task_dependency` | Create a "previous task" dependency (`taskIdFrom` → `taskIdTo`) for Gantt-style scheduling. |
-| `bitrix24_remove_task_dependency` | Remove a "previous task" dependency. Requires `confirmDelete: true`. |
+| `b24_user_me` | Returns the Bitrix24 user that owns the configured webhook. Useful as a connectivity check. |
+| `b24_user_find` | Find users by name / surname / position / department, or free-text. **Call this before any tool that takes a userId** — operators speak in names, not numeric ids. |
+| `b24_task_create` | Create a task — title, responsibleId required; description / deadline / groupId / priority / accomplices / auditors optional. |
+| `b24_tasks_list` | List tasks with filter (`{ RESPONSIBLE_ID, STATUS, "!STATUS", ">=DEADLINE", … }`), order, select, and pagination (page size fixed at 50). |
+| `b24_task_update` | Update an existing task by id with a partial UPPERCASE-keyed `fields` object. |
+| `b24_task_comment_add` | Append a comment to a task (BBCode-friendly). |
+| `b24_task_start` | Move a task to In progress (3). |
+| `b24_task_pause` | Move an In-progress task back to Pending (2). |
+| `b24_task_complete` | Mark a task as completed (5), or Supposedly completed (4) when task control is on. |
+| `b24_task_approve` | Creator approves a Supposedly-completed task → Completed (5). |
+| `b24_task_disapprove` | Creator rejects a Supposedly-completed task → Pending (2) for rework. |
+| `b24_task_defer` | Move a task to Deferred (6) — postponed but not closed. |
+| `b24_task_renew` | Reopen a Completed or Deferred task → Pending (2). |
+| `b24_task_rate` | Set or clear the task rating (positive / negative / none — Bitrix24 `MARK` field). |
+| `b24_task_checklist_item_add` | Add an item to a task checklist. Omit `parentId` (or pass 0) to start a new checklist — the `title` becomes the heading. |
+| `b24_task_checklist_items_list` | List every checklist item on a task as a flat tree (`parentId: 0` = checklist heading). |
+| `b24_task_checklist_item_complete` | Check off a checklist item. |
+| `b24_task_checklist_item_renew` | Un-check a previously completed checklist item. |
+| `b24_task_checklist_item_delete` | Delete a checklist item. Heading deletion (parentId 0) wipes the whole checklist and is refused without `confirmDeleteHeading: true`. |
+| `b24_task_result_add` | Record a free-form RESULT (outcome text) on a task — separate from comments and from the task body. |
+| `b24_task_results_list` | List the results recorded on a task. Newest-first by default; pagination via limit/offset. |
+| `b24_task_result_update` | Rewrite the text of an existing result. Author-only: Bitrix24 returns `ACCESSDENIEDEXCEPTION` if any other operator (besides a portal admin) tries to edit. |
+| `b24_task_result_delete` | Delete a result by id. Author-only; the task itself is not affected. |
+| `b24_task_elapsed_time_add` | Log a manual elapsed-time entry on a task ("how long did this take"), separate from the auto stopwatch. `seconds` capped at 86400 (24h). |
+| `b24_task_elapsed_times_list` | List elapsed-time entries (manual + stopwatch) on tasks. Filter by `taskId` or a custom camelCase filter; paginates at 50. |
+| `b24_task_elapsed_time_update` | Correct an existing elapsed-time entry (duration / comment / attribution). Author-or-admin only. |
+| `b24_task_elapsed_time_delete` | Delete elapsed-time entries. Requires `confirmDelete: true`. Author-or-admin only. |
+| `b24_task_dependency_add` | Create a "previous task" dependency (`taskIdFrom` → `taskIdTo`) for Gantt-style scheduling. |
+| `b24_task_dependency_remove` | Remove a "previous task" dependency. Requires `confirmDelete: true`. |
 | `bx24mcp_submit_feedback` | Meta-tool: lets the AI agent file a GitHub issue against this repository with structured feedback. See [`docs/FEEDBACK.md`](./docs/FEEDBACK.md). |
 
 29 Bitrix24 + 1 meta = **30 tools total**.

@@ -24,7 +24,7 @@ import { defineChecklistActionTool } from '~/server/utils/checklist'
  * `confirmDelete: true`.
  */
 export default defineChecklistActionTool({
-  name: 'bitrix24_delete_checklist_item',
+  name: 'b24_task_checklist_item_delete',
   method: 'task.checklistitem.delete',
   verb: 'delete',
   pastTense: 'deleted',

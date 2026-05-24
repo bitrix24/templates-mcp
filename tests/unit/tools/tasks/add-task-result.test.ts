@@ -21,7 +21,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/add-task-result')
   inputSchema: { text: z.ZodString; taskId: z.ZodNumber }
 }
 
-describe('bitrix24_add_task_result', () => {
+describe('b24_task_result_add', () => {
   beforeEach(() => {
     fake.v3Call.mockReset()
   })

@@ -22,16 +22,16 @@ import { extractTasks } from '~/server/utils/tasks'
  * creator attribution is tracked in issue #125.
  */
 export default defineMcpTool({
-  name: 'bitrix24_create_task',
+  name: 'b24_task_create',
   description:
-    'Create a new Bitrix24 task. Requires a title and a responsibleId (Bitrix24 user id — call bitrix24_current_user first if you only have your own). Optional: description, deadline (ISO 8601 with timezone), groupId, priority. Returns the new task id and a short summary. Note: the task creator is not set here, so Bitrix24 records the webhook user as creator — this may differ from the person actually requesting the task.',
+    'Create a new Bitrix24 task. Requires a title and a responsibleId (Bitrix24 user id — call b24_user_me first if you only have your own). Optional: description, deadline (ISO 8601 with timezone), groupId, priority. Returns the new task id and a short summary. Note: the task creator is not set here, so Bitrix24 records the webhook user as creator — this may differ from the person actually requesting the task.',
   inputSchema: {
     title: z.string().min(1).max(255).describe('Task title — max 255 chars.'),
     responsibleId: z
       .number()
       .int()
       .positive()
-      .describe('Bitrix24 user id of the assignee. Get it from `bitrix24_current_user` if it should be the operator themselves.'),
+      .describe('Bitrix24 user id of the assignee. Get it from `b24_user_me` if it should be the operator themselves.'),
     description: z
       .string()
       .optional()

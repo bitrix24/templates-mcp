@@ -8,7 +8,7 @@ import { defineTaskLifecycleTool } from '~/server/utils/task-lifecycle'
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-renew.html
  */
 export default defineTaskLifecycleTool({
-  name: 'bitrix24_renew_task',
+  name: 'b24_task_renew',
   method: 'tasks.task.renew',
   verb: 'renew',
   pastTense: 'renewed',

@@ -112,7 +112,7 @@ export function confirmDeleteSchema() {
 /**
  * Universal Rule #9 gate — refuse a delete that wasn't explicitly confirmed.
  *
- * Single shared implementation for every `bitrix24_delete_*` tool. Each
+ * Single shared implementation for every `*_delete` / `*_remove` tool. Each
  * callsite formats its own `targetDescription` (e.g. `"elapsed-time entry 5
  * on task 1"` or `"3 checklist item(s) [475, 433] on task 13"`) so the LLM
  * sees a domain-specific message naming exactly what would be wiped. The

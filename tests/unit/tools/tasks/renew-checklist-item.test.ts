@@ -19,7 +19,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/renew-checklist-i
   handler: (input: { taskId: number; itemId: number | number[]; force?: boolean }) => Promise<ToolContent>
 }
 
-describe('bitrix24_renew_checklist_item', () => {
+describe('b24_task_checklist_item_renew', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
     fake.v2Batch.mockReset()

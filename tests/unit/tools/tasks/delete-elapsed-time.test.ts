@@ -25,7 +25,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/delete-elapsed-ti
   }) => Promise<ToolContent>
 }
 
-describe('bitrix24_delete_elapsed_time', () => {
+describe('b24_task_elapsed_time_delete', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
     fake.v2Batch.mockReset()

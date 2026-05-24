@@ -25,7 +25,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/add-task-comment'
   handler: (input: CommentInput) => Promise<ToolContent>
 }
 
-describe('bitrix24_add_task_comment', () => {
+describe('b24_task_comment_add', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

@@ -19,7 +19,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/renew-task')).def
   handler: (input: { taskId: number }) => Promise<ToolContent>
 }
 
-describe('bitrix24_renew_task', () => {
+describe('b24_task_renew', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

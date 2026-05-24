@@ -23,8 +23,9 @@ One tool per file, `kebab-name.ts`. File-based discovery picks them up automatic
 
 ## Naming
 
-- **Bitrix24 tools**: `bitrix24_<verb>_<entity>` — e.g. `bitrix24_complete_task`.
+- **Bitrix24 tools**: `b24_<domain>(_<entity>)*_<action>` — action LAST, entity slots zero-or-more. Singular by default; **plural for `_list`** (`b24_tasks_list`, `b24_task_results_list`, `b24_task_checklist_items_list`). Examples: `b24_task_create`, `b24_task_complete`, `b24_task_checklist_item_add`, `b24_user_me`.
 - **Meta tools**: `bx24mcp_<verb>` — e.g. `bx24mcp_submit_feedback`. These do not talk to Bitrix24.
+- The `b24_*` shape is **CI-enforced** by `tests/unit/mcp-stdio/tool-naming-convention.test.ts` — every name under `server/mcp/tools/**` must match the pattern.
 
 ## The reference template
 
@@ -54,11 +55,11 @@ interface TaskGetResponse {
 }
 
 export default defineMcpTool({
-  name: 'bitrix24_get_task',
+  name: 'b24_task_get',
   description:
     'Fetch a single Bitrix24 task by id. … Persona-walk notes: explicit task-control / idempotency / bulk hints here.',
   inputSchema: {
-    taskId: z.number().int().positive().describe('Task id from `bitrix24_list_tasks` or `bitrix24_create_task`.'),
+    taskId: z.number().int().positive().describe('Task id from `b24_tasks_list` or `b24_task_create`.'),
   },
   handler: async ({ taskId }) => {
     const b24 = useBitrix24()
@@ -157,7 +158,7 @@ A factory pays for itself when (a) three or more tools share the call shape and 
 
 **Two stacking rules** from `SKILL.md`:
 
-- **Ground Rule #9 (universal)** — EVERY `bitrix24_delete_*` or `bitrix24_remove_*` tool requires `confirmDelete: true` from the agent, regardless of cascade. Refuses with `DELETE_NEEDS_CONFIRM` otherwise. Implementation:
+- **Ground Rule #9 (universal)** — EVERY `*_delete` or `*_remove` tool requires `confirmDelete: true` from the agent, regardless of cascade. Refuses with `DELETE_NEEDS_CONFIRM` otherwise. Implementation:
   1. Wire `confirmDelete: confirmDeleteSchema()` into the tool's Zod `inputSchema` — shared schema fragment from `server/utils/define-action-tool.ts` keeps wording uniform.
   2. In the handler, call `assertConfirmedDelete(toolName, targetDescription, confirmDelete)` from the same file. It owns the `Bitrix24ToolError` throw and the `DELETE_NEEDS_CONFIRM` code — do NOT re-implement.
   3. Format `targetDescription` per-callsite so the LLM sees a domain-specific message (e.g. `"elapsed-time entry 5 on task 1"`, `"dependency link 50 → task 100"`). The error message must name the target(s) so the agent shows the operator what they're agreeing to.
@@ -270,7 +271,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/get-task')).defau
   handler: (input: { taskId: number }) => Promise<{ content: { type: 'text'; text: string }[] }>
 }
 
-describe('bitrix24_get_task', () => {
+describe('b24_task_get', () => {
   beforeEach(() => {
     fake.v3Call.mockReset()
   })
@@ -310,7 +311,7 @@ Add at least one entry to `tests/evals/tool-selection.eval.ts` so DeepSeek valid
 ```ts
 {
   input: 'Покажи задачу 42 — заголовок, статус, кто исполнитель.',
-  expected: 'bitrix24_get_task',
+  expected: 'b24_task_get',
   notes: 'RU explicit-id task lookup — must NOT route to list_tasks.',
 },
 ```
@@ -352,4 +353,4 @@ Pick the broadest scope that applies — a refactor across `server/utils/*` is `
 - [ ] Eval case in `tests/evals/tool-selection.eval.ts` (plus disambiguation if needed).
 - [ ] Persona walk applied.
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` all green.
-- [ ] PR title follows Conventional Commits (see "Commit message conventions" above): `feat(tools): add bitrix24_<name>`.
+- [ ] PR title follows Conventional Commits (see "Commit message conventions" above): `feat(tools): add b24_<name>`.

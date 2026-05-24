@@ -24,7 +24,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/rate-task')).defa
   }) => Promise<ToolContent>
 }
 
-describe('bitrix24_rate_task', () => {
+describe('b24_task_rate', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
     fake.v2Batch.mockReset()

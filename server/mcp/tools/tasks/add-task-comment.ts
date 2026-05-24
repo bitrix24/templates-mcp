@@ -14,7 +14,7 @@ import { callV2 } from '~/server/utils/sdk-helpers'
  * webhook auth, and predictable. Migration is queued for a follow-up PR.
  */
 export default defineMcpTool({
-  name: 'bitrix24_add_task_comment',
+  name: 'b24_task_comment_add',
   description:
     'Append a comment to an existing Bitrix24 task. The comment author defaults to the user behind the configured webhook; pass `authorId` only if you have permission to post on behalf of someone else (admin-only on most portals). Returns the new comment id.',
   inputSchema: {

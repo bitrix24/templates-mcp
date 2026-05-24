@@ -52,7 +52,7 @@ const sampleUsers = [
   },
 ]
 
-describe('bitrix24_find_user', () => {
+describe('b24_user_find', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

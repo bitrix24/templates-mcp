@@ -29,7 +29,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/list-task-results
   handler: (input: ListInput) => Promise<ToolContent>
 }
 
-describe('bitrix24_list_task_results', () => {
+describe('b24_task_results_list', () => {
   beforeEach(() => {
     fake.v3Call.mockReset()
   })

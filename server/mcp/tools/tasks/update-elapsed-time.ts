@@ -22,12 +22,12 @@ import { callV2 } from '~/server/utils/sdk-helpers'
  * UX continuity (no follow-up read needed).
  */
 export default defineMcpTool({
-  name: 'bitrix24_update_elapsed_time',
+  name: 'b24_task_elapsed_time_update',
   description:
-    'Update an existing elapsed-time entry on a Bitrix24 task — correct a miss-clicked duration, back-fill a comment, or change attribution. Provide at least one of `seconds` / `comment` / `userId`; omitted fields are left unchanged. Only the entry author (or someone with admin rights) can update. Use `bitrix24_list_elapsed_time` to find the entry id first if the operator names it in free text ("исправь запись на 30 минут").',
+    'Update an existing elapsed-time entry on a Bitrix24 task — correct a miss-clicked duration, back-fill a comment, or change attribution. Provide at least one of `seconds` / `comment` / `userId`; omitted fields are left unchanged. Only the entry author (or someone with admin rights) can update. Use `b24_task_elapsed_times_list` to find the entry id first if the operator names it in free text ("исправь запись на 30 минут").',
   inputSchema: {
-    taskId: z.number().int().positive().describe('Task id the entry belongs to. Get it from `bitrix24_list_elapsed_time`.'),
-    itemId: z.number().int().positive().describe('Elapsed-time entry id (from `bitrix24_list_elapsed_time`).'),
+    taskId: z.number().int().positive().describe('Task id the entry belongs to. Get it from `b24_task_elapsed_times_list`.'),
+    itemId: z.number().int().positive().describe('Elapsed-time entry id (from `b24_task_elapsed_times_list`).'),
     seconds: z
       .number()
       .int()
@@ -35,7 +35,7 @@ export default defineMcpTool({
       .max(86400)
       .optional()
       .describe(
-        'New duration in SECONDS. Convert operator vocabulary ("на 30 минут" → 1800). Capped at 86400 (24h) — same guardrail as `bitrix24_add_elapsed_time`. Omit to leave unchanged.',
+        'New duration in SECONDS. Convert operator vocabulary ("на 30 минут" → 1800). Capped at 86400 (24h) — same guardrail as `b24_task_elapsed_time_add`. Omit to leave unchanged.',
       ),
     comment: z
       .string()

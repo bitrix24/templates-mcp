@@ -32,7 +32,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/update-elapsed-ti
   }
 }
 
-describe('bitrix24_update_elapsed_time', () => {
+describe('b24_task_elapsed_time_update', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

@@ -41,7 +41,7 @@ function parseUserId(raw: string | number | null | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 export default defineMcpTool({
-  name: 'bitrix24_find_user',
+  name: 'b24_user_find',
   description:
     'Find Bitrix24 users by name / patronymic / surname / position / department, or a free-text query across all of them. Use this BEFORE any tool that needs a userId — operators speak in names, not numeric ids. The response includes `secondName` (Bitrix24 SECOND_NAME field) — used as a disambiguator especially for Russian-style "Имя Отчество Фамилия"; most non-Russian portals leave this empty. If the response has duplicates, narrow down in this order: `secondName` (patronymic) → `lastName` → `position`, and ask the operator to confirm. Returns id, name, patronymic, last name, position, and department membership for each match.',
   inputSchema: {

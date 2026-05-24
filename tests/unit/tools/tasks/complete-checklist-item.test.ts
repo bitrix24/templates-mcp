@@ -20,7 +20,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/complete-checklis
   handler: (input: { taskId: number; itemId: number | number[]; force?: boolean }) => Promise<ToolContent>
 }
 
-describe('bitrix24_complete_checklist_item', () => {
+describe('b24_task_checklist_item_complete', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
     fake.v2Batch.mockReset()

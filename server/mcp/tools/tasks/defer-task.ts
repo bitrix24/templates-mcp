@@ -8,11 +8,11 @@ import { defineTaskLifecycleTool } from '~/server/utils/task-lifecycle'
  *   https://apidocs.bitrix24.com/api-reference/tasks/tasks-task-defer.html
  */
 export default defineTaskLifecycleTool({
-  name: 'bitrix24_defer_task',
+  name: 'b24_task_defer',
   method: 'tasks.task.defer',
   verb: 'defer',
   pastTense: 'deferred',
   description:
-    'Defer a Bitrix24 task — moves it to Deferred (6). Use when work is postponed indefinitely but the task should stay open. Re-activate with `bitrix24_renew_task`.',
+    'Defer a Bitrix24 task — moves it to Deferred (6). Use when work is postponed indefinitely but the task should stay open. Re-activate with `b24_task_renew`.',
   taskIdHint: 'Task id to defer. Typically called on Pending (2) or In progress (3) tasks.',
 })

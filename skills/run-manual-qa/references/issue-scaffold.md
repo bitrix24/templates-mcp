@@ -134,7 +134,7 @@ The table below is an **example shape** (from a whole-project run) — use it as
 
 | Placeholder | Source | Used in |
 |---|---|---|
-| `$MY_ID` | `bitrix24_current_user` (collected) | most blocks |
+| `$MY_ID` | `b24_user_me` (collected) | most blocks |
 | `$USER_A_ID` | `find_user { query }` (collected) | CRUD, disambiguation |
 | `$TASK_ID` | `create_task` (collected) | lifecycle, batch, errors, time, deps |
 | `$TASK_ID_2` | second portal task (pre-seeded) | dependencies |

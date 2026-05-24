@@ -55,9 +55,9 @@ interface RemoveTaskDependencyBatchRow {
 }
 
 export default defineActionTool<RemoveTaskDependencyInput, RemoveTaskDependencyBatchRow>({
-  name: 'bitrix24_remove_task_dependency',
+  name: 'b24_task_dependency_remove',
   description:
-    'Remove a "previous task" dependency between two Bitrix24 tasks — wipes the predecessor link from `taskIdFrom` to `taskIdTo`. REQUIRES `confirmDelete: true` (SKILL.md Ground Rule #9, universal) after the operator has explicitly agreed to the removal. Bitrix24 rejects with ILLEGAL_NEW_LINK if the link does not exist (same code as "already exists" on add — disambiguate by reading the error message). To CREATE a link, use `bitrix24_add_task_dependency`. There is no read-back tool — Bitrix24 deprecated `task.item.getdependson` server-side with no v3 replacement (verified against a live portal); operators inspect existing dependencies via the Bitrix24 UI.',
+    'Remove a "previous task" dependency between two Bitrix24 tasks — wipes the predecessor link from `taskIdFrom` to `taskIdTo`. REQUIRES `confirmDelete: true` (SKILL.md Ground Rule #9, universal) after the operator has explicitly agreed to the removal. Bitrix24 rejects with ILLEGAL_NEW_LINK if the link does not exist (same code as "already exists" on add — disambiguate by reading the error message). To CREATE a link, use `b24_task_dependency_add`. There is no read-back tool — Bitrix24 deprecated `task.item.getdependson` server-side with no v3 replacement (verified against a live portal); operators inspect existing dependencies via the Bitrix24 UI.',
   usageNotes: USAGE_NOTES,
   pastTense: 'unlinked',
   batchCap: DEFAULT_BATCH_CAP,
@@ -88,7 +88,7 @@ function describeTarget(taskIdTo: number, taskIdFrom: number | number[]): string
 }
 
 async function runOne(taskIdTo: number, taskIdFrom: number, confirmDelete: boolean) {
-  assertConfirmedDelete('bitrix24_remove_task_dependency', describeTarget(taskIdTo, taskIdFrom), confirmDelete)
+  assertConfirmedDelete('b24_task_dependency_remove', describeTarget(taskIdTo, taskIdFrom), confirmDelete)
   const b24 = useBitrix24()
   await callV2<unknown>(
     b24,
@@ -116,7 +116,7 @@ async function runBatch(
   taskIdFroms: number[],
   confirmDelete: boolean,
 ): Promise<RemoveTaskDependencyBatchRow[]> {
-  assertConfirmedDelete('bitrix24_remove_task_dependency', describeTarget(taskIdTo, taskIdFroms), confirmDelete)
+  assertConfirmedDelete('b24_task_dependency_remove', describeTarget(taskIdTo, taskIdFroms), confirmDelete)
   const b24 = useBitrix24()
   const rows = await batchV2<unknown>(
     b24,

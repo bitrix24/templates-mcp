@@ -26,7 +26,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/list-tasks')).def
   handler: (input: ListInput) => Promise<ToolContent>
 }
 
-describe('bitrix24_list_tasks', () => {
+describe('b24_tasks_list', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

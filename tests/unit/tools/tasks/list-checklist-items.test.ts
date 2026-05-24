@@ -36,7 +36,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/list-checklist-it
   handler: (input: ListInput) => Promise<ToolContent>
 }
 
-describe('bitrix24_list_checklist_items', () => {
+describe('b24_task_checklist_items_list', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

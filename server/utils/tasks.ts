@@ -3,7 +3,7 @@
  *
  * Bitrix24 REST returns task fields in mixed casing (UPPERCASE for legacy
  * v2-style endpoints, camelCase for v3 responses). The four task tools
- * (`bitrix24_create_task` / `_list_tasks` / `_update_task` /
+ * (`b24_task_create` / `_list_tasks` / `_update_task` /
  * `_add_task_comment`) accept inputs in camelCase (more LLM-friendly) and
  * map them to the UPPERCASE keys that the REST methods actually require.
  */

@@ -20,22 +20,22 @@ import { callV3 } from '~/server/utils/sdk-helpers'
  * code `DELETE_NEEDS_CONFIRM` if the flag is absent or `false`. Both the
  * shared schema (`confirmDeleteSchema()`) and the shared gate live at
  * `server/utils/define-action-tool.ts` so wording stays uniform across
- * every `bitrix24_delete_*` tool.
+ * every `*_delete` / `*_remove` tool.
  */
 export default defineMcpTool({
-  name: 'bitrix24_delete_task_result',
+  name: 'b24_task_result_delete',
   description:
-    'Delete a Bitrix24 task result. Destructive — there is no undo, but the task itself is not affected. **Requires `confirmDelete: true`** (SKILL.md Rule #9, universal) after the operator has explicitly agreed to the deletion. Only the result author (or a portal admin) is allowed to delete it; other callers get ACCESSDENIEDEXCEPTION from Bitrix24. The resultId comes from `bitrix24_list_task_results`.',
+    'Delete a Bitrix24 task result. Destructive — there is no undo, but the task itself is not affected. **Requires `confirmDelete: true`** (SKILL.md Rule #9, universal) after the operator has explicitly agreed to the deletion. Only the result author (or a portal admin) is allowed to delete it; other callers get ACCESSDENIEDEXCEPTION from Bitrix24. The resultId comes from `b24_task_results_list`.',
   inputSchema: {
     resultId: z
       .number()
       .int()
       .positive()
-      .describe('Result id (NOT the parent taskId). Get from `bitrix24_list_task_results`.'),
+      .describe('Result id (NOT the parent taskId). Get from `b24_task_results_list`.'),
     confirmDelete: confirmDeleteSchema(),
   },
   handler: async ({ resultId, confirmDelete }) => {
-    assertConfirmedDelete('bitrix24_delete_task_result', `task result ${resultId}`, confirmDelete)
+    assertConfirmedDelete('b24_task_result_delete', `task result ${resultId}`, confirmDelete)
     const b24 = useBitrix24()
     // The endpoint's success envelope is `{ result: true }` — we don't need
     // the body, only that `callV3` didn't throw.

@@ -40,7 +40,7 @@ function fakeChecklistList() {
   ])
 }
 
-describe('bitrix24_delete_checklist_item', () => {
+describe('b24_task_checklist_item_delete', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
     fake.v2Batch.mockReset()

@@ -40,8 +40,8 @@ const tool = (await import('../../../../server/mcp/tools/meta/submit-feedback'))
 const validInput: ToolInput = {
   kind: 'issue',
   summary: 'tool description was ambiguous',
-  details: 'Calling bitrix24_current_user, the description hinted at task creation but no such tool exists.',
-  relatedTool: 'bitrix24_current_user',
+  details: 'Calling b24_user_me, the description hinted at task creation but no such tool exists.',
+  relatedTool: 'b24_user_me',
   severity: 'medium',
 }
 
@@ -70,7 +70,7 @@ describe('bx24mcp_submit_feedback', () => {
     expect(call.labels).toEqual([
       'agent-feedback',
       'feedback:issue',
-      'tool:bitrix24_current_user',
+      'tool:b24_user_me',
       'severity:medium',
     ])
     expect(result.content[0]!.text).toContain('https://github.com/bitrix24/templates-mcp/issues/7')

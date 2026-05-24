@@ -8,10 +8,10 @@ import { defineChecklistActionTool } from '~/server/utils/checklist'
  *   https://apidocs.bitrix24.ru/api-reference/tasks/checklist-item/task-checklist-item-renew.html
  */
 export default defineChecklistActionTool({
-  name: 'bitrix24_renew_checklist_item',
+  name: 'b24_task_checklist_item_renew',
   method: 'task.checklistitem.renew',
   verb: 'renew',
   pastTense: 'renewed',
   description:
-    'Un-check a previously completed Bitrix24 task checklist item — marks it active again. The opposite of `bitrix24_complete_checklist_item`. Use when the operator says they finished it by mistake or the work needs to be redone.',
+    'Un-check a previously completed Bitrix24 task checklist item — marks it active again. The opposite of `b24_task_checklist_item_complete`. Use when the operator says they finished it by mistake or the work needs to be redone.',
 })

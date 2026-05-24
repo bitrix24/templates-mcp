@@ -15,7 +15,7 @@ const tool = (await import('../../../../server/mcp/tools/users/current-user')).d
   handler: (input: Record<string, never>) => Promise<unknown>
 }
 
-describe('bitrix24_current_user', () => {
+describe('b24_user_me', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

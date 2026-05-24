@@ -60,11 +60,12 @@ contributor forgets, so it's the first thing to remember.
 
 ## Naming
 
-- **Bitrix24 tools**: `bitrix24_<verb>_<entity>` — e.g. `bitrix24_complete_task`.
+- **Bitrix24 tools**: `b24_<domain>(_<entity>)*_<action>` — action LAST, entity slots zero-or-more. Singular by default; **plural for `_list`** (`b24_tasks_list`, `b24_task_results_list`, `b24_task_checklist_items_list`). Examples: `b24_task_create`, `b24_task_complete`, `b24_task_checklist_item_add`, `b24_user_me`.
 - **Meta tools**: `bx24mcp_<verb>` — e.g. `bx24mcp_submit_feedback`. These never
   touch Bitrix24.
-- A tool whose primary effect is removing a record (`bitrix24_delete_*` /
-  `bitrix24_remove_*`) is subject to the confirm-delete gate — see "Bigger shapes".
+- A tool whose primary effect is removing a record (`*_delete` /
+  `*_remove`) is subject to the confirm-delete gate — see "Bigger shapes".
+- The `b24_*` shape is CI-enforced by `tests/unit/mcp-stdio/tool-naming-convention.test.ts`.
 
 ## Anatomy of a real tool
 
@@ -81,7 +82,7 @@ import { callV2 } from '~/server/utils/sdk-helpers'
 interface CurrentUserResponse { ID?: string | number, NAME?: string, LAST_NAME?: string }
 
 export default defineMcpTool({
-  name: 'bitrix24_current_user',
+  name: 'b24_user_me',
   description:
     'Get the Bitrix24 user that owns the configured incoming webhook. Use this as a '
     + 'connectivity check or when you need the operator id/name before any subsequent '
@@ -141,7 +142,7 @@ You won't need these for a first read tool, but know they exist:
 - **A family of tools sharing the same wire signature** (e.g. the seven task
   lifecycle verbs) → build on the `defineActionTool` factory in
   `server/utils/define-action-tool.ts` instead of re-implementing dispatch.
-- **A `bitrix24_delete_*` / `bitrix24_remove_*` tool** → it MUST gate on
+- **A `*_delete` / `*_remove` tool** → it MUST gate on
   `confirmDelete: true` (Ground Rule #9), and stack a second confirm flag if the
   delete cascades to more than the named target (Rule #10). Use the shared
   `confirmDeleteSchema()` / `assertConfirmedDelete()` helpers from
@@ -193,7 +194,7 @@ The skill has copy-paste skeletons for both.
 - [ ] Unit test + eval case added.
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` all green (eval validated separately
       with `pnpm test:evals`).
-- [ ] PR title in Conventional Commits form: `feat(tools): add bitrix24_<name>`
+- [ ] PR title in Conventional Commits form: `feat(tools): add b24_<name>`
       (the `Commit messages` CI job runs commitlint on the title and every commit).
 
 The skill's checklist is the authoritative superset — including the persona walk

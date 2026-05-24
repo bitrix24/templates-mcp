@@ -32,7 +32,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/add-task-dependen
   }
 }
 
-describe('bitrix24_add_task_dependency', () => {
+describe('b24_task_dependency_add', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
     fake.v2Batch.mockReset()

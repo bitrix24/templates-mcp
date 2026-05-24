@@ -19,7 +19,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/complete-task')).
   handler: (input: { taskId: number }) => Promise<ToolContent>
 }
 
-describe('bitrix24_complete_task', () => {
+describe('b24_task_complete', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

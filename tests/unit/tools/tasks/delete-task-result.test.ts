@@ -22,7 +22,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/delete-task-resul
   inputSchema: { resultId: z.ZodNumber; confirmDelete: z.ZodOptional<z.ZodBoolean> }
 }
 
-describe('bitrix24_delete_task_result', () => {
+describe('b24_task_result_delete', () => {
   beforeEach(() => {
     fake.v3Call.mockReset()
   })

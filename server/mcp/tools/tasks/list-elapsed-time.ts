@@ -43,9 +43,9 @@ const DEFAULT_SELECT_CAMEL = [
 const DEFAULT_SELECT_WIRE = normalizeBitrix24Select(DEFAULT_SELECT_CAMEL)
 
 export default defineMcpTool({
-  name: 'bitrix24_list_elapsed_time',
+  name: 'b24_task_elapsed_times_list',
   description:
-    'List elapsed-time entries on Bitrix24 tasks. Use this to read what was logged via `bitrix24_add_elapsed_time` (or via the Bitrix24 stopwatch — both flows write to the same table). Filter by `taskId` for a single-task view, or pass `filter` with camelCase keys + operator prefixes (e.g. { ">=createdDate": "2025-01-01", userId: 5 }) for a custom slice. Page size is fixed at 50 by Bitrix24; use `start` for pagination (multiples of 50). Returns id, taskId, userId, commentText, seconds, createdDate, and the stopwatch dateStart / dateStop timestamps (camelCase in the JSON response).',
+    'List elapsed-time entries on Bitrix24 tasks. Use this to read what was logged via `b24_task_elapsed_time_add` (or via the Bitrix24 stopwatch — both flows write to the same table). Filter by `taskId` for a single-task view, or pass `filter` with camelCase keys + operator prefixes (e.g. { ">=createdDate": "2025-01-01", userId: 5 }) for a custom slice. Page size is fixed at 50 by Bitrix24; use `start` for pagination (multiples of 50). Returns id, taskId, userId, commentText, seconds, createdDate, and the stopwatch dateStart / dateStop timestamps (camelCase in the JSON response).',
   inputSchema: {
     taskId: z
       .number()

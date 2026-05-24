@@ -50,7 +50,7 @@ describe('defineTaskLifecycleTool', () => {
 
   it('rejects non-positive, non-integer, and string taskIds at the schema layer', () => {
     const tool = defineTaskLifecycleTool({
-      name: 'bitrix24_start_task',
+      name: 'b24_task_start',
       method: 'tasks.task.start',
       verb: 'start',
       pastTense: 'started',
@@ -68,7 +68,7 @@ describe('defineTaskLifecycleTool', () => {
 
   it('accepts arrays of positive ints (batch input) and rejects empty / mixed arrays', () => {
     const tool = defineTaskLifecycleTool({
-      name: 'bitrix24_start_task',
+      name: 'b24_task_start',
       method: 'tasks.task.start',
       verb: 'start',
       pastTense: 'started',
@@ -86,7 +86,7 @@ describe('defineTaskLifecycleTool', () => {
 
   it('batch mode: dispatches one actions.v2.batch.make and shapes per-id results', async () => {
     const tool = defineTaskLifecycleTool({
-      name: 'bitrix24_pause_task',
+      name: 'b24_task_pause',
       method: 'tasks.task.pause',
       verb: 'pause',
       pastTense: 'paused',
@@ -139,7 +139,7 @@ describe('defineTaskLifecycleTool', () => {
 
   it('batch mode preserves input order in the results[] array', async () => {
     const tool = defineTaskLifecycleTool({
-      name: 'bitrix24_complete_task',
+      name: 'b24_task_complete',
       method: 'tasks.task.complete',
       verb: 'complete',
       pastTense: 'completed',
@@ -165,7 +165,7 @@ describe('defineTaskLifecycleTool', () => {
 
   it('batch mode rejects > 25 ids by default and accepts the same with force=true', async () => {
     const tool = defineTaskLifecycleTool({
-      name: 'bitrix24_start_task',
+      name: 'b24_task_start',
       method: 'tasks.task.start',
       verb: 'start',
       pastTense: 'started',
@@ -194,7 +194,7 @@ describe('defineTaskLifecycleTool', () => {
 
   it('passes the configured REST method to actions.v2.call.make and shapes the payload uniformly across the seven verbs', async () => {
     const tool = defineTaskLifecycleTool({
-      name: 'bitrix24_defer_task',
+      name: 'b24_task_defer',
       method: 'tasks.task.defer',
       verb: 'defer',
       pastTense: 'deferred',
@@ -213,7 +213,7 @@ describe('defineTaskLifecycleTool', () => {
 
   it('uses the infinitive verb in error fallback messages', async () => {
     const tool = defineTaskLifecycleTool({
-      name: 'bitrix24_disapprove_task',
+      name: 'b24_task_disapprove',
       method: 'tasks.task.disapprove',
       verb: 'disapprove',
       pastTense: 'disapproved',

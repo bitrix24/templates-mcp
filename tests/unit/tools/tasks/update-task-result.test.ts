@@ -21,7 +21,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/update-task-resul
   inputSchema: { resultId: z.ZodNumber; text: z.ZodString }
 }
 
-describe('bitrix24_update_task_result', () => {
+describe('b24_task_result_update', () => {
   beforeEach(() => {
     fake.v3Call.mockReset()
   })

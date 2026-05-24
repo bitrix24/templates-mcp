@@ -16,20 +16,20 @@ import { toTaskResultShort } from '~/server/utils/task-results'
  * managed by Bitrix24.
  */
 export default defineMcpTool({
-  name: 'bitrix24_update_task_result',
+  name: 'b24_task_result_update',
   description:
-    'Rewrite the text of an existing Bitrix24 task result. Only the result author (or a portal admin) is permitted to edit; otherwise Bitrix24 returns ACCESSDENIEDEXCEPTION. The resultId comes from `bitrix24_add_task_result` or `bitrix24_list_task_results` — do NOT pass the parent taskId here.',
+    'Rewrite the text of an existing Bitrix24 task result. Only the result author (or a portal admin) is permitted to edit; otherwise Bitrix24 returns ACCESSDENIEDEXCEPTION. The resultId comes from `b24_task_result_add` or `b24_task_results_list` — do NOT pass the parent taskId here.',
   inputSchema: {
     resultId: z
       .number()
       .int()
       .positive()
-      .describe('Result id (NOT the parent taskId). Get from `bitrix24_list_task_results` or the response of `bitrix24_add_task_result`.'),
+      .describe('Result id (NOT the parent taskId). Get from `b24_task_results_list` or the response of `b24_task_result_add`.'),
     text: z
       .string()
       .min(1)
       .max(10000)
-      .describe('New result text. Max 10000 chars (matches `bitrix24_add_task_result`; oversized payloads are rejected at the schema layer). Replaces the previous text entirely; partial edits are not supported.'),
+      .describe('New result text. Max 10000 chars (matches `b24_task_result_add`; oversized payloads are rejected at the schema layer). Replaces the previous text entirely; partial edits are not supported.'),
   },
   handler: async ({ resultId, text }) => {
     const b24 = useBitrix24()
@@ -46,7 +46,7 @@ export default defineMcpTool({
         content: [
           {
             type: 'text' as const,
-            text: `Task result ${resultId} updated, but Bitrix24 returned no result body. Re-list with bitrix24_list_task_results to verify the change landed.`,
+            text: `Task result ${resultId} updated, but Bitrix24 returned no result body. Re-list with b24_task_results_list to verify the change landed.`,
           },
         ],
       }

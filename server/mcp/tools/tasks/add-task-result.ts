@@ -17,9 +17,9 @@ import { toTaskResultShort } from '~/server/utils/task-results'
  *   https://apidocs.bitrix24.com/api-reference/rest-v3/tasks/result/tasks-task-result-add.html
  */
 export default defineMcpTool({
-  name: 'bitrix24_add_task_result',
+  name: 'b24_task_result_add',
   description:
-    'Record a RESULT on a Bitrix24 task — a free-form text capturing the outcome of the work, kept separately from comments and the task body. Useful for "what did we actually deliver" entries written at completion time. Returns the new result id. Multiple results per task are allowed; use `bitrix24_list_task_results` to read them.',
+    'Record a RESULT on a Bitrix24 task — a free-form text capturing the outcome of the work, kept separately from comments and the task body. Useful for "what did we actually deliver" entries written at completion time. Returns the new result id. Multiple results per task are allowed; use `b24_task_results_list` to read them.',
   inputSchema: {
     taskId: z.number().int().positive().describe('Task id to attach the result to.'),
     text: z
@@ -45,7 +45,7 @@ export default defineMcpTool({
         content: [
           {
             type: 'text' as const,
-            text: `Result accepted on task ${taskId}, but Bitrix24 returned no result body. Re-list with bitrix24_list_task_results to find it.`,
+            text: `Result accepted on task ${taskId}, but Bitrix24 returned no result body. Re-list with b24_task_results_list to find it.`,
           },
         ],
       }

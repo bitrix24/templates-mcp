@@ -144,11 +144,11 @@ Agent-facing guidance lives under `skills/`. Primary entry point is [`skills/man
 - MCP server on Nitro over h3, exposed at `/mcp` (Streamable HTTP).
 - Bearer auth via middleware (env: `NUXT_MCP_AUTH_TOKEN`).
 - 5 base tools:
-  1. `bitrix24_create_task`
-  2. `bitrix24_list_tasks`
-  3. `bitrix24_update_task`
-  4. `bitrix24_add_task_comment`
-  5. `bitrix24_current_user`
+  1. `b24_task_create`
+  2. `b24_tasks_list`
+  3. `b24_task_update`
+  4. `b24_task_comment_add`
+  5. `b24_user_me`
 - **Meta-tool `bx24mcp_submit_feedback`** — lets the AI agent submit feedback (positive/issue/suggestion). Each call creates a GitHub issue in `bitrix24/templates-mcp` with label `agent-feedback` (see "Agent Feedback" section).
 - Inspector in Nuxt DevTools for tool debugging during development.
 - Structured logging via the SDK's own `Logger` system (`@bitrix24/b24jssdk`'s `Logger` + `ConsoleHandler`), wired into `useBitrix24()` via `client.setLogger(useLogger())` so SDK retry / rate-limit / 503 events flow through the same channel as app logs. See `server/utils/logger.ts`.
@@ -158,10 +158,10 @@ Agent-facing guidance lives under `skills/`. Primary entry point is [`skills/man
 
 Tooling depth on tasks (concrete gap analysis lives in [`docs/MANUAL-TEST-PHRASES.md`](./docs/MANUAL-TEST-PHRASES.md) — phrase pack for verifying each tool against a real LLM):
 
-- **Task lifecycle**: `start`, `pause`, `complete`, `approve`, `disapprove`, `defer`, `renew` — 7 thin v3 wrappers around `tasks.task.*` REST methods. ✅ **Shipped in PR #5** (also added `bitrix24_rate_task` for the `MARK` field). Follow-ups for the full lifecycle (`accept` / `decline` / `delegate`) tracked in issue #8; bulk operations + rate-limit in #7.
+- **Task lifecycle**: `start`, `pause`, `complete`, `approve`, `disapprove`, `defer`, `renew` — 7 thin v3 wrappers around `tasks.task.*` REST methods. ✅ **Shipped in PR #5** (also added `b24_task_rate` for the `MARK` field). Follow-ups for the full lifecycle (`accept` / `decline` / `delegate`) tracked in issue #8; bulk operations + rate-limit in #7.
 - **Checklists**: `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` — flat tree with `PARENT_ID` nesting, v2 namespace `task.checklistitem.*` (no v3 equivalent). ✅ **Shipped in PR #17** (includes single-RTT v2 batching via the `batchV2` helper and `confirmDeleteHeading` safety gate on heading deletion).
 - **Comments — read**: `list_task_comments` over the new `tasks.task.chat.message.list`. Default filter strips service messages ("user X changed Y"). Also migrate the existing write tool from the deprecated `task.commentitem.add` to `tasks.task.chat.message.send`.
-- **Subtasks**: extend `bitrix24_create_task` schema with optional `parentId`. No new tool; `list_tasks` already supports `PARENT_ID` filter via the generic filter object.
+- **Subtasks**: extend `b24_task_create` schema with optional `parentId`. No new tool; `list_tasks` already supports `PARENT_ID` filter via the generic filter object.
 - **Time tracking**: `add_elapsed_time`, `list_elapsed_time`, `update_elapsed_time`, `delete_elapsed_time` over `task.elapseditem.*` (full CRUD — operators correct mis-clicked durations and clean up duplicate entries; PR-B).
 - **Task dependencies**: `add_task_dependency`, `remove_task_dependency` over `tasks.task.dependence.*`. No read-back tool — Bitrix24 deprecated `task.item.getdependson` server-side with no v3 replacement (issue #33 smoke confirmed the endpoint no longer returns predecessors). Operators inspect existing links via the Bitrix24 UI until upstream ships a v3 endpoint or `tasks.task.get` exposes a `dependsOn` select field.
 
@@ -229,7 +229,7 @@ export default defineMcpTool({
     kind: z.enum(['positive', 'issue', 'suggestion']).describe('Type of feedback'),
     summary: z.string().min(5).max(200).describe('Short summary, one line'),
     details: z.string().min(10).describe('Full details: what happened, what was expected, why it matters'),
-    relatedTool: z.string().optional().describe('Name of the related MCP tool, if applicable (e.g. "bitrix24_create_task")'),
+    relatedTool: z.string().optional().describe('Name of the related MCP tool, if applicable (e.g. "b24_task_create")'),
     severity: z.enum(['low', 'medium', 'high']).optional().describe('How urgent this is, optional'),
   },
   handler: async ({ kind, summary, details, relatedTool, severity }) => {
@@ -622,11 +622,11 @@ evalite('Bitrix24 tool selection', {
   data: async () => [
     {
       input: 'Create task "Approve contract" with deadline Friday for user 5',
-      expected: [{ toolName: 'bitrix24_create_task', input: { title: 'Approve contract', responsibleId: 5 } }],
+      expected: [{ toolName: 'b24_task_create', input: { title: 'Approve contract', responsibleId: 5 } }],
     },
     {
       input: 'Show my overdue tasks',
-      expected: [{ toolName: 'bitrix24_list_tasks', input: { mine: true, status: 'overdue' } }],
+      expected: [{ toolName: 'b24_tasks_list', input: { mine: true, status: 'overdue' } }],
     },
   ],
   task: async (input) => {

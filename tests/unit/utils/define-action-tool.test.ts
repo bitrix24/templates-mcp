@@ -368,13 +368,13 @@ describe('mapBatchRows', () => {
 describe('assertConfirmedDelete', () => {
   it('returns silently when confirmed is true', () => {
     expect(() =>
-      assertConfirmedDelete('bitrix24_delete_thing', 'thing 5 on parent 1', true),
+      assertConfirmedDelete('b24_thing_delete', 'thing 5 on parent 1', true),
     ).not.toThrow()
   })
 
   it('throws DELETE_NEEDS_CONFIRM when confirmed is false', () => {
     expect(() =>
-      assertConfirmedDelete('bitrix24_delete_thing', 'thing 5 on parent 1', false),
+      assertConfirmedDelete('b24_thing_delete', 'thing 5 on parent 1', false),
     ).toThrow(
       expect.objectContaining({
         name: 'Bitrix24ToolError',
@@ -385,7 +385,7 @@ describe('assertConfirmedDelete', () => {
 
   it('throws DELETE_NEEDS_CONFIRM when confirmed is undefined (the schema default)', () => {
     expect(() =>
-      assertConfirmedDelete('bitrix24_delete_thing', 'thing 5 on parent 1', undefined),
+      assertConfirmedDelete('b24_thing_delete', 'thing 5 on parent 1', undefined),
     ).toThrow(
       expect.objectContaining({
         name: 'Bitrix24ToolError',
@@ -404,7 +404,7 @@ describe('assertConfirmedDelete', () => {
     // independent throws that could drift apart silently.
     let captured: unknown
     try {
-      assertConfirmedDelete('bitrix24_delete_widget', '3 widgets [5, 7, 9] on board 12', false)
+      assertConfirmedDelete('b24_widget_delete', '3 widgets [5, 7, 9] on board 12', false)
     } catch (err) {
       captured = err
     }
@@ -415,7 +415,7 @@ describe('assertConfirmedDelete', () => {
     })
     expect(captured).toMatchObject({
       message: expect.stringContaining(
-        'Re-call `bitrix24_delete_widget` with `confirmDelete: true`',
+        'Re-call `b24_widget_delete` with `confirmDelete: true`',
       ) as unknown as string,
     })
   })

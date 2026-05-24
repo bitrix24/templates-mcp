@@ -8,11 +8,11 @@ import { defineTaskLifecycleTool } from '~/server/utils/task-lifecycle'
  *
  * If the task has `taskControl: Y` (creator review enabled), the resulting
  * status is 4 (Supposedly completed) and the creator still has to call
- * `bitrix24_approve_task` or `bitrix24_disapprove_task`. Otherwise the task
+ * `b24_task_approve` or `b24_task_disapprove`. Otherwise the task
  * goes straight to 5 (Completed).
  */
 export default defineTaskLifecycleTool({
-  name: 'bitrix24_complete_task',
+  name: 'b24_task_complete',
   method: 'tasks.task.complete',
   verb: 'complete',
   pastTense: 'completed',

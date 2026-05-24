@@ -31,7 +31,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/add-elapsed-time'
   }
 }
 
-describe('bitrix24_add_elapsed_time', () => {
+describe('b24_task_elapsed_time_add', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

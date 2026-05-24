@@ -19,7 +19,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/pause-task')).def
   handler: (input: { taskId: number }) => Promise<ToolContent>
 }
 
-describe('bitrix24_pause_task', () => {
+describe('b24_task_pause', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

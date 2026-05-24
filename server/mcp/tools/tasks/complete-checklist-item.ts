@@ -7,10 +7,10 @@ import { defineChecklistActionTool } from '~/server/utils/checklist'
  *   https://apidocs.bitrix24.ru/api-reference/tasks/checklist-item/task-checklist-item-complete.html
  */
 export default defineChecklistActionTool({
-  name: 'bitrix24_complete_checklist_item',
+  name: 'b24_task_checklist_item_complete',
   method: 'task.checklistitem.complete',
   verb: 'complete',
   pastTense: 'completed',
   description:
-    'Mark a Bitrix24 task checklist item as completed (puts a check next to it in the UI). Use `bitrix24_renew_checklist_item` to uncheck it again. To complete the task itself, use `bitrix24_complete_task`.',
+    'Mark a Bitrix24 task checklist item as completed (puts a check next to it in the UI). Use `b24_task_checklist_item_renew` to uncheck it again. To complete the task itself, use `b24_task_complete`.',
 })

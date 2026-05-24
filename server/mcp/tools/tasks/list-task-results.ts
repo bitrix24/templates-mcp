@@ -21,9 +21,9 @@ import { toV3Filter } from '~/server/utils/v3-filter'
 const SORT_FIELDS = ['id', 'authorId', 'createdAt', 'updatedAt', 'status', 'messageId'] as const
 
 export default defineMcpTool({
-  name: 'bitrix24_list_task_results',
+  name: 'b24_task_results_list',
   description:
-    'List the results recorded on a Bitrix24 task. Each result is a free-form text entry capturing the outcome of the work (see `bitrix24_add_task_result`). Default order is newest-first by createdAt. Use this to read what was delivered after a task closed, or to find the latest result for an audit narrative. Pagination is offset-based; Bitrix24 v3 does NOT return a total count, so to know whether more pages exist compare `returned` against your `limit` — if `returned < limit` you have reached the end.',
+    'List the results recorded on a Bitrix24 task. Each result is a free-form text entry capturing the outcome of the work (see `b24_task_result_add`). Default order is newest-first by createdAt. Use this to read what was delivered after a task closed, or to find the latest result for an audit narrative. Pagination is offset-based; Bitrix24 v3 does NOT return a total count, so to know whether more pages exist compare `returned` against your `limit` — if `returned < limit` you have reached the end.',
   inputSchema: {
     taskId: z.number().int().positive().describe('Task id to list results for. Required by the Bitrix24 v3 endpoint.'),
     order: z

@@ -40,7 +40,7 @@ export default defineMcpTool({
       .string()
       .optional()
       .describe(
-        'Name of the related MCP tool, if applicable (e.g. "bitrix24_current_user"). Becomes a "tool:<name>" label.',
+        'Name of the related MCP tool, if applicable (e.g. "b24_user_me"). Becomes a "tool:<name>" label.',
       ),
     severity: z
       .enum(['low', 'medium', 'high'])

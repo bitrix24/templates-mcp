@@ -67,9 +67,9 @@ interface AddTaskDependencyBatchRow {
 }
 
 export default defineActionTool<AddTaskDependencyInput, AddTaskDependencyBatchRow>({
-  name: 'bitrix24_add_task_dependency',
+  name: 'b24_task_dependency_add',
   description:
-    'Create a "previous task" dependency between two Bitrix24 tasks — the dependent task (`taskIdTo`) is scheduled relative to the predecessor (`taskIdFrom`) according to `linkType`. Use this to wire the "Предыдущие задачи" relationship that the Bitrix24 task form exposes (commonly for Gantt-style scheduling). Bitrix24 rejects with ILLEGAL_NEW_LINK if the same `(taskIdFrom, taskIdTo)` pair already has a link, with ACTION_NOT_ALLOWED if the link cannot be created for non-rights reasons (e.g. a scheduling cycle), and with INVALID_CREDENTIALS if the calling user lacks rights on one of the tasks. NOT a delete — does not require `confirmDelete`. To remove a link, use `bitrix24_remove_task_dependency`. There is no read-back tool — Bitrix24 deprecated `task.item.getdependson` server-side with no v3 replacement (verified against a live portal); operators inspect existing dependencies via the Bitrix24 UI.',
+    'Create a "previous task" dependency between two Bitrix24 tasks — the dependent task (`taskIdTo`) is scheduled relative to the predecessor (`taskIdFrom`) according to `linkType`. Use this to wire the "Предыдущие задачи" relationship that the Bitrix24 task form exposes (commonly for Gantt-style scheduling). Bitrix24 rejects with ILLEGAL_NEW_LINK if the same `(taskIdFrom, taskIdTo)` pair already has a link, with ACTION_NOT_ALLOWED if the link cannot be created for non-rights reasons (e.g. a scheduling cycle), and with INVALID_CREDENTIALS if the calling user lacks rights on one of the tasks. NOT a delete — does not require `confirmDelete`. To remove a link, use `b24_task_dependency_remove`. There is no read-back tool — Bitrix24 deprecated `task.item.getdependson` server-side with no v3 replacement (verified against a live portal); operators inspect existing dependencies via the Bitrix24 UI.',
   usageNotes: USAGE_NOTES,
   pastTense: 'linked',
   batchCap: DEFAULT_BATCH_CAP,

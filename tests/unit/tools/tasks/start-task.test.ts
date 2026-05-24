@@ -19,7 +19,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/start-task')).def
   handler: (input: { taskId: number }) => Promise<ToolContent>
 }
 
-describe('bitrix24_start_task', () => {
+describe('b24_task_start', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

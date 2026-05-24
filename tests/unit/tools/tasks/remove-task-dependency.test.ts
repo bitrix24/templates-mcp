@@ -32,7 +32,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/remove-task-depen
   }
 }
 
-describe('bitrix24_remove_task_dependency', () => {
+describe('b24_task_dependency_remove', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
     fake.v2Batch.mockReset()
@@ -138,7 +138,7 @@ describe('bitrix24_remove_task_dependency', () => {
   it('mentions the tool name in the re-call instruction (shared helper interpolation)', async () => {
     await expect(tool.handler({ taskIdTo: 100, taskIdFrom: 50 })).rejects.toMatchObject({
       message: expect.stringContaining(
-        'Re-call `bitrix24_remove_task_dependency` with `confirmDelete: true`',
+        'Re-call `b24_task_dependency_remove` with `confirmDelete: true`',
       ) as unknown as string,
     })
   })

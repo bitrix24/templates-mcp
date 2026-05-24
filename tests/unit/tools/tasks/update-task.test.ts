@@ -26,7 +26,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/update-task')).de
   inputSchema: { taskId: z.ZodType; fields: z.ZodType }
 }
 
-describe('bitrix24_update_task', () => {
+describe('b24_task_update', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

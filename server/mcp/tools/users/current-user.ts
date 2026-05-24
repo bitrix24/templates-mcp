@@ -16,7 +16,7 @@ interface CurrentUserResponse {
 }
 
 export default defineMcpTool({
-  name: 'bitrix24_current_user',
+  name: 'b24_user_me',
   description:
     'Get the Bitrix24 user that owns the configured incoming webhook. Use this as a connectivity check or when you need the operator id/name before any subsequent Bitrix24 calls.',
   inputSchema: {},

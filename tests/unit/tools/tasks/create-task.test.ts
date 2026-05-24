@@ -30,7 +30,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/create-task')).de
   handler: (input: CreateInput) => Promise<ToolContent>
 }
 
-describe('bitrix24_create_task', () => {
+describe('b24_task_create', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

@@ -33,7 +33,7 @@ const DEFAULT_SELECT_WIRE = normalizeBitrix24Select(DEFAULT_SELECT_CAMEL)
  * (start = (pageNumber - 1) * 50).
  */
 export default defineMcpTool({
-  name: 'bitrix24_list_tasks',
+  name: 'b24_tasks_list',
   description:
     'List Bitrix24 tasks. Filter / order / select keys are camelCase task fields (`responsibleId`, `status`, `deadline`, `groupId`, …) — same convention as every other task tool. Legacy UPPERCASE keys (`RESPONSIBLE_ID`, `STATUS`, …) are also accepted. Page size is fixed at 50 by Bitrix24; use `start` for pagination ((page-1)*50). Returns a trimmed list — id/title/status/deadline/responsibleId/createdDate.',
   inputSchema: {

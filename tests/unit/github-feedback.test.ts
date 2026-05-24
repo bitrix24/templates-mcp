@@ -286,11 +286,11 @@ describe('formatIssueBody', () => {
     const body = formatIssueBody({
       kind: 'issue',
       details: 'crash on <script>alert(1)</script> & more',
-      relatedTool: 'bitrix24_current_user',
+      relatedTool: 'b24_user_me',
       severity: 'high',
     })
     expect(body).toContain('**Kind**: issue')
-    expect(body).toContain('**Related tool**: bitrix24_current_user')
+    expect(body).toContain('**Related tool**: b24_user_me')
     expect(body).toContain('**Severity**: high')
     expect(body).toContain('<pre><code>')
     expect(body).toContain('&lt;script&gt;alert(1)&lt;/script&gt; &amp; more')

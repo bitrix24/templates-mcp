@@ -18,11 +18,11 @@ import { extractTasks } from '~/server/utils/tasks'
  * without us having to enumerate every option.
  */
 export default defineMcpTool({
-  name: 'bitrix24_update_task',
+  name: 'b24_task_update',
   description:
     'Update an existing Bitrix24 task. `fields` is an object of UPPERCASE Bitrix24 task field names (TITLE, DESCRIPTION, DEADLINE, RESPONSIBLE_ID, STATUS, PRIORITY, GROUP_ID, …). Only provide the fields you want to change. Returns the updated task summary.',
   inputSchema: {
-    taskId: z.number().int().positive().describe('Task id from `bitrix24_list_tasks` or `bitrix24_create_task`.'),
+    taskId: z.number().int().positive().describe('Task id from `b24_tasks_list` or `b24_task_create`.'),
     fields: z
       .record(
         // Constrain keys to the Bitrix24 UPPER_SNAKE_CASE field shape so an LLM

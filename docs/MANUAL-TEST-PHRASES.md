@@ -21,35 +21,35 @@ Bitrix24 has two parallel REST API generations:
 
 | Tool | Method | Transport |
 |---|---|---|
-| `bitrix24_current_user` | `user.current` | v2 (no v3 equivalent — user identity predates v3) |
-| `bitrix24_find_user` | `user.search` | v2 (same reason as above) |
-| `bitrix24_create_task` | `tasks.task.add` | v2 (classic method routed through `callV2` per PR #105) |
-| `bitrix24_list_tasks` | `tasks.task.list` | v2 (classic; rest-v3 returns "restApi:v3 not support method tasks.task.list") |
-| `bitrix24_update_task` | `tasks.task.update` | v2 (classic) |
-| `bitrix24_add_task_comment` | `task.commentitem.add` | v2 (deprecated — v3 replacement `tasks.task.chat.message.send` queued, no issue filed yet) |
-| `bitrix24_start_task` | `tasks.task.start` | v2 (classic) |
-| `bitrix24_pause_task` | `tasks.task.pause` | v2 (classic) |
-| `bitrix24_complete_task` | `tasks.task.complete` | v2 (classic) |
-| `bitrix24_approve_task` | `tasks.task.approve` | v2 (classic) |
-| `bitrix24_disapprove_task` | `tasks.task.disapprove` | v2 (classic) |
-| `bitrix24_defer_task` | `tasks.task.defer` | v2 (classic) |
-| `bitrix24_renew_task` | `tasks.task.renew` | v2 (classic) |
-| `bitrix24_rate_task` | `tasks.task.update` (field `MARK`) | v2 — no dedicated rate method; we write `MARK: "P" \| "N" \| null` |
-| `bitrix24_add_checklist_item` | `task.checklistitem.add` | v2 only — v3 `tasks.template.checklist.*` is for templates, not task instances |
-| `bitrix24_list_checklist_items` | `task.checklistitem.getlist` | v2 only (same reason) |
-| `bitrix24_complete_checklist_item` | `task.checklistitem.complete` | v2 only (same reason) |
-| `bitrix24_renew_checklist_item` | `task.checklistitem.renew` | v2 only (same reason) |
-| `bitrix24_delete_checklist_item` | `task.checklistitem.delete` | v2 only (same reason) |
-| `bitrix24_add_task_result` | `tasks.task.result.add` | **v3** ✓ (v3-only method) |
-| `bitrix24_list_task_results` | `tasks.task.result.list` | **v3** ✓ — taskId filter required; baked into the schema |
-| `bitrix24_update_task_result` | `tasks.task.result.update` | **v3** ✓ — author-only |
-| `bitrix24_delete_task_result` | `tasks.task.result.delete` | **v3** ✓ — author-only; destructive |
-| `bitrix24_add_elapsed_time` | `task.elapseditem.add` | v2 only (no v3 equivalent for task time tracking) |
-| `bitrix24_list_elapsed_time` | `task.elapseditem.getlist` | v2 only (same reason) |
-| `bitrix24_update_elapsed_time` | `task.elapseditem.update` | v2 only — author-or-admin |
-| `bitrix24_delete_elapsed_time` | `task.elapseditem.delete` | v2 only — author-or-admin; destructive (`confirmDelete: true`) |
-| `bitrix24_add_task_dependency` | `task.dependence.add` | v2 only (no v3 equivalent; read-back via `getdependson` is deprecated upstream — see issue #33) |
-| `bitrix24_remove_task_dependency` | `task.dependence.delete` | v2 only — destructive (`confirmDelete: true`) |
+| `b24_user_me` | `user.current` | v2 (no v3 equivalent — user identity predates v3) |
+| `b24_user_find` | `user.search` | v2 (same reason as above) |
+| `b24_task_create` | `tasks.task.add` | v2 (classic method routed through `callV2` per PR #105) |
+| `b24_tasks_list` | `tasks.task.list` | v2 (classic; rest-v3 returns "restApi:v3 not support method tasks.task.list") |
+| `b24_task_update` | `tasks.task.update` | v2 (classic) |
+| `b24_task_comment_add` | `task.commentitem.add` | v2 (deprecated — v3 replacement `tasks.task.chat.message.send` queued, no issue filed yet) |
+| `b24_task_start` | `tasks.task.start` | v2 (classic) |
+| `b24_task_pause` | `tasks.task.pause` | v2 (classic) |
+| `b24_task_complete` | `tasks.task.complete` | v2 (classic) |
+| `b24_task_approve` | `tasks.task.approve` | v2 (classic) |
+| `b24_task_disapprove` | `tasks.task.disapprove` | v2 (classic) |
+| `b24_task_defer` | `tasks.task.defer` | v2 (classic) |
+| `b24_task_renew` | `tasks.task.renew` | v2 (classic) |
+| `b24_task_rate` | `tasks.task.update` (field `MARK`) | v2 — no dedicated rate method; we write `MARK: "P" \| "N" \| null` |
+| `b24_task_checklist_item_add` | `task.checklistitem.add` | v2 only — v3 `tasks.template.checklist.*` is for templates, not task instances |
+| `b24_task_checklist_items_list` | `task.checklistitem.getlist` | v2 only (same reason) |
+| `b24_task_checklist_item_complete` | `task.checklistitem.complete` | v2 only (same reason) |
+| `b24_task_checklist_item_renew` | `task.checklistitem.renew` | v2 only (same reason) |
+| `b24_task_checklist_item_delete` | `task.checklistitem.delete` | v2 only (same reason) |
+| `b24_task_result_add` | `tasks.task.result.add` | **v3** ✓ (v3-only method) |
+| `b24_task_results_list` | `tasks.task.result.list` | **v3** ✓ — taskId filter required; baked into the schema |
+| `b24_task_result_update` | `tasks.task.result.update` | **v3** ✓ — author-only |
+| `b24_task_result_delete` | `tasks.task.result.delete` | **v3** ✓ — author-only; destructive |
+| `b24_task_elapsed_time_add` | `task.elapseditem.add` | v2 only (no v3 equivalent for task time tracking) |
+| `b24_task_elapsed_times_list` | `task.elapseditem.getlist` | v2 only (same reason) |
+| `b24_task_elapsed_time_update` | `task.elapseditem.update` | v2 only — author-or-admin |
+| `b24_task_elapsed_time_delete` | `task.elapseditem.delete` | v2 only — author-or-admin; destructive (`confirmDelete: true`) |
+| `b24_task_dependency_add` | `task.dependence.add` | v2 only (no v3 equivalent; read-back via `getdependson` is deprecated upstream — see issue #33) |
+| `b24_task_dependency_remove` | `task.dependence.delete` | v2 only — destructive (`confirmDelete: true`) |
 | `bx24mcp_submit_feedback` | _(no Bitrix24 call)_ | meta-tool — files a GitHub issue |
 
 All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through the `batchV2` helper as one HTTP round-trip. The 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) likewise accept `itemId: number[]` for batch mode (up to 50; `force: true` overrides) and also go through `batchV2` as one round-trip.
@@ -73,7 +73,7 @@ Setup: real Bitrix24 portal webhook in `.env`, connector wired to a chat. For ea
 **Operators talk in names, not numeric ids.** A phrase like "create a task for user 5" is bad UX even though it's technically valid — real operators say "for Igor". The correct chain is:
 
 1. Operator says a name.
-2. LLM calls `bitrix24_find_user { query: "<name>" }` (or structured `firstName`/`secondName`/`lastName`/`position`).
+2. LLM calls `b24_user_find { query: "<name>" }` (or structured `firstName`/`secondName`/`lastName`/`position`).
 3. **One match** → use that id, proceed silently.
 4. **Many matches** → ask the operator to clarify, in this order: **patronymic (отчество)** if Russian-style, then **lastName**, then **position** / **department**. **Never** ask for a numeric id unless natural-language disambiguation fails entirely.
 5. **No match** → ask the operator for a fuller name, patronymic, or surname.
@@ -193,11 +193,11 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 | 7.8 | Закрой пункты 47, 48 и 49 в задаче 123 одним вызовом. | `complete_checklist_item { taskId: 123, itemId: [47, 48, 49] }` — batch mode mirrors the lifecycle tools, returns `{ batch, total, ok, failed, results }`. |
 
 **Tools shipped:**
-- `bitrix24_add_checklist_item` — `{ taskId, title, parentId?, sortIndex?, isImportant? }`. `parentId: 0` (or omitted) creates a new checklist; the `title` becomes the heading.
-- `bitrix24_list_checklist_items` — `{ taskId, order? }` (order: `{ field, direction }`, sort fields per apidocs).
-- `bitrix24_complete_checklist_item` — `{ taskId, itemId | itemId[] }` (single or batch up to 50).
-- `bitrix24_renew_checklist_item` — `{ taskId, itemId | itemId[] }`.
-- `bitrix24_delete_checklist_item` — `{ taskId, itemId | itemId[] }`. Heading deletion removes the whole checklist (heading + children) — confirm with the operator before deleting a heading.
+- `b24_task_checklist_item_add` — `{ taskId, title, parentId?, sortIndex?, isImportant? }`. `parentId: 0` (or omitted) creates a new checklist; the `title` becomes the heading.
+- `b24_task_checklist_items_list` — `{ taskId, order? }` (order: `{ field, direction }`, sort fields per apidocs).
+- `b24_task_checklist_item_complete` — `{ taskId, itemId | itemId[] }` (single or batch up to 50).
+- `b24_task_checklist_item_renew` — `{ taskId, itemId | itemId[] }`.
+- `b24_task_checklist_item_delete` — `{ taskId, itemId | itemId[] }`. Heading deletion removes the whole checklist (heading + children) — confirm with the operator before deleting a heading.
 
 **Out of scope this PR (file as follow-ups if real demand emerges):**
 - `update_checklist_item` (move / rename / reassign members). The five tools above cover every phrase in this section; rename + move are rarely demanded and would expand the surface for marginal value.
@@ -221,11 +221,11 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 | 8.8 | Start working on task 123 and add a comment "поехали". | Chain: `start_task` then `add_task_comment` |
 | 8.9 | Закрой задачи 5, 7 и 12 одним вызовом. | `complete_task { taskId: [5, 7, 12] }` — batch mode via the `batchV2` helper, returns `{ batch, total, ok, failed, results }`. |
 
-Trade-off recorded for the future: seven separate tools (one per verb) rather than one `bitrix24_change_task_status` with an enum, so the LLM gets per-action description text. Tracked as `rfc(evals): measure cost — N specialized lifecycle tools vs 1 enum-based tool` in issue #9.
+Trade-off recorded for the future: seven separate tools (one per verb) rather than one `b24_task_status_change` with an enum, so the LLM gets per-action description text. Tracked as `rfc(evals): measure cost — N specialized lifecycle tools vs 1 enum-based tool` in issue #9.
 
 **Out of scope / queued for later PRs:**
 - `accept` / `decline` / `delegate` — third-leg lifecycle actions not in `tasks.task.*`. Tracked in issue #8.
-- `bitrix24_find_task` for free-text task resolution — tracked in issue #6.
+- `b24_task_find` for free-text task resolution — tracked in issue #6.
 
 ---
 
@@ -241,14 +241,14 @@ Trade-off recorded for the future: seven separate tools (one per verb) rather th
 | 9.4 | Покажи логи времени по задаче 123 с описаниями. | ⏳ `list_elapsed_time { taskId: 123 }` |
 
 **Proposed tools:**
-- `bitrix24_add_elapsed_time` — `{ taskId, seconds, comment?, userId? }`
-- `bitrix24_list_elapsed_time` — `{ taskId }`
+- `b24_task_elapsed_time_add` — `{ taskId, seconds, comment?, userId? }`
+- `b24_task_elapsed_times_list` — `{ taskId }`
 
 ---
 
 ## 10. Subtasks ⏳ — partial support today
 
-**Status:** Subtasks **are** just regular tasks with `PARENT_ID` set — `bitrix24_create_task` supports this **if** we surface the field. Currently our schema doesn't accept `parentId`. **One-line fix** in the next PR.
+**Status:** Subtasks **are** just regular tasks with `PARENT_ID` set — `b24_task_create` supports this **if** we surface the field. Currently our schema doesn't accept `parentId`. **One-line fix** in the next PR.
 
 | # | Phrase | What we want to see |
 |---|---|---|
@@ -271,8 +271,8 @@ Trade-off recorded for the future: seven separate tools (one per verb) rather th
 | 11.3 | Список зависимостей задачи 123 — от чего она зависит. | ❌ No tool — Bitrix24 deprecated `task.item.getdependson` server-side with no v3 replacement (#33 live-smoke confirmed). Agent must direct the operator to the Bitrix24 UI. |
 
 **Proposed tools:**
-- `bitrix24_add_task_dependency` — `{ taskId, dependsOnId }`
-- `bitrix24_remove_task_dependency` — `{ taskId, dependsOnId }`
+- `b24_task_dependency_add` — `{ taskId, dependsOnId }`
+- `b24_task_dependency_remove` — `{ taskId, dependsOnId }`
 - "Similar tasks" stays a composite query (no tool); the LLM extracts keywords and uses `list_tasks` with `%TITLE` filter.
 
 ---

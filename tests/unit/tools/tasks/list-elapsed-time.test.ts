@@ -25,7 +25,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/list-elapsed-time
   }) => Promise<ToolContent>
 }
 
-describe('bitrix24_list_elapsed_time', () => {
+describe('b24_task_elapsed_times_list', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })
