@@ -60,12 +60,12 @@ contributor forgets, so it's the first thing to remember.
 
 ## Naming
 
-- **Bitrix24 tools**: `b24_<domain>(_<entity>)*_<action>` — action LAST, entity slots zero-or-more. Singular by default; **plural for `_list`** (`b24_tasks_list`, `b24_task_results_list`, `b24_task_checklist_items_list`). Examples: `b24_task_create`, `b24_task_complete`, `b24_task_checklist_item_add`, `b24_user_me`.
-- **Meta tools**: `bx24mcp_<verb>` — e.g. `bx24mcp_submit_feedback`. These never
-  touch Bitrix24.
+- **Bitrix24 tools**: `b24_<domain>(_<entity>)*_<action>` — action LAST, entity slots zero-or-more, **all tokens singular** (including before `_list`: `b24_task_list`, `b24_task_result_list`, `b24_task_checklist_item_list`). One rule, no exceptions, no irregular-plural traps. Examples: `b24_task_create`, `b24_task_complete`, `b24_task_checklist_item_add`.
+- **Identity / "me" tools**: `b24_<domain>_me` is an allowed shape where the trailing `me` covers both entity (the caller) and action ("identify me"). Currently one tool: `b24_user_me`. Don't extend to other pronouns without updating this rule first.
+- **Meta tools**: `bx24mcp_<verb>` — e.g. `bx24mcp_submit_feedback`. **Use `bx24mcp_` ONLY for tools that don't call the Bitrix24 REST API** (the prefix is the operator-visible signal that the tool stays inside the MCP server — no portal data leaves). Everything that talks to Bitrix24 uses `b24_`.
 - A tool whose primary effect is removing a record (`*_delete` /
   `*_remove`) is subject to the confirm-delete gate — see "Bigger shapes".
-- The `b24_*` shape is CI-enforced by `tests/unit/mcp-stdio/tool-naming-convention.test.ts`.
+- Both the prefix split and the singular-everywhere rule are CI-enforced by `tests/unit/mcp-stdio/tool-naming-convention.test.ts`.
 
 ## Anatomy of a real tool
 

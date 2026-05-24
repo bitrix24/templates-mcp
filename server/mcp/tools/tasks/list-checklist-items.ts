@@ -42,7 +42,7 @@ const CAMEL_TO_WIRE: Record<(typeof SORT_FIELDS)[number], string> = {
 }
 
 export default defineMcpTool({
-  name: 'b24_task_checklist_items_list',
+  name: 'b24_task_checklist_item_list',
   description:
     'List every checklist item on a Bitrix24 task. The whole tree is FLAT — checklist headings have `parentId: 0`, regular items reference their parent (heading or sibling) via `parentId`. A task may carry several checklists; you see them all in one response. To compute progress, count `isComplete: true` over the items where `parentId` matches the heading you care about.',
   inputSchema: {

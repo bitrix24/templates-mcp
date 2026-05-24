@@ -145,7 +145,7 @@ Agent-facing guidance lives under `skills/`. Primary entry point is [`skills/man
 - Bearer auth via middleware (env: `NUXT_MCP_AUTH_TOKEN`).
 - 5 base tools:
   1. `b24_task_create`
-  2. `b24_tasks_list`
+  2. `b24_task_list`
   3. `b24_task_update`
   4. `b24_task_comment_add`
   5. `b24_user_me`
@@ -626,7 +626,7 @@ evalite('Bitrix24 tool selection', {
     },
     {
       input: 'Show my overdue tasks',
-      expected: [{ toolName: 'b24_tasks_list', input: { mine: true, status: 'overdue' } }],
+      expected: [{ toolName: 'b24_task_list', input: { mine: true, status: 'overdue' } }],
     },
   ],
   task: async (input) => {

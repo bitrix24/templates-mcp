@@ -21,7 +21,7 @@ import { callV2 } from '~/server/utils/sdk-helpers'
 export default defineMcpTool({
   name: 'b24_task_checklist_item_add',
   description:
-    'Use this for one of two operator intents: (a) START A NEW CHECKLIST on a task — just pass `taskId` and `title`; the title becomes the checklist heading. (b) ADD AN ITEM under an existing checklist — pass the heading id (look it up via `b24_task_checklist_items_list` and take the one whose `parentId` is 0) as `parentId`. Returns the new item id. Bitrix24 stores the whole checklist tree as a flat list with `parentId` references; this tool adds one node at a time.',
+    'Use this for one of two operator intents: (a) START A NEW CHECKLIST on a task — just pass `taskId` and `title`; the title becomes the checklist heading. (b) ADD AN ITEM under an existing checklist — pass the heading id (look it up via `b24_task_checklist_item_list` and take the one whose `parentId` is 0) as `parentId`. Returns the new item id. Bitrix24 stores the whole checklist tree as a flat list with `parentId` references; this tool adds one node at a time.',
   inputSchema: {
     taskId: z.number().int().positive().describe('Task id the checklist belongs to.'),
     title: z
@@ -37,7 +37,7 @@ export default defineMcpTool({
       .nonnegative()
       .optional()
       .describe(
-        'Parent item id for nesting. Omit or pass 0 to start a NEW checklist (the new item becomes the heading). Pass the heading id (from `b24_task_checklist_items_list` where `parentId` is 0) to add a regular item under it.',
+        'Parent item id for nesting. Omit or pass 0 to start a NEW checklist (the new item becomes the heading). Pass the heading id (from `b24_task_checklist_item_list` where `parentId` is 0) to add a regular item under it.',
       ),
     sortIndex: z
       .number()

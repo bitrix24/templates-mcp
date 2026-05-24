@@ -100,7 +100,7 @@ Short version:
 1. Pick a group: `tasks` / `users` / `meta` (or create a new group directory for your own entities — e.g. `crm` for the planned post-pilot deals/contacts/leads expansion, `calendars`, `disk`, `im`).
 2. Create `server/mcp/tools/<group>/<kebab-name>.ts` (file-based discovery).
 3. Use `defineMcpTool({ name, description, inputSchema, handler })`.
-4. Name pattern: `b24_<domain>(_<entity>)*_<action>` for Bitrix24 tools (action LAST; singular by default, plural for `_list` — see `skills/manage-bx24-template-mcp/adding-tools.md`); `bx24mcp_<verb>` for meta-tools.
+4. Name pattern: `b24_<domain>(_<entity>)*_<action>` for Bitrix24 tools (action LAST, all tokens singular including before `_list` — see `skills/manage-bx24-template-mcp/adding-tools.md`); `bx24mcp_<verb>` for meta-tools (use ONLY for tools that don't call Bitrix24).
 5. Every Zod field gets `.describe()` — the LLM reads it at runtime.
 6. Call Bitrix24 via `useBitrix24()`. Never bypass.
 7. Add a unit test in `tests/unit/tools/<group>/<name>.test.ts` mocking `useBitrix24`.

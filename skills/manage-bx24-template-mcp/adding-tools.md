@@ -23,9 +23,10 @@ One tool per file, `kebab-name.ts`. File-based discovery picks them up automatic
 
 ## Naming
 
-- **Bitrix24 tools**: `b24_<domain>(_<entity>)*_<action>` — action LAST, entity slots zero-or-more. Singular by default; **plural for `_list`** (`b24_tasks_list`, `b24_task_results_list`, `b24_task_checklist_items_list`). Examples: `b24_task_create`, `b24_task_complete`, `b24_task_checklist_item_add`, `b24_user_me`.
-- **Meta tools**: `bx24mcp_<verb>` — e.g. `bx24mcp_submit_feedback`. These do not talk to Bitrix24.
-- The `b24_*` shape is **CI-enforced** by `tests/unit/mcp-stdio/tool-naming-convention.test.ts` — every name under `server/mcp/tools/**` must match the pattern.
+- **Bitrix24 tools**: `b24_<domain>(_<entity>)*_<action>` — action LAST, entity slots zero-or-more, **all tokens singular** (including for `_list`: `b24_task_list`, `b24_task_result_list`, `b24_task_checklist_item_list`). Singular-everywhere keeps one rule with no exceptions and side-steps irregular plurals (`children`, `people`) when CRM and other domains land. Examples: `b24_task_create`, `b24_task_complete`, `b24_task_checklist_item_add`.
+- **Identity / "me" tools**: `b24_<domain>_me` is an allowed shape where the trailing `me` covers both the entity (the caller themselves) and the action ("identify me"). Currently one tool — `b24_user_me`. Don't generalise to other pronouns without writing it into this rule first.
+- **Meta tools**: `bx24mcp_<verb>` — e.g. `bx24mcp_submit_feedback`. **Use `bx24mcp_` ONLY for tools that do NOT call the Bitrix24 REST API** (the prefix is the operator-visible signal that the tool stays inside the MCP server — no portal data leaves). Every Bitrix24-touching tool uses `b24_`.
+- The `b24_*` / `bx24mcp_*` split is **CI-enforced** by `tests/unit/mcp-stdio/tool-naming-convention.test.ts` — every name under `server/mcp/tools/**` must match the pattern for its directory (`meta/` → `bx24mcp_`, everywhere else → `b24_`), and the test also rejects plural tokens anywhere in the name.
 
 ## The reference template
 
@@ -59,7 +60,7 @@ export default defineMcpTool({
   description:
     'Fetch a single Bitrix24 task by id. … Persona-walk notes: explicit task-control / idempotency / bulk hints here.',
   inputSchema: {
-    taskId: z.number().int().positive().describe('Task id from `b24_tasks_list` or `b24_task_create`.'),
+    taskId: z.number().int().positive().describe('Task id from `b24_task_list` or `b24_task_create`.'),
   },
   handler: async ({ taskId }) => {
     const b24 = useBitrix24()

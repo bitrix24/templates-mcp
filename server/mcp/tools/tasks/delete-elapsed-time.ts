@@ -40,7 +40,7 @@ import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
 
 const DEFAULT_BATCH_CAP = 50
 const USAGE_NOTES =
-  ` Accepts a single entry id OR an array of ids (batch mode, up to ${DEFAULT_BATCH_CAP} — pass \`force: true\` to override). Batch mode goes through one HTTP round-trip and returns a \`{ batch, total, ok, failed, results }\` summary; per-id errors do not abort the batch. If the operator names entries in free text, list the entries first via \`b24_task_elapsed_times_list\` and match by commentText / seconds / dateStart.`
+  ` Accepts a single entry id OR an array of ids (batch mode, up to ${DEFAULT_BATCH_CAP} — pass \`force: true\` to override). Batch mode goes through one HTTP round-trip and returns a \`{ batch, total, ok, failed, results }\` summary; per-id errors do not abort the batch. If the operator names entries in free text, list the entries first via \`b24_task_elapsed_time_list\` and match by commentText / seconds / dateStart.`
 
 interface DeleteElapsedTimeInput extends ActionToolInput {
   taskId: number
@@ -64,7 +64,7 @@ export default defineActionTool<DeleteElapsedTimeInput, DeleteElapsedTimeBatchRo
   inputSchema: {
     taskId: z.number().int().positive().describe('Task id the entries belong to.'),
     itemId: idOrIdArraySchema.describe(
-      'Elapsed-time entry id (from `b24_task_elapsed_times_list`), or an array of ids for batch mode. Pass a number for single-entry semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
+      'Elapsed-time entry id (from `b24_task_elapsed_time_list`), or an array of ids for batch mode. Pass a number for single-entry semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
     ),
     confirmDelete: confirmDeleteSchema(),
     force: forceFlagSchema(DEFAULT_BATCH_CAP),

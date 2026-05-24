@@ -74,12 +74,12 @@ export interface LifecycleToolSpec {
  *      failure — surface it as already-applied rather than retrying.
  *
  *   3. Task lookup: if the operator names a task in free text instead of an
- *      id ("ту задачу про склад"), call `b24_tasks_list` with a
+ *      id ("ту задачу про склад"), call `b24_task_list` with a
  *      `%title` filter first (camelCase — `list_tasks` accepts the same
  *      camelCase-friendly contract as every other task tool).
  */
 const LIFECYCLE_USAGE_NOTES =
-  ' Accepts a single task id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. The Bitrix24 SDK paces outbound calls and retries transient errors automatically — no need to throttle on the agent side. If the task is already in the target status, Bitrix24 returns "action not allowed" — treat as already-applied, do not retry. If the operator names a task in free text instead of an id, resolve via `b24_tasks_list` with a `%title` filter first.'
+  ' Accepts a single task id OR an array of ids (batch mode, up to 25 — pass `force: true` to override). Batch mode returns a `{ batch, total, ok, failed, results }` summary; per-id errors do not abort the batch. The Bitrix24 SDK paces outbound calls and retries transient errors automatically — no need to throttle on the agent side. If the task is already in the target status, Bitrix24 returns "action not allowed" — treat as already-applied, do not retry. If the operator names a task in free text instead of an id, resolve via `b24_task_list` with a `%title` filter first.'
 
 const DEFAULT_BATCH_CAP = 25
 

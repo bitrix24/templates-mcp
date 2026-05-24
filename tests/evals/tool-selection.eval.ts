@@ -239,22 +239,22 @@ const CASES: Case[] = [
   // ── list_tasks (filtering without name resolution) ─────────────────────
   {
     input: 'Покажи все задачи группы 7.',
-    expected: 'b24_tasks_list',
+    expected: 'b24_task_list',
     notes: 'Group filter, no person.',
   },
   {
     input: 'Найди задачи со словом «договор» в названии.',
-    expected: 'b24_tasks_list',
+    expected: 'b24_task_list',
     notes: 'LIKE-search on title.',
   },
   {
     input: 'Сколько у нас всего задач на портале?',
-    expected: 'b24_tasks_list',
+    expected: 'b24_task_list',
     notes: 'Count via list with select=[ID] — reads `total`.',
   },
   {
     input: 'Show me overdue tasks across the company.',
-    expected: 'b24_tasks_list',
+    expected: 'b24_task_list',
     notes: 'Overdue filter, no specific person.',
   },
 
@@ -403,12 +403,12 @@ const CASES: Case[] = [
   },
   {
     input: 'Закрой все мои задачи по корпусу №3.',
-    expected: 'b24_tasks_list',
+    expected: 'b24_task_list',
     notes: 'No explicit ids → must enumerate first via list_tasks (camelCase filter), then loop complete_task in batch mode.',
   },
   {
     input: 'Approve everything from sprint 14, all looks good.',
-    expected: 'b24_tasks_list',
+    expected: 'b24_task_list',
     notes: 'EN bulk approval without explicit ids: enumerate via list_tasks first; approve_task batch follows.',
   },
 
@@ -425,12 +425,12 @@ const CASES: Case[] = [
   },
   {
     input: 'Покажи чек-лист задачи 123.',
-    expected: 'b24_task_checklist_items_list',
+    expected: 'b24_task_checklist_item_list',
     notes: 'Read the whole checklist tree.',
   },
   {
     input: 'Какой прогресс по чек-листу задачи 123?',
-    expected: 'b24_task_checklist_items_list',
+    expected: 'b24_task_checklist_item_list',
     notes: 'Progress = list + count completed; first tool is the list.',
   },
   {
@@ -484,12 +484,12 @@ const CASES: Case[] = [
   },
   {
     input: 'Покажи результаты задачи 51.',
-    expected: 'b24_task_results_list',
+    expected: 'b24_task_result_list',
     notes: 'Read results — distinct phrasing from "comments" or "status".',
   },
   {
     input: 'Что записано как итог работы по задаче 51?',
-    expected: 'b24_task_results_list',
+    expected: 'b24_task_result_list',
     notes: 'Synonym for "result" ("итог") — should still hit list_task_results.',
   },
   {
@@ -511,7 +511,7 @@ const CASES: Case[] = [
   },
   {
     input: 'Покажи сколько часов потратили на задачу 691 на этой неделе.',
-    expected: 'b24_task_elapsed_times_list',
+    expected: 'b24_task_elapsed_time_list',
     notes: 'Read entries — must NOT route to list_tasks.',
   },
   {

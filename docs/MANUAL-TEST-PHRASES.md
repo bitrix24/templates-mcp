@@ -24,7 +24,7 @@ Bitrix24 has two parallel REST API generations:
 | `b24_user_me` | `user.current` | v2 (no v3 equivalent — user identity predates v3) |
 | `b24_user_find` | `user.search` | v2 (same reason as above) |
 | `b24_task_create` | `tasks.task.add` | v2 (classic method routed through `callV2` per PR #105) |
-| `b24_tasks_list` | `tasks.task.list` | v2 (classic; rest-v3 returns "restApi:v3 not support method tasks.task.list") |
+| `b24_task_list` | `tasks.task.list` | v2 (classic; rest-v3 returns "restApi:v3 not support method tasks.task.list") |
 | `b24_task_update` | `tasks.task.update` | v2 (classic) |
 | `b24_task_comment_add` | `task.commentitem.add` | v2 (deprecated — v3 replacement `tasks.task.chat.message.send` queued, no issue filed yet) |
 | `b24_task_start` | `tasks.task.start` | v2 (classic) |
@@ -36,16 +36,16 @@ Bitrix24 has two parallel REST API generations:
 | `b24_task_renew` | `tasks.task.renew` | v2 (classic) |
 | `b24_task_rate` | `tasks.task.update` (field `MARK`) | v2 — no dedicated rate method; we write `MARK: "P" \| "N" \| null` |
 | `b24_task_checklist_item_add` | `task.checklistitem.add` | v2 only — v3 `tasks.template.checklist.*` is for templates, not task instances |
-| `b24_task_checklist_items_list` | `task.checklistitem.getlist` | v2 only (same reason) |
+| `b24_task_checklist_item_list` | `task.checklistitem.getlist` | v2 only (same reason) |
 | `b24_task_checklist_item_complete` | `task.checklistitem.complete` | v2 only (same reason) |
 | `b24_task_checklist_item_renew` | `task.checklistitem.renew` | v2 only (same reason) |
 | `b24_task_checklist_item_delete` | `task.checklistitem.delete` | v2 only (same reason) |
 | `b24_task_result_add` | `tasks.task.result.add` | **v3** ✓ (v3-only method) |
-| `b24_task_results_list` | `tasks.task.result.list` | **v3** ✓ — taskId filter required; baked into the schema |
+| `b24_task_result_list` | `tasks.task.result.list` | **v3** ✓ — taskId filter required; baked into the schema |
 | `b24_task_result_update` | `tasks.task.result.update` | **v3** ✓ — author-only |
 | `b24_task_result_delete` | `tasks.task.result.delete` | **v3** ✓ — author-only; destructive |
 | `b24_task_elapsed_time_add` | `task.elapseditem.add` | v2 only (no v3 equivalent for task time tracking) |
-| `b24_task_elapsed_times_list` | `task.elapseditem.getlist` | v2 only (same reason) |
+| `b24_task_elapsed_time_list` | `task.elapseditem.getlist` | v2 only (same reason) |
 | `b24_task_elapsed_time_update` | `task.elapseditem.update` | v2 only — author-or-admin |
 | `b24_task_elapsed_time_delete` | `task.elapseditem.delete` | v2 only — author-or-admin; destructive (`confirmDelete: true`) |
 | `b24_task_dependency_add` | `task.dependence.add` | v2 only (no v3 equivalent; read-back via `getdependson` is deprecated upstream — see issue #33) |
@@ -194,7 +194,7 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 
 **Tools shipped:**
 - `b24_task_checklist_item_add` — `{ taskId, title, parentId?, sortIndex?, isImportant? }`. `parentId: 0` (or omitted) creates a new checklist; the `title` becomes the heading.
-- `b24_task_checklist_items_list` — `{ taskId, order? }` (order: `{ field, direction }`, sort fields per apidocs).
+- `b24_task_checklist_item_list` — `{ taskId, order? }` (order: `{ field, direction }`, sort fields per apidocs).
 - `b24_task_checklist_item_complete` — `{ taskId, itemId | itemId[] }` (single or batch up to 50).
 - `b24_task_checklist_item_renew` — `{ taskId, itemId | itemId[] }`.
 - `b24_task_checklist_item_delete` — `{ taskId, itemId | itemId[] }`. Heading deletion removes the whole checklist (heading + children) — confirm with the operator before deleting a heading.
@@ -242,7 +242,7 @@ Trade-off recorded for the future: seven separate tools (one per verb) rather th
 
 **Proposed tools:**
 - `b24_task_elapsed_time_add` — `{ taskId, seconds, comment?, userId? }`
-- `b24_task_elapsed_times_list` — `{ taskId }`
+- `b24_task_elapsed_time_list` — `{ taskId }`
 
 ---
 

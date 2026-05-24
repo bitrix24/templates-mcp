@@ -29,7 +29,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/list-task-results
   handler: (input: ListInput) => Promise<ToolContent>
 }
 
-describe('b24_task_results_list', () => {
+describe('b24_task_result_list', () => {
   beforeEach(() => {
     fake.v3Call.mockReset()
   })

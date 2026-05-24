@@ -25,7 +25,7 @@ const tool = (await import('../../../../server/mcp/tools/tasks/list-elapsed-time
   }) => Promise<ToolContent>
 }
 
-describe('b24_task_elapsed_times_list', () => {
+describe('b24_task_elapsed_time_list', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
   })

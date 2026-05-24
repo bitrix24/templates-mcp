@@ -76,7 +76,7 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `b24_user_me` | Returns the Bitrix24 user that owns the configured webhook. Useful as a connectivity check. |
 | `b24_user_find` | Find users by name / surname / position / department, or free-text. **Call this before any tool that takes a userId** — operators speak in names, not numeric ids. |
 | `b24_task_create` | Create a task — title, responsibleId required; description / deadline / groupId / priority / accomplices / auditors optional. |
-| `b24_tasks_list` | List tasks with filter (`{ RESPONSIBLE_ID, STATUS, "!STATUS", ">=DEADLINE", … }`), order, select, and pagination (page size fixed at 50). |
+| `b24_task_list` | List tasks with filter (`{ RESPONSIBLE_ID, STATUS, "!STATUS", ">=DEADLINE", … }`), order, select, and pagination (page size fixed at 50). |
 | `b24_task_update` | Update an existing task by id with a partial UPPERCASE-keyed `fields` object. |
 | `b24_task_comment_add` | Append a comment to a task (BBCode-friendly). |
 | `b24_task_start` | Move a task to In progress (3). |
@@ -88,16 +88,16 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `b24_task_renew` | Reopen a Completed or Deferred task → Pending (2). |
 | `b24_task_rate` | Set or clear the task rating (positive / negative / none — Bitrix24 `MARK` field). |
 | `b24_task_checklist_item_add` | Add an item to a task checklist. Omit `parentId` (or pass 0) to start a new checklist — the `title` becomes the heading. |
-| `b24_task_checklist_items_list` | List every checklist item on a task as a flat tree (`parentId: 0` = checklist heading). |
+| `b24_task_checklist_item_list` | List every checklist item on a task as a flat tree (`parentId: 0` = checklist heading). |
 | `b24_task_checklist_item_complete` | Check off a checklist item. |
 | `b24_task_checklist_item_renew` | Un-check a previously completed checklist item. |
 | `b24_task_checklist_item_delete` | Delete a checklist item. Heading deletion (parentId 0) wipes the whole checklist and is refused without `confirmDeleteHeading: true`. |
 | `b24_task_result_add` | Record a free-form RESULT (outcome text) on a task — separate from comments and from the task body. |
-| `b24_task_results_list` | List the results recorded on a task. Newest-first by default; pagination via limit/offset. |
+| `b24_task_result_list` | List the results recorded on a task. Newest-first by default; pagination via limit/offset. |
 | `b24_task_result_update` | Rewrite the text of an existing result. Author-only: Bitrix24 returns `ACCESSDENIEDEXCEPTION` if any other operator (besides a portal admin) tries to edit. |
 | `b24_task_result_delete` | Delete a result by id. Author-only; the task itself is not affected. |
 | `b24_task_elapsed_time_add` | Log a manual elapsed-time entry on a task ("how long did this take"), separate from the auto stopwatch. `seconds` capped at 86400 (24h). |
-| `b24_task_elapsed_times_list` | List elapsed-time entries (manual + stopwatch) on tasks. Filter by `taskId` or a custom camelCase filter; paginates at 50. |
+| `b24_task_elapsed_time_list` | List elapsed-time entries (manual + stopwatch) on tasks. Filter by `taskId` or a custom camelCase filter; paginates at 50. |
 | `b24_task_elapsed_time_update` | Correct an existing elapsed-time entry (duration / comment / attribution). Author-or-admin only. |
 | `b24_task_elapsed_time_delete` | Delete elapsed-time entries. Requires `confirmDelete: true`. Author-or-admin only. |
 | `b24_task_dependency_add` | Create a "previous task" dependency (`taskIdFrom` → `taskIdTo`) for Gantt-style scheduling. |

@@ -22,9 +22,9 @@ import { callV2 } from '~/server/utils/sdk-helpers'
 export default defineMcpTool({
   name: 'b24_task_elapsed_time_add',
   description:
-    'Log a manual elapsed-time entry on a Bitrix24 task. Operators use these to record after-the-fact "how long did this take" — separate from the Bitrix24 stopwatch which fires automatically during in-progress / paused transitions. `seconds` is capped at 86400 (24h) — split multi-day work into separate entries per day. Returns the new entry id. To read existing entries on a task, use `b24_task_elapsed_times_list`. To correct or remove an entry, use `b24_task_elapsed_time_update` / `b24_task_elapsed_time_delete`.',
+    'Log a manual elapsed-time entry on a Bitrix24 task. Operators use these to record after-the-fact "how long did this take" — separate from the Bitrix24 stopwatch which fires automatically during in-progress / paused transitions. `seconds` is capped at 86400 (24h) — split multi-day work into separate entries per day. Returns the new entry id. To read existing entries on a task, use `b24_task_elapsed_time_list`. To correct or remove an entry, use `b24_task_elapsed_time_update` / `b24_task_elapsed_time_delete`.',
   inputSchema: {
-    taskId: z.number().int().positive().describe('Task id to attach the entry to. Get it from `b24_tasks_list` or `b24_task_create`.'),
+    taskId: z.number().int().positive().describe('Task id to attach the entry to. Get it from `b24_task_list` or `b24_task_create`.'),
     seconds: z
       .number()
       .int()
@@ -78,7 +78,7 @@ export default defineMcpTool({
         content: [
           {
             type: 'text' as const,
-            text: `Elapsed-time entry posted on task ${taskId}, but Bitrix24 returned an unexpected body shape. Re-list with b24_task_elapsed_times_list to find the new id.`,
+            text: `Elapsed-time entry posted on task ${taskId}, but Bitrix24 returned an unexpected body shape. Re-list with b24_task_elapsed_time_list to find the new id.`,
           },
         ],
       }

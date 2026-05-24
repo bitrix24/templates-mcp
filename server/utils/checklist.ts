@@ -112,7 +112,7 @@ export interface ChecklistActionToolSpec {
 
 const DEFAULT_BATCH_CAP = 50
 const CHECKLIST_ACTION_USAGE_NOTES =
-  ` Accepts a single item id OR an array of ids (batch mode, up to ${DEFAULT_BATCH_CAP} — pass \`force: true\` to override). Batch mode goes through one HTTP round-trip and returns a \`{ batch, total, ok, failed, results }\` summary; per-id errors do not abort the batch. If the operator names the item in free text instead of an id, list the checklist first via \`b24_task_checklist_items_list\` and match by title.`
+  ` Accepts a single item id OR an array of ids (batch mode, up to ${DEFAULT_BATCH_CAP} — pass \`force: true\` to override). Batch mode goes through one HTTP round-trip and returns a \`{ batch, total, ok, failed, results }\` summary; per-id errors do not abort the batch. If the operator names the item in free text instead of an id, list the checklist first via \`b24_task_checklist_item_list\` and match by title.`
 
 interface ChecklistInput extends ActionToolInput {
   taskId: number
@@ -144,7 +144,7 @@ export function defineChecklistActionTool(spec: ChecklistActionToolSpec) {
     inputSchema: {
       taskId: z.number().int().positive().describe('Task id the checklist item belongs to.'),
       itemId: idOrIdArraySchema.describe(
-        'Checklist item id (from `b24_task_checklist_items_list`), or an array of item ids for batch mode. Pass a number for single-item semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
+        'Checklist item id (from `b24_task_checklist_item_list`), or an array of item ids for batch mode. Pass a number for single-item semantics; even a one-element array (e.g. [42]) enters batch mode and returns the batch summary shape — use a plain number when you have exactly one id.',
       ),
       force: forceFlagSchema(DEFAULT_BATCH_CAP),
       // `confirmDelete` (universal Ground Rule #9) + `confirmDeleteHeading`
