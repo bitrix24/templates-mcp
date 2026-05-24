@@ -6,9 +6,9 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ### Changed
 
-- **BREAKING (tools — hard cut)**: every Bitrix24-talking tool was renamed from the old `bitrix24_<verb>_<entity>` shape to a new `b24_<domain>(_<entity>)*_<action>` convention (issue #129). **Action is always the trailing token; all tokens are singular** — including before `_list` (the dropped plural variant was reconsidered before merge; singular-everywhere is one rule with no exceptions and no irregular-plural traps like `children` / `people` when CRM and other domains land). The `bx24mcp_submit_feedback` meta-tool keeps its prefix on purpose — it does not call Bitrix24, and the distinct prefix is the operator-visible signal that the tool stays inside the MCP server with no portal data leaving. Identity shape `b24_<domain>_me` (currently only `b24_user_me`) is an allowed exception where `me` covers both entity and action.
+- **BREAKING (tools — hard cut)**: every Bitrix24-talking tool was renamed from the old `bitrix24_<verb>_<entity>` shape to a new `b24_<domain>(_<entity>)*_<action>` convention (issue #129). **Action is always the trailing token; all tokens are singular** — including before `_list` (the dropped plural variant was reconsidered before merge; singular-everywhere is one rule with no exceptions and no irregular-plural traps like `children` / `people` when CRM and other domains land). The `bx24mcp_submit_feedback` meta-tool keeps its prefix on purpose — it does not call Bitrix24, and the distinct prefix is the operator-visible signal that the tool stays inside the MCP server with no portal data leaving. Identity shape `b24_<domain>_me` (currently only `b24_user_me`) is an allowed shape where `me` covers both entity and action; the naming guard restricts `_me` to the `user` domain to keep the prefix from drifting onto other entities without a deliberate convention update.
 
-  Pre-pilot there are no external MCP clients yet, so this lands as a **hard cut**: no aliases, no deprecation period. Forked deployments that hard-code these tool names anywhere (Claude.ai / Cursor / Continue.dev configs, scripted clients, custom system prompts) must update to the new names. **DXT-bundle users:** the `.dxt` you installed in Claude Desktop bakes in the OLD names — delete and reinstall from this release's bundle so Claude sees the new names. A `tests/unit/mcp-stdio/tool-naming-convention.test.ts` CI guard fails the build if any future tool drifts from the pattern (sibling to the `mcp-stdio/**` parity test).
+  Pre-pilot there are no external MCP clients yet, so this lands as a **hard cut**: no aliases, no deprecation period. Forked deployments that hard-code these tool names anywhere (Claude.ai / Cursor / Continue.dev configs, scripted clients, custom system prompts) must update to the new names. **DXT-bundle users:** the `.dxt` you installed in Claude Desktop bakes in the OLD names — delete it and reinstall the new bundle from the **Assets** section of this release's GitHub Release page so Claude sees the new names. A new `0.1.0-alpha.2` tag will be cut after this PR merges to anchor the new names as the baseline. A `tests/unit/mcp-stdio/tool-naming-convention.test.ts` CI guard fails the build if any future tool drifts from the pattern (sibling to the `mcp-stdio/**` parity test).
 
   Full 29-tool rename map:
 
@@ -44,6 +44,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
   | `bitrix24_current_user` | `b24_user_me` |
   | `bitrix24_find_user` | `b24_user_find` |
 
+  > `bitrix24_find_deal` is **not** in this table — it was removed (CRM out of scope for the pilot), not renamed. See the **Removed** block below. That's why the table has 29 rows for 30 originally-shipped Bitrix24 tools.
+
 - **BREAKING (health payload)**: `/api/health` now returns `{ status, timestamp }` only — the `service` field was removed to avoid a fingerprintable surface. External monitors must key liveness on `status: "ok"`, not on the service name.
 - `NUXT_LOG_LEVEL` is now honoured at runtime (`debug` / `info` / `notice` / `warning` (alias `warn`) / `error` / `critical` / `alert` / `emergency`); previously the level was fixed by `NODE_ENV`. Unset/unrecognised falls back to `DEBUG` in development, `INFO` otherwise. The same resolution applies in the stdio/DXT bundle.
 
@@ -64,15 +66,17 @@ The first tagged release. Cuts a baseline anchor that ships every tool, every co
 ### Added
 
 - **30 Bitrix24 MCP tools + 1 meta-tool** under `server/mcp/tools/`:
-  - Users (2): `b24_user_me`, `b24_user_find` — connectivity probe and the operator-name-to-id resolver every other tool depends on.
-  - Tasks core (4): `b24_task_create`, `b24_task_list`, `b24_task_update`, `b24_task_comment_add`.
-  - Tasks lifecycle verbs (8): `b24_task_start` / `_pause_task` / `_complete_task` / `_approve_task` / `_disapprove_task` / `_defer_task` / `_renew_task` / `_rate_task`.
-  - Tasks checklist (5): `b24_task_checklist_item_add` / `_list_checklist_items` / `_complete_checklist_item` / `_renew_checklist_item` / `_delete_checklist_item`.
-  - Tasks results (4): `b24_task_result_add` / `_list_task_results` / `_update_task_result` / `_delete_task_result`.
-  - Tasks elapsed time (4): `b24_task_elapsed_time_add` / `_list_elapsed_time` / `_update_elapsed_time` / `_delete_elapsed_time`.
-  - Task dependencies (2): `b24_task_dependency_add` / `_remove_task_dependency`.
+  - Users (2): `bitrix24_current_user`, `bitrix24_find_user` — connectivity probe and the operator-name-to-id resolver every other tool depends on.
+  - Tasks core (4): `bitrix24_create_task`, `bitrix24_list_tasks`, `bitrix24_update_task`, `bitrix24_add_task_comment`.
+  - Tasks lifecycle verbs (8): `bitrix24_start_task` / `_pause_task` / `_complete_task` / `_approve_task` / `_disapprove_task` / `_defer_task` / `_renew_task` / `_rate_task`.
+  - Tasks checklist (5): `bitrix24_add_checklist_item` / `_list_checklist_items` / `_complete_checklist_item` / `_renew_checklist_item` / `_delete_checklist_item`.
+  - Tasks results (4): `bitrix24_add_task_result` / `_list_task_results` / `_update_task_result` / `_delete_task_result`.
+  - Tasks elapsed time (4): `bitrix24_add_elapsed_time` / `_list_elapsed_time` / `_update_elapsed_time` / `_delete_elapsed_time`.
+  - Task dependencies (2): `bitrix24_add_task_dependency` / `_remove_task_dependency`.
   - CRM deals (1, reference impl): `bitrix24_find_deal` — read-only search by title or structured filters with optional `order`, the canonical "first tool to fork". (Removed in [Unreleased]; see "Removed" above. Post-pilot CRM tools will return under the new `b24_crm_*` namespace.)
   - Meta (1): `bx24mcp_submit_feedback` — the AI agent can file a structured GitHub issue against this repo when something is unclear.
+
+> **Note**: every Bitrix24 tool listed above was **renamed to `b24_<domain>(_<entity>)*_<action>`** in [Unreleased] (issue #129). This section keeps the original names for historical accuracy — for the live names, see the rename table in [Unreleased] / Changed above. The `bx24mcp_*` meta-tool was not touched.
 - **Bearer auth** on `/mcp` via `NUXT_MCP_AUTH_TOKEN`.
 - **Public `/api/health` probe** (status / service / timestamp only — no fingerprintable version).
 - **Bitrix24 SDK** wired via the official [`@bitrix24/b24jssdk-nuxt`](https://www.npmjs.com/package/@bitrix24/b24jssdk-nuxt) with `RestrictionManager` (50 burst, 2 req/sec drain, 3 retries on transient errors) and a webhook-URL redactor at the logger boundary.

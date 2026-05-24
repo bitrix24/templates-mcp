@@ -52,7 +52,7 @@ Bitrix24 has two parallel REST API generations:
 | `b24_task_dependency_remove` | `task.dependence.delete` | v2 only — destructive (`confirmDelete: true`) |
 | `bx24mcp_submit_feedback` | _(no Bitrix24 call)_ | meta-tool — files a GitHub issue |
 
-All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through the `batchV2` helper as one HTTP round-trip. The 3 checklist actions (`complete_checklist_item` / `renew_checklist_item` / `delete_checklist_item`) likewise accept `itemId: number[]` for batch mode (up to 50; `force: true` overrides) and also go through `batchV2` as one round-trip.
+All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through the `batchV2` helper as one HTTP round-trip. The 3 checklist actions (`b24_task_checklist_item_complete` / `b24_task_checklist_item_renew` / `b24_task_checklist_item_delete`) likewise accept `itemId: number[]` for batch mode (up to 50; `force: true` overrides) and also go through `batchV2` as one round-trip.
 
 When you see a Bitrix24 method name in a tool's source, sanity-check it has the `tasks.` (with `s`) prefix or lives under a documented v3 URL. The phrase pack below assumes v3 throughout.
 
@@ -78,9 +78,9 @@ Setup: real Bitrix24 portal webhook in `.env`, connector wired to a chat. For ea
 4. **Many matches** → ask the operator to clarify, in this order: **patronymic (отчество)** if Russian-style, then **lastName**, then **position** / **department**. **Never** ask for a numeric id unless natural-language disambiguation fails entirely.
 5. **No match** → ask the operator for a fuller name, patronymic, or surname.
 
-Patronymic priority is deliberate: in Russian business culture an "Игорь Сергеевич" identifies the person more naturally than "Игорь с id 12" or even "Игорь Шевченко". The `find_user` tool returns `secondName` (Bitrix24 `SECOND_NAME`) for exactly this reason.
+Patronymic priority is deliberate: in Russian business culture an "Игорь Сергеевич" identifies the person more naturally than "Игорь с id 12" or even "Игорь Шевченко". The `b24_user_find` tool returns `secondName` (Bitrix24 `SECOND_NAME`) for exactly this reason.
 
-The phrases in section 2 are written with this rule in mind. The LLM's response should chain `find_user` → confirm → `create_task` invisibly when there's a clean match, and surface a disambiguation question only when needed.
+The phrases in section 2 are written with this rule in mind. The LLM's response should chain `b24_user_find` → confirm → `b24_task_create` invisibly when there's a clean match, and surface a disambiguation question only when needed.
 
 | # | Phrase | What we want to see |
 |---|---|---|
@@ -94,19 +94,19 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 | 1.8 | Найди Сергеевну в бухгалтерии. | `find_user { secondName: "Сергеевна", position: "бухгалтер" }` — feminine patronymic. |
 
 **Negative:**
-- 1.9 — Покажи всех. → `find_user` with no filter returns the guidance message ("Provide at least one of: …"). LLM should ask for any narrowing input.
+- 1.9 — Покажи всех. → `b24_user_find` with no filter returns the guidance message ("Provide at least one of: …"). LLM should ask for any narrowing input.
 
 ## 2. Basic task creation ✅ (name-resolved)
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 2.1 | Создай задачу «Согласовать договор» и назначь на меня, дедлайн пятница 18:00. | `current_user` → `create_task { title, responsibleId: me, deadline }`. No `find_user` needed — operator referenced themselves. |
+| 2.1 | Создай задачу «Согласовать договор» и назначь на меня, дедлайн пятница 18:00. | `b24_user_me` → `create_task { title, responsibleId: me, deadline }`. No `b24_user_find` needed — operator referenced themselves. |
 | 2.2 | Заведи задачу "Review Q2 report" для Игоря, приоритет высокий, дедлайн через 3 дня. | `find_user { query: "Игорь" }` → if 1 match, `create_task { title, responsibleId: <resolved>, priority: "2", deadline: <iso> }`. **If multiple Igors**, the LLM should ask "Игорь Шевченко, Игорь Петров — кто из них?" |
-| 2.3 | Срочная задача Ивану из бэкенда: позвонить клиенту. | `find_user { firstName: "Иван", position: "backend" }` → exact match → `create_task` with `priority: "2"`. |
-| 2.4 | Поставь задачу Игорю Шевченко проверить логи прода. Без дедлайна, просто "когда руки дойдут". | `find_user { firstName: "Игорь", lastName: "Шевченко" }` → 1 match → `create_task` with `title`, NO `deadline`. |
-| 2.4.1 | Поручи Игорю Сергеевичу написать changelog к релизу 0.2.0. | `find_user { firstName: "Игорь", secondName: "Сергеевич" }` — patronymic-first disambiguation. → `create_task`. |
-| 2.5 | Назначь задачу группе разработки (groupId 7): «Обновить зависимости». Соисполнители Маша и Иван, наблюдатель — тимлид. | Multi-`find_user` (Маша / Иван / "тимлид"), then `create_task` with `groupId: 7`, `accomplices`, `auditors`. **Likely failure cases to probe:** how does the LLM handle "тимлид" (a role, not a name)? It might `find_user { position: "team lead" }` or ask for clarification. |
-| 2.6 | Создай задачу с длинным описанием в BBCode для Игоря: заголовок "Спецификация API", деталь — список из 5 пунктов. | `find_user` → `create_task` with multi-paragraph `description` containing `[*]`/`[LIST]` BBCode. |
+| 2.3 | Срочная задача Ивану из бэкенда: позвонить клиенту. | `find_user { firstName: "Иван", position: "backend" }` → exact match → `b24_task_create` with `priority: "2"`. |
+| 2.4 | Поставь задачу Игорю Шевченко проверить логи прода. Без дедлайна, просто "когда руки дойдут". | `find_user { firstName: "Игорь", lastName: "Шевченко" }` → 1 match → `b24_task_create` with `title`, NO `deadline`. |
+| 2.4.1 | Поручи Игорю Сергеевичу написать changelog к релизу 0.2.0. | `find_user { firstName: "Игорь", secondName: "Сергеевич" }` — patronymic-first disambiguation. → `b24_task_create`. |
+| 2.5 | Назначь задачу группе разработки (groupId 7): «Обновить зависимости». Соисполнители Маша и Иван, наблюдатель — тимлид. | Multi-`b24_user_find` (Маша / Иван / "тимлид"), then `b24_task_create` with `groupId: 7`, `accomplices`, `auditors`. **Likely failure cases to probe:** how does the LLM handle "тимлид" (a role, not a name)? It might `find_user { position: "team lead" }` or ask for clarification. |
+| 2.6 | Создай задачу с длинным описанием в BBCode для Игоря: заголовок "Спецификация API", деталь — список из 5 пунктов. | `b24_user_find` → `b24_task_create` with multi-paragraph `description` containing `[*]`/`[LIST]` BBCode. |
 
 **Failure / clarification cases:**
 - 2.7 — Создай задачу. *(Empty)* → Zod rejects missing `title`; LLM asks for clarification.
@@ -120,7 +120,7 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 3.1 | Покажи мои задачи. | `current_user` → `list_tasks { filter: { RESPONSIBLE_ID: me } }` |
+| 3.1 | Покажи мои задачи. | `b24_user_me` → `list_tasks { filter: { RESPONSIBLE_ID: me } }` |
 | 3.2 | Show my overdue tasks. | `list_tasks { filter: { RESPONSIBLE_ID: me, "<DEADLINE": <today-iso>, "!STATUS": 5 } }` |
 | 3.3 | Покажи активные задачи Ивана. | `find_user { query: "Иван" }` → if 1 match, `list_tasks { filter: { RESPONSIBLE_ID: <resolved>, "!STATUS": [5,6,7] } }`. If many Ivans, ask for the last name first. |
 | 3.4 | Все задачи группы 7, отсортированные по дедлайну. | `list_tasks { filter: { GROUP_ID: 7 }, order: { DEADLINE: "asc" } }` |
@@ -130,7 +130,7 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 | 3.8 | Поставленные мной задачи на этой неделе. | `list_tasks { filter: { CREATED_BY: me, ">=CREATED_DATE": <monday-iso> } }` |
 
 **Probe behaviour:**
-- 3.9 — Покажи задачи. *(No filter)* — LLM should call `list_tasks` and clarify after the dump if the user wanted a filter.
+- 3.9 — Покажи задачи. *(No filter)* — LLM should call `b24_task_list` and clarify after the dump if the user wanted a filter.
 - 3.10 — Сколько у нас всего задач? — `list_tasks { select: ["ID"] }` → read `total`. Easy miss: LLM tries `count` which doesn't exist.
 
 ---
@@ -143,7 +143,7 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 | 4.2 | Reassign task 123 to Maria. | `find_user { query: "Maria" }` → resolve → `update_task { taskId: 123, fields: { RESPONSIBLE_ID: <resolved> } }`. |
 | 4.3 | Переименуй задачу 123 в "Согласовать спецификацию API". | `update_task { taskId: 123, fields: { TITLE: "..." } }` |
 | 4.4 | Снизь приоритет задачи 123 до низкого. | `update_task { taskId: 123, fields: { PRIORITY: "0" } }` |
-| 4.5 | Добавь к задаче 123 ещё двух наблюдателей: 3 и 7. | LLM needs to GET current `AUDITORS` first, then `update_task { fields: { AUDITORS: [...existing, 3, 7] } }`. **Likely failure today** — no `get_task` tool, would need to use `list_tasks` with `ID` filter and `select: ["AUDITORS"]`. |
+| 4.5 | Добавь к задаче 123 ещё двух наблюдателей: 3 и 7. | LLM needs to GET current `AUDITORS` first, then `update_task { fields: { AUDITORS: [...existing, 3, 7] } }`. **Likely failure today** — no `get_task` tool, would need to use `b24_task_list` with `ID` filter and `select: ["AUDITORS"]`. |
 | 4.6 | Move task 123 to workgroup 7. | `update_task { taskId: 123, fields: { GROUP_ID: 7 } }` |
 
 **Probe behaviour:**
@@ -157,7 +157,7 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 | # | Phrase | What we want to see |
 |---|---|---|
 | 5.1 | Прокомментируй задачу 123: «Согласовано, запускаем». | `add_task_comment { taskId: 123, text: "Согласовано, запускаем" }` |
-| 5.2 | Add a comment to task 123 with BBCode: link to https://example.com labelled "spec". | `add_task_comment` with `text: "[URL=https://example.com]spec[/URL]"` |
+| 5.2 | Add a comment to task 123 with BBCode: link to https://example.com labelled "spec". | `b24_task_comment_add` with `text: "[URL=https://example.com]spec[/URL]"` |
 | 5.3 | Напиши под задачей 123: «Ждём ответа от заказчика», и от имени пользователя 47. | `add_task_comment { taskId: 123, text: "...", authorId: 47 }` (may fail with permission error on non-admin webhooks — expected) |
 
 ---
@@ -183,12 +183,12 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 7.1 | Добавь чек-лист "QA" к задаче 123 с пунктами: «UI», «API», «миграция». | Four `add_checklist_item` calls. First: `{ taskId: 123, title: "QA" }` (no `parentId` → starts a new checklist; the returned id is the heading id). Next three: `{ taskId: 123, title: "UI", parentId: <heading-id> }` etc. |
+| 7.1 | Добавь чек-лист "QA" к задаче 123 с пунктами: «UI», «API», «миграция». | Four `b24_task_checklist_item_add` calls. First: `{ taskId: 123, title: "QA" }` (no `parentId` → starts a new checklist; the returned id is the heading id). Next three: `{ taskId: 123, title: "UI", parentId: <heading-id> }` etc. |
 | 7.2 | Поставь в чек-листе задачи 123 пункт "QA / API" как выполненный. | `list_checklist_items { taskId: 123 }` → find the item by title → `complete_checklist_item { taskId: 123, itemId: <found> }` |
 | 7.3 | Покажи прогресс чек-листа задачи 123. | `list_checklist_items { taskId: 123 }` — agent counts `isComplete: true` over the items in each heading. |
-| 7.4 | Добавь в чек-лист задачи 123 ещё один пункт «деплой». | `list_checklist_items` to locate the heading (or accept the operator naming it), then `add_checklist_item { taskId: 123, title: "деплой", parentId: <heading-id> }`. |
-| 7.5 | Сними отметку выполнения с пункта «деплой» в задаче 123. | `list_checklist_items` → match title → `renew_checklist_item { taskId: 123, itemId: <found> }`. |
-| 7.6 | Удали из чек-листа задачи 123 пункт «UI». | `list_checklist_items` → match → `delete_checklist_item { taskId: 123, itemId: <found> }`. |
+| 7.4 | Добавь в чек-лист задачи 123 ещё один пункт «деплой». | `b24_task_checklist_item_list` to locate the heading (or accept the operator naming it), then `add_checklist_item { taskId: 123, title: "деплой", parentId: <heading-id> }`. |
+| 7.5 | Сними отметку выполнения с пункта «деплой» в задаче 123. | `b24_task_checklist_item_list` → match title → `renew_checklist_item { taskId: 123, itemId: <found> }`. |
+| 7.6 | Удали из чек-листа задачи 123 пункт «UI». | `b24_task_checklist_item_list` → match → `delete_checklist_item { taskId: 123, itemId: <found> }`. |
 | 7.7 | Создай в задаче 123 новый чек-лист "Релизный план" с пунктами: «changelog», «прогон тестов», «тег», «smoke». | Heading add (no `parentId`) + four child adds with the returned heading id. |
 | 7.8 | Закрой пункты 47, 48 и 49 в задаче 123 одним вызовом. | `complete_checklist_item { taskId: 123, itemId: [47, 48, 49] }` — batch mode mirrors the lifecycle tools, returns `{ batch, total, ok, failed, results }`. |
 
@@ -201,7 +201,7 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 
 **Out of scope this PR (file as follow-ups if real demand emerges):**
 - `update_checklist_item` (move / rename / reassign members). The five tools above cover every phrase in this section; rename + move are rarely demanded and would expand the surface for marginal value.
-- `MEMBERS` field on `add_checklist_item`. The Bitrix24 API accepts `MEMBERS: { <userId>: { TYPE: "A"|"U" } }` for per-item assignees / watchers, but no test phrase exercises it today.
+- `MEMBERS` field on `b24_task_checklist_item_add`. The Bitrix24 API accepts `MEMBERS: { <userId>: { TYPE: "A"|"U" } }` for per-item assignees / watchers, but no test phrase exercises it today.
 
 ---
 
@@ -218,7 +218,7 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 | 8.5 | Отправь задачу 123 на доработку, исполнитель сделал не то. | `disapprove_task { taskId: 123 }` |
 | 8.6 | Отложи задачу 123, пока без приоритета. | `defer_task { taskId: 123 }` |
 | 8.7 | Восстанови задачу 123 из закрытых. | `renew_task { taskId: 123 }` |
-| 8.8 | Start working on task 123 and add a comment "поехали". | Chain: `start_task` then `add_task_comment` |
+| 8.8 | Start working on task 123 and add a comment "поехали". | Chain: `b24_task_start` then `b24_task_comment_add` |
 | 8.9 | Закрой задачи 5, 7 и 12 одним вызовом. | `complete_task { taskId: [5, 7, 12] }` — batch mode via the `batchV2` helper, returns `{ batch, total, ok, failed, results }`. |
 
 Trade-off recorded for the future: seven separate tools (one per verb) rather than one `b24_task_status_change` with an enum, so the LLM gets per-action description text. Tracked as `rfc(evals): measure cost — N specialized lifecycle tools vs 1 enum-based tool` in issue #9.
@@ -252,28 +252,28 @@ Trade-off recorded for the future: seven separate tools (one per verb) rather th
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 10.1 | Создай подзадачу к 123: «Согласовать договор с юристами». | ⏳ `create_task { title: "...", responsibleId: …, parentId: 123 }` — needs `parentId` added to `create_task` schema |
+| 10.1 | Создай подзадачу к 123: «Согласовать договор с юристами». | ⏳ `create_task { title: "...", responsibleId: …, parentId: 123 }` — needs `parentId` added to `b24_task_create` schema |
 | 10.2 | Покажи подзадачи задачи 123. | ⏳ `list_tasks { filter: { PARENT_ID: 123 } }` — works today, just needs description hint |
-| 10.3 | Разбей задачу 123 на 3 подзадачи: дизайн, реализация, тесты. | ⏳ Three `create_task` calls with the same `parentId: 123` |
+| 10.3 | Разбей задачу 123 на 3 подзадачи: дизайн, реализация, тесты. | ⏳ Three `b24_task_create` calls with the same `parentId: 123` |
 
-**Proposed change:** extend `create_task` input with optional `parentId`. No new tool — just a schema bump. `list_tasks` already supports `PARENT_ID` filter via the generic filter object.
+**Proposed change:** extend `b24_task_create` input with optional `parentId`. No new tool — just a schema bump. `b24_task_list` already supports `PARENT_ID` filter via the generic filter object.
 
 ---
 
 ## 11. Task linking (dependencies / related) ⏳ — partial (add/remove ✅, read ❌)
 
-**Status:** partial. Write tools (`add_task_dependency`, `remove_task_dependency`) shipped in PR #35 over `tasks.task.dependence.*`. The read tool was removed in PR #43 — Bitrix24 silently decommissioned the only documented read endpoint (`task.item.getdependson`); see row 11.3 and issue #33. "Related" / "similar" is **not** a Bitrix24 concept — it's a search.
+**Status:** partial. Write tools (`b24_task_dependency_add`, `b24_task_dependency_remove`) shipped in PR #35 over `tasks.task.dependence.*`. The read tool was removed in PR #43 — Bitrix24 silently decommissioned the only documented read endpoint (`task.item.getdependson`); see row 11.3 and issue #33. "Related" / "similar" is **not** a Bitrix24 concept — it's a search.
 
 | # | Phrase | What we want to see |
 |---|---|---|
 | 11.1 | Свяжи задачу 123 с задачей 89, 123 зависит от 89. | ⏳ `add_task_dependency { taskId: 123, dependsOnId: 89 }` |
-| 11.2 | Найди задачи похожие на 123 по названию и тегам. | 🧠 `list_tasks` with `%TITLE` filter using keywords extracted from 123's title; agent does the matching |
+| 11.2 | Найди задачи похожие на 123 по названию и тегам. | 🧠 `b24_task_list` with `%TITLE` filter using keywords extracted from 123's title; agent does the matching |
 | 11.3 | Список зависимостей задачи 123 — от чего она зависит. | ❌ No tool — Bitrix24 deprecated `task.item.getdependson` server-side with no v3 replacement (#33 live-smoke confirmed). Agent must direct the operator to the Bitrix24 UI. |
 
 **Proposed tools:**
 - `b24_task_dependency_add` — `{ taskId, dependsOnId }`
 - `b24_task_dependency_remove` — `{ taskId, dependsOnId }`
-- "Similar tasks" stays a composite query (no tool); the LLM extracts keywords and uses `list_tasks` with `%TITLE` filter.
+- "Similar tasks" stays a composite query (no tool); the LLM extracts keywords and uses `b24_task_list` with `%TITLE` filter.
 
 ---
 
@@ -284,7 +284,7 @@ These phrases are about how the LLM **uses** the tools. No new endpoints — pur
 | # | Phrase | Expected composition |
 |---|---|---|
 | 12.1 | Опиши состояние задачи 123 и её подзадач первого уровня. | `list_tasks { filter: { ID: 123 } }` (or `get_task` once added) → `list_tasks { filter: { PARENT_ID: 123 } }` → list checklist (⏳) → list recent comments (⏳) → narrative summary |
-| 12.2 | Какие трудозатраты по задаче 123? | `list_elapsed_time` (⏳) → sum, group by user/comment → narrative |
+| 12.2 | Какие трудозатраты по задаче 123? | `b24_task_elapsed_time_list` (⏳) → sum, group by user/comment → narrative |
 | 12.3 | Найди 5 похожих задач по теме «миграция БД» и расскажи как их решали. | `list_tasks { filter: { "%TITLE": "миграция", "STATUS": 5 } }` (closed only), take top 5 by `CLOSED_DATE desc` → for each: `list_comments` (⏳) and read `RESULT` if available → narrative |
 | 12.4 | Проанализируй задачу 123 и подзадачи 1-го уровня — дай рекомендации. | All of 11.1 → LLM reasoning about completeness, blockers, time over-run, comment patterns |
 | 12.5 | Что сейчас в работе у команды (group 7)? Кто чем занят? | `list_tasks { filter: { GROUP_ID: 7, STATUS: [2,3] } }` → group by `RESPONSIBLE_ID` → narrative |
@@ -297,7 +297,7 @@ These composite queries are the **real test of the description quality** — the
 
 ## 12b. Task results ✅
 
-**Status:** four v3 tools shipped — `add_task_result`, `list_task_results`, `update_task_result`, `delete_task_result`. A Bitrix24 task **result** is free-form text capturing what was actually delivered, kept separately from comments and from the task body. Multiple results per task allowed.
+**Status:** four v3 tools shipped — `b24_task_result_add`, `b24_task_result_list`, `b24_task_result_update`, `b24_task_result_delete`. A Bitrix24 task **result** is free-form text capturing what was actually delivered, kept separately from comments and from the task body. Multiple results per task allowed.
 
 | # | Phrase | What we want to see |
 |---|---|---|
@@ -311,11 +311,11 @@ These composite queries are the **real test of the description quality** — the
 | 12b.8 | Сколько результатов записано по задаче 51? | `list_task_results { taskId: 51 }` → LLM counts items. |
 
 **Probe behaviour:**
-- 12b.9 — Перезапиши результат задачи 51. *(no resultId, only parent task)* → LLM should call `list_task_results { taskId: 51 }` first, pick the latest, then `update_task_result`.
+- 12b.9 — Перезапиши результат задачи 51. *(no resultId, only parent task)* → LLM should call `list_task_results { taskId: 51 }` first, pick the latest, then `b24_task_result_update`.
 - 12b.10 — Сделай результат задачи 51 более кратким. *(needs the current text)* → list first, then update with rewritten text.
-- 12b.11 — Удали все результаты задачи 51. *(no batch tool)* → LLM should list + iterate `delete_task_result`. Single-call batch on these v3 endpoints is not exposed today (filed under "follow-up: batch on task-result delete" if a real use case appears).
+- 12b.11 — Удали все результаты задачи 51. *(no batch tool)* → LLM should list + iterate `b24_task_result_delete`. Single-call batch on these v3 endpoints is not exposed today (filed under "follow-up: batch on task-result delete" if a real use case appears).
 
-**Author-only ops:** `update_task_result` and `delete_task_result` are restricted to the result author (or a portal admin) by Bitrix24. Other operators hit `BITRIX_REST_V3_EXCEPTION_ACCESSDENIEDEXCEPTION`. The descriptions warn about this so the LLM doesn't waste a call.
+**Author-only ops:** `b24_task_result_update` and `b24_task_result_delete` are restricted to the result author (or a portal admin) by Bitrix24. Other operators hit `BITRIX_REST_V3_EXCEPTION_ACCESSDENIEDEXCEPTION`. The descriptions warn about this so the LLM doesn't waste a call.
 
 **Out of scope (filed as follow-up candidates if real demand):**
 - `tasks.task.result.addFromComment` / `.deleteFromComment` — promote a comment to a result. Depends on a comments-list tool that's queued separately (gap-analysis row 1).
@@ -344,12 +344,12 @@ Roughly in order of value-for-effort:
 
 | Priority | PR scope | Tools |
 |---|---|---|
-| ✅ | **`feat(tools): task lifecycle`** (PR #5) | `start_task`, `pause_task`, `complete_task`, `approve_task`, `disapprove_task`, `defer_task`, `renew_task` (7 thin wrappers) |
-| ✅ | **`feat(tools): task checklist`** (PR #17) | `add_checklist_item`, `list_checklist_items`, `complete_checklist_item`, `renew_checklist_item`, `delete_checklist_item` |
-| 1 | **`feat(tools): list task comments + subtask parentId`** | `list_task_comments` (new tool, filters service messages by default); schema bump on `create_task` to accept `parentId` |
-| 2 | **`feat(tools): task time tracking`** | `add_elapsed_time`, `list_elapsed_time` |
-| 3 | **`feat(tools): task dependencies`** | `add_task_dependency`, `remove_task_dependency` (read-back removed — see #33 / row 11.3) |
-| 4 | **(retire `task.commentitem.add` → `tasks.task.chat.message.send`)** | Migrate `add_task_comment` to the modern endpoint; this also fixes "deprecated" warning |
+| ✅ | **`feat(tools): task lifecycle`** (PR #5) | `b24_task_start`, `b24_task_pause`, `b24_task_complete`, `b24_task_approve`, `b24_task_disapprove`, `b24_task_defer`, `b24_task_renew` (7 thin wrappers) |
+| ✅ | **`feat(tools): task checklist`** (PR #17) | `b24_task_checklist_item_add`, `b24_task_checklist_item_list`, `b24_task_checklist_item_complete`, `b24_task_checklist_item_renew`, `b24_task_checklist_item_delete` |
+| 1 | **`feat(tools): list task comments + subtask parentId`** | `list_task_comments` (new tool, filters service messages by default); schema bump on `b24_task_create` to accept `parentId` |
+| 2 | **`feat(tools): task time tracking`** | `b24_task_elapsed_time_add`, `b24_task_elapsed_time_list` |
+| 3 | **`feat(tools): task dependencies`** | `b24_task_dependency_add`, `b24_task_dependency_remove` (read-back removed — see #33 / row 11.3) |
+| 4 | **(retire `task.commentitem.add` → `tasks.task.chat.message.send`)** | Migrate `b24_task_comment_add` to the modern endpoint; this also fixes "deprecated" warning |
 
 After all of those land, sections 5–10 of this doc flip from ⏳ to ✅ and the analytics queries in section 11 become realistic.
 
@@ -393,7 +393,7 @@ What we're verifying:
 
 ### Create-task — one phrase per script family
 
-> **Why these say "user 5" instead of a name:** the i18n probe focuses on Unicode round-trip and deadline parsing across locales — keeping the assignee as a numeric id removes the user-resolution variable. In real operator usage every phrase below would name a person ("Игорь", "Ahmet", "佐藤") and the LLM **must** run `find_user` first (see section 1). For a name-resolution multilingual probe, swap "user 5" for "Igor" in each phrase and watch the LLM chain `find_user` → `create_task`.
+> **Why these say "user 5" instead of a name:** the i18n probe focuses on Unicode round-trip and deadline parsing across locales — keeping the assignee as a numeric id removes the user-resolution variable. In real operator usage every phrase below would name a person ("Игорь", "Ahmet", "佐藤") and the LLM **must** run `b24_user_find` first (see section 1). For a name-resolution multilingual probe, swap "user 5" for "Igor" in each phrase and watch the LLM chain `b24_user_find` → `b24_task_create`.
 
 The same intent — "create a task to approve a contract, assign to user 5, deadline Friday 18:00" — translated into a representative set of locales. Pick the ones matching your test portal's language; cycle through 3–4 for cross-script confidence.
 
@@ -448,6 +448,6 @@ The same intent — "create a task to approve a contract, assign to user 5, dead
 ## What still won't have a tool (deliberate)
 
 - **Delete task** — destructive, easy to misuse, not in MVP. If a user really wants it, they can complete + delete in UI.
-- **"Similar task" / "related task" semantic search** — Bitrix24 doesn't expose embeddings or RAG. The LLM does this from keyword extraction over `list_tasks` (composite).
+- **"Similar task" / "related task" semantic search** — Bitrix24 doesn't expose embeddings or RAG. The LLM does this from keyword extraction over `b24_task_list` (composite).
 - **CRM linkage (`UF_CRM_TASK`)** — the task-side user field is exposed via `create_task.fields` / `update_task.fields` passthrough already; no dedicated tool, agents that need it can pass the encoded value. The CRM module itself (deals / contacts / leads) is post-pilot, see [`PROJECT-BRIEF.md`](../PROJECT-BRIEF.md).
 - **File attachments** — out of MVP scope; queued for after the pilot.

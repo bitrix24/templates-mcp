@@ -267,6 +267,19 @@ describe('sanitizeToolName', () => {
     expect(sanitizeToolName('bx24mcp_submit_feedback')).toBe('bx24mcp_submit_feedback')
   })
 
+  it('passes the longest real tool name through without hitting the 45-char cap', async () => {
+    // Post-#129 the longest live tool name is `b24_task_checklist_item_complete`
+    // at 32 chars; `tool:` + 32 = 37, well under GitHub's 50-char label limit
+    // and the internal 45-char cap. Pin both so a future tightening of the cap
+    // (or a longer tool name slipping in) gets caught with a clear diagnostic
+    // here — not as a silently truncated GitHub label downstream.
+    const { sanitizeToolName } = await loadFresh()
+    const longest = 'b24_task_checklist_item_complete'
+    expect(longest.length).toBeLessThanOrEqual(45)
+    expect(sanitizeToolName(longest)).toBe(longest)
+    expect(sanitizeToolName(longest).length).toBeLessThanOrEqual(45)
+  })
+
   it('caps length at 45 so `tool:<name>` fits GitHub\'s 50-char label limit', async () => {
     const { sanitizeToolName } = await loadFresh()
     const out = sanitizeToolName('a'.repeat(200))

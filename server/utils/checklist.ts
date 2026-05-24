@@ -28,7 +28,7 @@ import type { BitrixChecklistItemRaw } from '~/server/types/bitrix24'
  */
 
 /** Subset of checklist-item fields surfaced to the agent. Mirrors what
- *  `list_tasks` does for tasks — keep the response small and predictable. */
+ *  `b24_task_list` does for tasks — keep the response small and predictable. */
 export interface ChecklistItemShort {
   id: number
   taskId: number

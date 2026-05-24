@@ -97,7 +97,7 @@ See [`docs/EVALS.md`](./docs/EVALS.md) for the eval layer; the unit and integrat
 
 Short version:
 
-1. Pick a group: `tasks` / `users` / `meta` (or create a new group directory for your own entities — e.g. `crm` for the planned post-pilot deals/contacts/leads expansion, `calendars`, `disk`, `im`).
+1. Pick a group: `tasks` / `users` (or create a new group directory for your own entities — e.g. `crm` for the planned post-pilot deals/contacts/leads expansion, `calendars`, `disk`, `im`). The `meta/` directory is reserved for `bx24mcp_*` tools that do NOT call the Bitrix24 REST API; do not put Bitrix24-talking tools there.
 2. Create `server/mcp/tools/<group>/<kebab-name>.ts` (file-based discovery).
 3. Use `defineMcpTool({ name, description, inputSchema, handler })`.
 4. Name pattern: `b24_<domain>(_<entity>)*_<action>` for Bitrix24 tools (action LAST, all tokens singular including before `_list` — see `skills/manage-bx24-template-mcp/adding-tools.md`); `bx24mcp_<verb>` for meta-tools (use ONLY for tools that don't call Bitrix24).

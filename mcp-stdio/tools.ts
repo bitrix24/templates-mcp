@@ -9,6 +9,14 @@
  * registries are checked against each other by
  * `tests/unit/mcp-stdio/tools.parity.test.ts` — CI will fail if either
  * registry drifts.
+ *
+ * Note on the local import aliases (`tasks_listTasks`, etc.): they are
+ * **local JS identifiers**, NOT tool names. The runtime tool name is
+ * declared inside each module's `defineMcpTool({ name: 'b24_...' })` call;
+ * these camelCase aliases predate the issue #129 rename and are kept
+ * verbatim so the file's diff history stays focused on the actual rename
+ * (tool-name strings + their imports). Renaming the aliases is a pure-
+ * cosmetic refactor for a separate PR.
  */
 import users_currentUser from '~/server/mcp/tools/users/current-user'
 import users_findUser from '~/server/mcp/tools/users/find-user'

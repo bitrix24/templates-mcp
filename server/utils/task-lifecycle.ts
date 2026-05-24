@@ -75,7 +75,7 @@ export interface LifecycleToolSpec {
  *
  *   3. Task lookup: if the operator names a task in free text instead of an
  *      id ("ту задачу про склад"), call `b24_task_list` with a
- *      `%title` filter first (camelCase — `list_tasks` accepts the same
+ *      `%title` filter first (camelCase — `b24_task_list` accepts the same
  *      camelCase-friendly contract as every other task tool).
  */
 const LIFECYCLE_USAGE_NOTES =
