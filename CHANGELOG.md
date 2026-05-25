@@ -48,7 +48,7 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 - **BREAKING (health payload)**: `/api/health` now returns `{ status, timestamp }` only — the `service` field was removed to avoid a fingerprintable surface. External monitors must key liveness on `status: "ok"`, not on the service name.
 - `NUXT_LOG_LEVEL` is now honoured at runtime (`debug` / `info` / `notice` / `warning` (alias `warn`) / `error` / `critical` / `alert` / `emergency`); previously the level was fixed by `NODE_ENV`. Unset/unrecognised falls back to `DEBUG` in development, `INFO` otherwise. The same resolution applies in the stdio/DXT bundle.
-- `NUXT_LOG_LEVEL` (or its un-prefixed fallback `LOG_LEVEL`) set to a non-empty but unrecognised value (a typo like `debgu` / `infoo`) now emits a one-shot warning to **stderr** at logger init — names the variable, the bad value, and the fallback level used. Stderr-only so the stdio MCP transport (which reserves stdout for JSON-RPC) stays clean. Empty / whitespace-only values stay silent (issue #137).
+- `NUXT_LOG_LEVEL` (or its un-prefixed fallback `LOG_LEVEL`) set to a non-empty but unrecognised value (a typo like `debgu` / `infoo`) now emits a one-shot warning to **stderr** at logger init — names the variable, the bad value, the active `NODE_ENV`, and the fallback level used. The echoed value is capped at 32 chars and run through the webhook-URL redactor before leaving the process, so a variable-name mix-up (e.g. webhook URL accidentally pasted into `NUXT_LOG_LEVEL`) doesn't leak a secret to `journalctl` / `docker logs`. Stderr-only so the stdio MCP transport (which reserves stdout for JSON-RPC) stays clean. Empty / whitespace-only values stay silent (issue #137).
 
 ### Removed
 

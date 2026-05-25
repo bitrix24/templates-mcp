@@ -248,6 +248,7 @@ export NODE_EXTRA_CA_CERTS=/path/to/internal-ca-bundle.pem
   - Local HTTP — `.env` file on your filesystem; protect with normal file ACLs.
   - Docker production — environment variable passed to the container; the value lives in the host's `.env` (or your secrets manager).
 - **Logger redaction.** The Bitrix24 SDK logs every outbound request URL, which contains the webhook secret. `server/utils/logger-redactor.ts` wraps the SDK logger so URL secrets render as `<REDACTED>` in every sink — `docker logs`, `journalctl`, Claude Desktop's extension log panel.
+- **Log verbosity knob.** `NUXT_LOG_LEVEL` (or `LOG_LEVEL` in the DXT bundle / dry-run) controls the console level: `debug` / `info` / `notice` / `warning` (alias `warn`) / `error` / `critical` / `alert` / `emergency`. Unset → `DEBUG` under `nuxt dev`, `INFO` otherwise. A typo like `NUXT_LOG_LEVEL=debgu` prints a one-shot, redacted warning to `stderr` at startup naming the bad value and the level actually used, instead of silently falling back — see [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md#environment-variables) for the full table.
 - **For GDPR/LGPD scrutiny:** the codebase has zero telemetry hooks. See [`docs/SECURITY-AUDIT.md`](./docs/SECURITY-AUDIT.md) for the formal audit.
 
 ### Time zones and deadlines

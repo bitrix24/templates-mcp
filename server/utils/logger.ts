@@ -1,4 +1,5 @@
 import { ConsoleHandler, Logger, LogLevel, type LoggerInterface } from '@bitrix24/b24jssdk'
+import { redactString } from './logger-redactor'
 
 /**
  * Process-singleton structured logger built from the Bitrix24 SDK's own
@@ -62,12 +63,21 @@ const LEVEL_BY_NAME: Record<string, LogLevel> = {
  *
  * If either env var is set to a NON-EMPTY but UNRECOGNISED value (a typo like
  * `debgu`), emit a one-shot warning to **stderr** naming the bad value, the
- * variable it came from, and the level actually used. Stderr (never stdout)
- * because the stdio transport reserves stdout for JSON-RPC frames — a
- * console.log here would corrupt the protocol stream. Fires once because
- * `useLogger()` is a process-singleton (the resolver is called once at
- * materialisation). Empty / whitespace-only values stay silent — those are
- * common in `.env` templates and aren't worth a warning.
+ * variable it came from, the active `NODE_ENV`, and the level actually used.
+ * Stderr (never stdout) because the stdio transport reserves stdout for
+ * JSON-RPC frames — a console.log here would corrupt the protocol stream.
+ * Fires once because `useLogger()` is a process-singleton (the resolver is
+ * called once at materialisation). Empty / whitespace-only values stay silent
+ * — those are common in `.env` templates and aren't worth a warning.
+ *
+ * The echoed value is **capped at 32 chars and run through `redactString`**
+ * before leaving the process: an operator who accidentally puts a webhook URL
+ * or long token into `NUXT_LOG_LEVEL` (variable-name mix-up) gets a
+ * truncated, redacted echo instead of a full secret leaking into
+ * `journalctl` / `docker logs` / Claude Desktop's extension log. 32 chars
+ * fits every legitimate level name with room for diagnostic context.
+ *
+ * @see https://github.com/bitrix24/templates-mcp/issues/137
  */
 function resolveLevel(): LogLevel {
   const [rawValue, varName]
@@ -81,9 +91,20 @@ function resolveLevel(): LogLevel {
 
   const fallback = process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO
   if (configured && varName) {
-    const fallbackName = fallback === LogLevel.DEBUG ? 'DEBUG' : 'INFO'
+    // Explicit display map — the fallback is always DEBUG or INFO by the
+    // branch above, but spelling it out (vs reverse-walking `LEVEL_BY_NAME`)
+    // sidesteps the `WARN`/`WARNING` alias collision and survives any SDK
+    // enum renumbering.
+    const fallbackName = fallback === LogLevel.DEBUG ? 'DEBUG' : fallback === LogLevel.INFO ? 'INFO' : String(fallback)
+    const safeValue = redactString(rawValue.slice(0, 32)) + (rawValue.length > 32 ? '…' : '')
+    const nodeEnv = process.env.NODE_ENV ?? 'unset'
+    // Approved exception to the "one sink" rule (see top-of-file JSDoc): the
+    // SDK Logger isn't materialised yet (we're resolving its own level), and
+    // stdout is reserved for JSON-RPC frames in stdio mode. Direct stderr is
+    // the only safe channel for this one-shot startup diagnostic.
     process.stderr.write(
-      `[bx24-template-mcp] ${varName}=${JSON.stringify(rawValue)} not recognised; using ${fallbackName}. `
+      `[bx24-template-mcp] ${varName}=${JSON.stringify(safeValue)} not recognised; `
+      + `using ${fallbackName} (NODE_ENV=${nodeEnv}). `
       + `Valid: debug, info, notice, warning (alias warn), error, critical, alert, emergency.\n`,
     )
   }

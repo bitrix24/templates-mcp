@@ -171,6 +171,10 @@ Use the typed helpers from `server/utils/sdk-helpers.ts`: `callV2<T>(b24, method
 - Disable Renovate or merge over its objections.
 - **Monkey-patch the Bitrix24 SDK.** Don't reassign or wrap methods on `B24Hook` / `B24OAuth` / `RestrictionManager` / any other SDK class. The SDK ships first-class extension points (`setRestrictionManagerParams`, `setLogger`, `ParamsFactory.{getDefault,getEnterprise,getBatchProcessing,getRealtime,fromTariffPlan}`, `getStats`, `getRestrictionManagerParams`). If the feature you need looks like "intercept every call", read the SDK's `.d.ts` for the right hook BEFORE writing a wrapper — patches are a smell that says "I didn't find the right API", not "the API doesn't exist".
 
+## When the operator says "I'm not seeing the debug logs I set"
+
+`server/utils/logger.ts` is strict about what counts as a recognised level: `debug` / `info` / `notice` / `warning` (alias `warn`) / `error` / `critical` / `alert` / `emergency`, case-insensitive. A typo like `NUXT_LOG_LEVEL=debgu` or `LOG_LEVEL=infoo` no longer fails silently — at startup the resolver writes ONE diagnostic line to **stderr** naming the bad value, the active `NODE_ENV`, and the level it fell back to. The value is capped at 32 chars and run through `redactString` first, so an operator who mis-pasted a webhook URL into `NUXT_LOG_LEVEL` doesn't see the secret in `journalctl` / `docker logs`. If an operator reports "I set debug but logs still look quiet" or "the extension prints a weird line at boot", that stderr warning is the first place to look — not in the app log stream itself. Issue #137 / PR #158.
+
 ## Where to read more
 
 - Root [`CONTRIBUTING.md`](../../CONTRIBUTING.md) — full commit and PR rules.
