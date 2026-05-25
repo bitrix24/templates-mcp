@@ -195,27 +195,28 @@ No `NODE_ENV` export is needed here — `docker-compose.example.yml` defaults it
 
 ## Verifying your deployment
 
-Once the container is up — locally via `docker-compose.example.yml` or in production behind nginx-proxy — run the bundled smoke check. It exercises the same contract the CI `docker-smoke` job pins on every PR, so a green run on the host means the deployed bundle matches what CI signed off on:
+Once the container is up — locally via `docker-compose.example.yml` or in production behind nginx-proxy — run the bundled smoke check. It exercises the same contract the CI `docker-smoke` job pins on every PR, so a green run on the host means the deployed bundle matches what CI signed off on. Recommended invocation passes the token via the environment so it does not appear in `/proc/<pid>/cmdline` (visible to other local users on shared hosts):
 
 ```bash
-./scripts/verify-deployment.sh \
-  --url https://prod.example.com \
-  --token "$NUXT_MCP_AUTH_TOKEN"
+NUXT_MCP_AUTH_TOKEN="$(pass show bx24-mcp-token)" \
+  ./scripts/verify-deployment.sh --url https://prod.example.com
 ```
+
+`--token <value>` and `--token-stdin` are also accepted — see `./scripts/verify-deployment.sh --help` for retry / timeout / TLS knobs (`--health-retries`, `--health-interval`, `--timeout`, `--insecure` for self-signed staging hosts, `--no-color`).
 
 What it asserts:
 
-- `/api/health` returns `200 {"status":"ok",...}` (retries until ready, default ≈ 60s).
+- `/api/health` returns `200 {"status":"ok",...}` — strict `.status == "ok"` predicate via `jq` when available, substring match as a BusyBox-friendly fallback. Retries until ready (default ≈ 60s; raise with `--health-retries`).
 - `/mcp` **without** an `Authorization` header → `401`.
-- `/mcp` with a **wrong** Bearer → `401`.
+- `/mcp` with a **wrong**, length-matched Bearer → `401` (length-matching forces the comparison routine to look at content, surfacing a regression that compared only a prefix).
 - `/mcp` with the **configured** Bearer → anything other than `401` / `403` / `503` (the MCP toolkit may answer `200` / `202` / `405` to a bare GET; what matters is that auth passed).
 
 What it does **not** do:
 
 - It makes **no Bitrix24 REST call** — safe to run against production. For a live tool call after this passes, use the canonical operator prompts in [`docs/MANUAL-TEST-PHRASES.md`](./MANUAL-TEST-PHRASES.md) through an MCP client (Claude Desktop via `mcp-remote`, MCP Inspector, etc.).
-- It does **not** verify the reverse-proxy config end-to-end beyond "TLS terminates and `/api/health` / `/mcp` reach the container". Header forwarding (`X-Forwarded-*`), `proxy_read_timeout` for long MCP responses, and TLS cert chain are out of scope here — see [`REVERSE-PROXY.md`](./REVERSE-PROXY.md).
+- It does **not** verify the reverse-proxy config end-to-end beyond "TLS terminates and `/api/health` / `/mcp` reach the container". Header forwarding (`X-Forwarded-*`), `proxy_read_timeout` for long MCP responses, and TLS cert chain depth are out of scope here — see [`REVERSE-PROXY.md`](./REVERSE-PROXY.md). (TLS verification itself **is** on by default — a broken cert chain fails the run with a curl error; pass `--insecure` only for self-signed staging.)
 
-A failure exits non-zero on the first failed assertion and prints a hint to look at on the host. The most common one is `/mcp → 503`, which means `NUXT_MCP_AUTH_TOKEN` is unset or still the `replace-with-secure-token` placeholder — that 503 is by design (see [`server/middleware/mcp-auth.ts`](../server/middleware/mcp-auth.ts)).
+A failure exits non-zero on the first failed assertion and prints a hint pointing at the likely layer to debug — distinct hints for `502/503/504` (proxy up, upstream container unhealthy), `000` (TLS handshake / DNS / firewall), and other (cold boot / crash loop). The most common production miss is `/mcp → 503`, which means `NUXT_MCP_AUTH_TOKEN` is unset or still the `replace-with-secure-token` placeholder — that 503 is by design (see [`server/middleware/mcp-auth.ts`](../server/middleware/mcp-auth.ts)).
 
 ## Monitoring & logs
 
