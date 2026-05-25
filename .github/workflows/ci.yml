@@ -162,6 +162,100 @@ jobs:
             fi
           fi
 
+  # Closes the long-standing "self-hosted HTTP deployment path has never
+  # been booted in CI" gap (issue #131). Builds the production Dockerfile,
+  # boots the container without the proxy stack, and pins the externally-
+  # observable contract end-to-end on every PR:
+  #
+  #   /api/health        → 200 {"status":"ok",...}
+  #   /mcp  (no  auth)   → 401
+  #   /mcp  (wrong tok)  → 401
+  #   /mcp  (good  tok)  → NOT 401 / 403 / 503  (auth passed; toolkit may
+  #                                              answer 200/202/405 to GET)
+  #   /mcp  (placeholder)→ 503  (separate boot with the .env.example value;
+  #                              pins the "copied-but-not-configured" gate)
+  #
+  # Does NOT call Bitrix24 — the webhook URL is a non-resolving placeholder.
+  # If a future tool starts dialling out at boot, this job will tell you by
+  # surfacing the failure in container logs.
+  docker-smoke:
+    name: Docker smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: Build production image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          load: true
+          tags: bx24-template-mcp:smoke
+          # Re-use the cache the `Build` job (and `deploy.yml`) populate so
+          # this job doesn't repeat the full pnpm install + nuxt build on
+          # every PR. cache-to is intentionally NOT set — we read, not write.
+          cache-from: type=gha
+      - name: Generate test Bearer + start container
+        id: start
+        run: |
+          set -euo pipefail
+          TOKEN="$(openssl rand -hex 32)"
+          # Mask in case any later step accidentally logs the value.
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+          # Non-resolving placeholder. The B24Hook is materialised lazily on
+          # the first tool call, so boot succeeds without DNS resolution.
+          docker run -d --name bx24-smoke \
+            -e NUXT_BITRIX24_WEBHOOK_URL=https://example.invalid/rest/1/x/ \
+            -e NUXT_MCP_AUTH_TOKEN="$TOKEN" \
+            -e NITRO_PORT=3000 \
+            -p 3000:3000 \
+            bx24-template-mcp:smoke
+      - name: Run verify-deployment.sh against the container
+        env:
+          TOKEN: ${{ steps.start.outputs.token }}
+        run: |
+          # The script paces /api/health itself (retries × interval) — no
+          # extra sleep needed. --no-color keeps the GHA log readable.
+          ./scripts/verify-deployment.sh \
+            --url http://localhost:3000 \
+            --token "$TOKEN" \
+            --health-retries 30 \
+            --health-interval 2 \
+            --no-color
+      - name: Restart with the placeholder token; /mcp must return 503
+        # Pins the "operator copied .env.example without `openssl rand -hex 32`"
+        # gate from server/middleware/mcp-auth.ts — that path is otherwise
+        # only exercised by a unit test (no real boot of the auth middleware
+        # under Nitro), so a regression there would slip through silently.
+        run: |
+          set -euo pipefail
+          docker rm -f bx24-smoke
+          docker run -d --name bx24-smoke \
+            -e NUXT_BITRIX24_WEBHOOK_URL=https://example.invalid/rest/1/x/ \
+            -e NUXT_MCP_AUTH_TOKEN=replace-with-secure-token \
+            -e NITRO_PORT=3000 \
+            -p 3000:3000 \
+            bx24-template-mcp:smoke
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3000/api/health || true)
+            if [ "$STATUS" = "200" ]; then break; fi
+            sleep 2
+          done
+          STATUS=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3000/mcp)
+          if [ "$STATUS" != "503" ]; then
+            echo "::error::With NUXT_MCP_AUTH_TOKEN=replace-with-secure-token, /mcp must return 503 (not-configured). Got $STATUS."
+            echo "This is the gate that prevents a copy-pasted .env.example deployment from accepting a publicly-known token."
+            exit 1
+          fi
+          echo "OK — /mcp correctly returned 503 with the placeholder token."
+      - name: Container logs (on failure only)
+        if: failure()
+        run: docker logs bx24-smoke 2>&1 | tail -200 || true
+      - name: Cleanup
+        if: always()
+        run: docker rm -f bx24-smoke 2>/dev/null || true
+
   # Aggregate gate. The `main` branch protection rule requires a single
   # status check named `ci` — this job is that gate. It depends on every
   # other job in the workflow, runs even when an upstream job was skipped
@@ -174,7 +268,7 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-latest
-    needs: [commitlint, lint, typecheck, test, integration, prepare-windows, build, scaffold-sync]
+    needs: [commitlint, lint, typecheck, test, integration, prepare-windows, build, scaffold-sync, docker-smoke]
     if: always()
     steps:
       - name: Verify no required job failed or was cancelled

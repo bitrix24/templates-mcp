@@ -84,7 +84,8 @@ NITRO_PORT=3000            # server port; connector URL below must match
 
 Optional, only if the run includes integration tests or evals (see `.env.example`):
 `NUXT_BITRIX24_TEST_WEBHOOK_URL` (live integration suite — staging portal only),
-`DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` (eval LLM).
+`DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` (eval LLM),
+`NUXT_AUDIT_DIR` (OAuth/Bearer audit log destination; default `/data/audit/`, webhook-only manual QA ignores it).
 
 ### 4. On the Bitrix24 portal — seed upfront
 

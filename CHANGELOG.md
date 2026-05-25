@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **CI**: `docker-smoke` job builds the production `Dockerfile`, boots the container, and pins the externally-observable HTTP contract on every PR — `/api/health` → `200 {"status":"ok"}`, `/mcp` → `401` without an `Authorization` header, `401` with a wrong Bearer, and a non-`401`/`403`/`503` with the configured Bearer (auth passed). A second boot with `NUXT_MCP_AUTH_TOKEN=replace-with-secure-token` pins the "copied-but-not-configured" gate at `/mcp` → `503`. Closes the bring-up + Bearer-auth slice of issue #131 — the self-hosted HTTP path had never been booted in CI.
+- `scripts/verify-deployment.sh` — operator-runnable version of the same smoke check, intended for use on a staging host (or production, post-promotion) since it makes no Bitrix24 REST call. Same assertions as the CI job, with retries on `/api/health` for a slow bootstrap. Linked from [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md#verifying-your-deployment).
+- `.env.example`: documented (commented-out) `NUXT_AUDIT_DIR` — the OAuth-only audit-log directory knob (`server/utils/audit-log.ts`, default `/data/audit/`) was readable in code but missing from the template, a drift caught by the deploy-path audit.
+
 ### Changed
 
 - **BREAKING (tools — hard cut)**: every Bitrix24-talking tool was renamed from the old `bitrix24_<verb>_<entity>` shape to a new `b24_<domain>(_<entity>)*_<action>` convention (issue #129). **Action is always the trailing token; all tokens are singular** — including before `_list` (the dropped plural variant was reconsidered before merge; singular-everywhere is one rule with no exceptions and no irregular-plural traps like `children` / `people` when CRM and other domains land). The `bx24mcp_submit_feedback` meta-tool keeps its prefix on purpose — it does not call Bitrix24, and the distinct prefix is the operator-visible signal that the tool stays inside the MCP server with no portal data leaving. Identity shape `b24_<domain>_me` (currently only `b24_user_me`) is an allowed shape where `me` covers both entity and action; the naming guard restricts `_me` to the `user` domain to keep the prefix from drifting onto other entities without a deliberate convention update.

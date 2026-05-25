@@ -193,6 +193,30 @@ curl http://localhost:3000/api/health
 
 No `NODE_ENV` export is needed here — `docker-compose.example.yml` defaults it (`${NODE_ENV:-production}`), unlike the production `docker-compose.yml` (see the env table † note). This verifies the image, not production serving — the real `docker-compose.yml` expects the external `proxy-net` network and nginx-proxy in front of it.
 
+## Verifying your deployment
+
+Once the container is up — locally via `docker-compose.example.yml` or in production behind nginx-proxy — run the bundled smoke check. It exercises the same contract the CI `docker-smoke` job pins on every PR, so a green run on the host means the deployed bundle matches what CI signed off on:
+
+```bash
+./scripts/verify-deployment.sh \
+  --url https://prod.example.com \
+  --token "$NUXT_MCP_AUTH_TOKEN"
+```
+
+What it asserts:
+
+- `/api/health` returns `200 {"status":"ok",...}` (retries until ready, default ≈ 60s).
+- `/mcp` **without** an `Authorization` header → `401`.
+- `/mcp` with a **wrong** Bearer → `401`.
+- `/mcp` with the **configured** Bearer → anything other than `401` / `403` / `503` (the MCP toolkit may answer `200` / `202` / `405` to a bare GET; what matters is that auth passed).
+
+What it does **not** do:
+
+- It makes **no Bitrix24 REST call** — safe to run against production. For a live tool call after this passes, use the canonical operator prompts in [`docs/MANUAL-TEST-PHRASES.md`](./MANUAL-TEST-PHRASES.md) through an MCP client (Claude Desktop via `mcp-remote`, MCP Inspector, etc.).
+- It does **not** verify the reverse-proxy config end-to-end beyond "TLS terminates and `/api/health` / `/mcp` reach the container". Header forwarding (`X-Forwarded-*`), `proxy_read_timeout` for long MCP responses, and TLS cert chain are out of scope here — see [`REVERSE-PROXY.md`](./REVERSE-PROXY.md).
+
+A failure exits non-zero on the first failed assertion and prints a hint to look at on the host. The most common one is `/mcp → 503`, which means `NUXT_MCP_AUTH_TOKEN` is unset or still the `replace-with-secure-token` placeholder — that 503 is by design (see [`server/middleware/mcp-auth.ts`](../server/middleware/mcp-auth.ts)).
+
 ## Monitoring & logs
 
 - **Health**: `/api/health` is unauthenticated and returns `{ status, timestamp }` (no `service` or version field — kept minimal so the probe is not a fingerprinting surface). Point an external monitor (UptimeRobot / Healthchecks.io) at `https://<PROD_HOST>/api/health` for liveness alerting; key your checks on `status: "ok"`, not on a service-name field.
