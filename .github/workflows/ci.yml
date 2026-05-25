@@ -161,3 +161,28 @@ jobs:
               exit 1
             fi
           fi
+
+  # Aggregate gate. The `main` branch protection rule requires a single
+  # status check named `ci` — this job is that gate. It depends on every
+  # other job in the workflow, runs even when an upstream job was skipped
+  # (commitlint / integration / scaffold-sync each skip on their own
+  # conditions), and fails iff ANY dependency ended in `failure` or
+  # `cancelled`. `success` and `skipped` both count as "did not block".
+  #
+  # When adding a new job above, add it to `needs:` here too — otherwise
+  # the gate will green-light a PR where the new job failed.
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    needs: [commitlint, lint, typecheck, test, integration, prepare-windows, build, scaffold-sync]
+    if: always()
+    steps:
+      - name: Verify no required job failed or was cancelled
+        env:
+          NEEDS: ${{ toJson(needs) }}
+        run: |
+          echo "$NEEDS"
+          if echo "$NEEDS" | grep -E '"result"[[:space:]]*:[[:space:]]*"(failure|cancelled)"' > /dev/null; then
+            echo "::error::At least one required job failed or was cancelled."
+            exit 1
+          fi
