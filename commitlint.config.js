@@ -39,6 +39,13 @@ export default {
         // `utils` scope matches the broad-scope convention used by the
         // rest of the enum (tools/client/auth/…).
         'utils',
+        // logger / telemetry — promoted out of `utils` because it's a
+        // first-class subsystem (SDK log sink + redactor + audit drain +
+        // upcoming telemetry surface). The exception to the "no
+        // submodule-level scopes" rule above is deliberate: log/telemetry
+        // changes are frequent and cross-cutting enough that they're
+        // easier to track under their own prefix.
+        'logger',
       ],
     ],
     'header-max-length': [2, 'always', 120],
