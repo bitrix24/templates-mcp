@@ -33,6 +33,7 @@ async function loadFresh(): Promise<typeof LoggerModule> {
 }
 
 const originalEnv = { ...process.env }
+let stderrSpy: ReturnType<typeof vi.spyOn>
 
 describe('useLogger level resolution', () => {
   beforeEach(() => {
@@ -45,10 +46,15 @@ describe('useLogger level resolution', () => {
     delete process.env.NUXT_LOG_LEVEL
     delete process.env.LOG_LEVEL
     delete process.env.NODE_ENV
+    // Capture the unrecognised-level warning so test output stays clean AND
+    // tests can assert call counts. The handler returns true to match the
+    // real `process.stderr.write` signature.
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
   })
 
   afterEach(() => {
     process.env = { ...originalEnv }
+    stderrSpy.mockRestore()
   })
 
   it('honours an explicit NUXT_LOG_LEVEL (case-insensitive)', async () => {
@@ -127,12 +133,74 @@ describe('useLogger level resolution', () => {
     expect(handlerLevels).toEqual([4]) // ERROR (NUXT_ wins)
   })
 
-  it('falls back to the NODE_ENV default on an unrecognised level', async () => {
+  it('falls back to the NODE_ENV default on an unrecognised level (and warns once)', async () => {
     process.env.NUXT_LOG_LEVEL = 'verbose'
     process.env.NODE_ENV = 'production'
     const { useLogger } = await loadFresh()
     useLogger()
     expect(handlerLevels).toEqual([1])
+
+    // The warning is observable, not silent — see #137. Pin the contract:
+    // var name, bad value, and effective fallback level all appear in the
+    // single stderr line.
+    expect(stderrSpy).toHaveBeenCalledTimes(1)
+    const msg = String(stderrSpy.mock.calls[0]![0])
+    expect(msg).toContain('NUXT_LOG_LEVEL')
+    expect(msg).toContain('verbose')
+    expect(msg).toContain('INFO')
+    expect(msg.endsWith('\n')).toBe(true)
+  })
+
+  it('warns about an unrecognised LOG_LEVEL fallback (names LOG_LEVEL, not NUXT_LOG_LEVEL)', async () => {
+    process.env.LOG_LEVEL = 'debgu'
+    process.env.NODE_ENV = 'development'
+    const { useLogger } = await loadFresh()
+    useLogger()
+    expect(handlerLevels).toEqual([0]) // dev DEBUG fallback
+
+    expect(stderrSpy).toHaveBeenCalledTimes(1)
+    const msg = String(stderrSpy.mock.calls[0]![0])
+    expect(msg).toContain('LOG_LEVEL=')
+    expect(msg).not.toContain('NUXT_LOG_LEVEL')
+    expect(msg).toContain('debgu')
+    expect(msg).toContain('DEBUG')
+  })
+
+  it('does not warn on recognised values (incl. the warn alias and padding)', async () => {
+    process.env.NUXT_LOG_LEVEL = '  Warn  '
+    const { useLogger } = await loadFresh()
+    useLogger()
+    expect(handlerLevels).toEqual([3])
+    expect(stderrSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not warn when neither env var is set (default path)', async () => {
+    process.env.NODE_ENV = 'production'
+    const { useLogger } = await loadFresh()
+    useLogger()
+    expect(handlerLevels).toEqual([1])
+    expect(stderrSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not warn for an empty / whitespace-only value (common .env template case)', async () => {
+    // `NUXT_LOG_LEVEL=` or `NUXT_LOG_LEVEL=   ` is set-but-blank — silent on
+    // purpose: an operator clearing the line shouldn't trigger a typo warning.
+    process.env.NUXT_LOG_LEVEL = '   '
+    process.env.NODE_ENV = 'production'
+    const { useLogger } = await loadFresh()
+    useLogger()
+    expect(handlerLevels).toEqual([1])
+    expect(stderrSpy).not.toHaveBeenCalled()
+  })
+
+  it('warns exactly once even across repeat useLogger() calls (singleton init)', async () => {
+    process.env.NUXT_LOG_LEVEL = 'infoo'
+    process.env.NODE_ENV = 'production'
+    const { useLogger } = await loadFresh()
+    useLogger()
+    useLogger()
+    useLogger()
+    expect(stderrSpy).toHaveBeenCalledTimes(1)
   })
 
   it('materialises the singleton once', async () => {

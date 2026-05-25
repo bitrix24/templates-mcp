@@ -59,11 +59,35 @@ const LEVEL_BY_NAME: Record<string, LogLevel> = {
  * back-compat fallback for older bundles / the README dry-run. An explicit,
  * recognised value always wins; otherwise we keep the historical default
  * (`DEBUG` in development, `INFO` elsewhere).
+ *
+ * If either env var is set to a NON-EMPTY but UNRECOGNISED value (a typo like
+ * `debgu`), emit a one-shot warning to **stderr** naming the bad value, the
+ * variable it came from, and the level actually used. Stderr (never stdout)
+ * because the stdio transport reserves stdout for JSON-RPC frames — a
+ * console.log here would corrupt the protocol stream. Fires once because
+ * `useLogger()` is a process-singleton (the resolver is called once at
+ * materialisation). Empty / whitespace-only values stay silent — those are
+ * common in `.env` templates and aren't worth a warning.
  */
 function resolveLevel(): LogLevel {
-  const configured = (process.env.NUXT_LOG_LEVEL ?? process.env.LOG_LEVEL ?? '').trim().toUpperCase()
+  const [rawValue, varName]
+    = process.env.NUXT_LOG_LEVEL !== undefined
+      ? [process.env.NUXT_LOG_LEVEL, 'NUXT_LOG_LEVEL']
+      : process.env.LOG_LEVEL !== undefined
+        ? [process.env.LOG_LEVEL, 'LOG_LEVEL']
+        : ['', null] as const
+  const configured = rawValue.trim().toUpperCase()
   if (configured && configured in LEVEL_BY_NAME) return LEVEL_BY_NAME[configured]!
-  return process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO
+
+  const fallback = process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO
+  if (configured && varName) {
+    const fallbackName = fallback === LogLevel.DEBUG ? 'DEBUG' : 'INFO'
+    process.stderr.write(
+      `[bx24-template-mcp] ${varName}=${JSON.stringify(rawValue)} not recognised; using ${fallbackName}. `
+      + `Valid: debug, info, notice, warning (alias warn), error, critical, alert, emergency.\n`,
+    )
+  }
+  return fallback
 }
 
 export function useLogger(): LoggerInterface {
