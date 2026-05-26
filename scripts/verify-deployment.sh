@@ -314,6 +314,111 @@ case "$STATUS" in
   *)           pass "/mcp with the configured Bearer → $STATUS (auth passed)" ;;
 esac
 
+# ─── 5. JSON-RPC initialize round-trip + tools/list (toolkit dispatcher) ───
+# Why this is here (issue #161): assertions 1-4 above guard the HTTP-level
+# shape of /mcp but NEVER touch the @nuxtjs/mcp-toolkit dispatcher.
+# A middleware refactor that throws at the wrong h3 layer (e.g. the error
+# lands in Nitro's uncaught-error handler and becomes a 500 instead of a
+# JSON-RPC error envelope) would ship green under assertions 1-4 alone.
+# This block POSTs a real JSON-RPC `initialize` and asserts the server
+# identity from the wire response, then issues a follow-up `tools/list`
+# to pin at least one tool name in the catalogue.
+#
+# Transport: @nuxtjs/mcp-toolkit's node provider defaults to STATELESS
+# mode (`sessionsEnabled: false` in node_modules/@nuxtjs/mcp-toolkit/
+# dist/runtime/server/mcp/providers/node.js) — it constructs the
+# SDK transport with `sessionIdGenerator: undefined`, which makes the
+# SDK skip session-id emission AND skip the "session required" check
+# on subsequent requests (webStandardStreamableHTTPServerTransport.js
+# line 585: `validateSession` returns undefined immediately when the
+# generator is unset). So `tools/list` here is just a second JSON-RPC
+# POST with no `Mcp-Session-Id` header — the toolkit is happy.
+#
+# Accept header MUST advertise both `application/json` and
+# `text/event-stream`; the SDK picks one per request. In stateless
+# mode it returns single `application/json` envelopes — we still
+# tolerate a leading `data: ` prefix in case the toolkit's default
+# ever flips back to SSE framing.
+#
+# Skipped automatically if `jq` is not on PATH: the JSON-RPC predicates
+# below need real parsing (substring matching against streaming-HTTP
+# bodies would be too brittle to trust as a regression gate).
+if command -v jq >/dev/null 2>&1; then
+  INIT_BODY='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"verify-deployment.sh","version":"1.0"}}}'
+
+  if [ "$INSECURE" = "yes" ]; then
+    INIT_RAW=$(curl -sS -k --max-time "$TIMEOUT" \
+      -X POST "$URL/mcp" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -H "Accept: application/json, text/event-stream" \
+      -w '\n%{http_code}' \
+      -d "$INIT_BODY" 2>/dev/null || echo $'\nerror')
+  else
+    INIT_RAW=$(curl -sS    --max-time "$TIMEOUT" \
+      -X POST "$URL/mcp" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -H "Accept: application/json, text/event-stream" \
+      -w '\n%{http_code}' \
+      -d "$INIT_BODY" 2>/dev/null || echo $'\nerror')
+  fi
+  INIT_STATUS=$(printf '%s' "$INIT_RAW" | tail -n1)
+  INIT_BODY_RESP=$(printf '%s' "$INIT_RAW" | sed '$d')
+
+  # Strip optional SSE `data: ` prefix: tolerate both transport shapes.
+  INIT_JSON=$(printf '%s' "$INIT_BODY_RESP" | sed -n 's/^data: //p' | head -1)
+  [ -z "$INIT_JSON" ] && INIT_JSON="$INIT_BODY_RESP"
+
+  if [ "$INIT_STATUS" != "200" ]; then
+    fail "JSON-RPC initialize → HTTP $INIT_STATUS (expected 200; body: $INIT_BODY_RESP)"
+  elif printf '%s' "$INIT_JSON" | jq -e '
+        .jsonrpc == "2.0"
+        and .id == 1
+        and (.result.serverInfo.name == "bx24-template-mcp")
+        and (.result.protocolVersion | type == "string")
+        and (.result.capabilities | has("tools"))
+      ' >/dev/null 2>&1; then
+    pass "JSON-RPC initialize → envelope OK; serverInfo.name=bx24-template-mcp; capabilities.tools advertised"
+  else
+    fail "JSON-RPC initialize → envelope / serverInfo mismatch — got: $INIT_JSON"
+  fi
+
+  # tools/list — no `Mcp-Session-Id` header: the toolkit's stateless
+  # default does not issue one (see preamble above). Pin `b24_user_me`
+  # — the user-identity tool, registered in
+  # server/mcp/tools/users/current-user.ts. Stable choice: it's the
+  # smallest tool with no Bitrix24 REST dependency at discovery time,
+  # and renaming it would itself be a deliberate API break that should
+  # be caught by this assertion.
+  TOOLS_BODY='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+  if [ "$INSECURE" = "yes" ]; then
+    TOOLS_RAW=$(curl -sS -k --max-time "$TIMEOUT" \
+      -X POST "$URL/mcp" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -H "Accept: application/json, text/event-stream" \
+      -d "$TOOLS_BODY" 2>/dev/null || echo "")
+  else
+    TOOLS_RAW=$(curl -sS    --max-time "$TIMEOUT" \
+      -X POST "$URL/mcp" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -H "Accept: application/json, text/event-stream" \
+      -d "$TOOLS_BODY" 2>/dev/null || echo "")
+  fi
+  TOOLS_JSON=$(printf '%s' "$TOOLS_RAW" | sed -n 's/^data: //p' | head -1)
+  [ -z "$TOOLS_JSON" ] && TOOLS_JSON="$TOOLS_RAW"
+
+  if printf '%s' "$TOOLS_JSON" | jq -e '.result.tools | map(.name) | index("b24_user_me")' >/dev/null 2>&1; then
+    pass "JSON-RPC tools/list → catalogue contains b24_user_me"
+  else
+    fail "JSON-RPC tools/list → b24_user_me missing from catalogue (tool registration regression?) — got: $TOOLS_JSON"
+  fi
+else
+  info "JSON-RPC initialize + tools/list checks skipped — \`jq\` not on PATH. Install jq to enable assertion 5."
+fi
+
 echo
 if [ "$FAILED" -eq 0 ]; then
   printf "%sAll checks passed.%s\n" "$GREEN" "$RESET"
