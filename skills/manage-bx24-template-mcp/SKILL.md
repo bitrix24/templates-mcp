@@ -1,6 +1,6 @@
 # bx24-template-mcp — Agent Skill
 
-`Last reviewed: 2026-05-25`
+`Last reviewed: 2026-05-26`
 
 You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. Read this before making changes.
 
@@ -182,4 +182,4 @@ Use the typed helpers from `server/utils/sdk-helpers.ts`: `callV2<T>(b24, method
 - [`feedback.md`](./feedback.md) — agent feedback prompts and policy.
 - `docs/EVALS.md`, `docs/FEEDBACK.md`, `docs/MANUAL-TEST-PHRASES.md` at the project root — operator-facing guides.
 
-Operator docs for deploy, on-call, security, and architecture now live at [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md), [`docs/RUNBOOK.md`](../../docs/RUNBOOK.md), [`docs/SECURITY.md`](../../docs/SECURITY.md), and [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md). The remaining unwritten slots tracked in [`docs/README.md`](../../docs/README.md) are `TROUBLESHOOTING.md` (dev/laptop incident slice) and a dedicated `TESTING.md`; if a session needs one of those, open an issue rather than improvising local docs that drift from `PROJECT-BRIEF.md`.
+Operator docs for deploy, on-call, security, and architecture now live at [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md), [`docs/RUNBOOK.md`](../../docs/RUNBOOK.md), [`docs/SECURITY.md`](../../docs/SECURITY.md), and [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md). For post-deploy verification — health, Bearer-auth contract, placeholder-token gate — point the operator (or run yourself if you have shell access) at [`scripts/verify-deployment.sh`](../../scripts/verify-deployment.sh); see [`docs/DEPLOYMENT.md#verifying-your-deployment`](../../docs/DEPLOYMENT.md#verifying-your-deployment). The remaining unwritten slots tracked in [`docs/README.md`](../../docs/README.md) are `TROUBLESHOOTING.md` (dev/laptop incident slice) and a dedicated `TESTING.md`; if a session needs one of those, open an issue rather than improvising local docs that drift from `PROJECT-BRIEF.md`.

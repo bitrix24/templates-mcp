@@ -185,6 +185,15 @@ jobs:
     # buildx image layers + two container boots + health waits + cleanup.
     # Steady-state with a populated `Build`-cache run is sub-2m.
     timeout-minutes: 25
+    # Operator escape hatch: PRs labelled `ci:skip-docker-smoke` skip this
+    # job. The aggregate `ci` gate counts `skipped` as non-blocking
+    # (success-or-skipped → "did not block"), so a labelled PR can merge
+    # without exercising the Docker bring-up. Use ONLY when docker-smoke
+    # itself is the confirmed flaky failure (e.g. cold GHA cache slot,
+    # buildx storage hiccup) — NOT to bypass a real regression that the
+    # job correctly flagged. The label appears on the PR page so the
+    # bypass is visible at merge review.
+    if: ${{ github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'ci:skip-docker-smoke') }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
@@ -206,8 +215,12 @@ jobs:
         run: |
           set -euo pipefail
           TOKEN="$(openssl rand -hex 32)"
-          # Mask BEFORE writing to outputs so subsequent `${{ steps.start.outputs.token }}`
-          # expansions in log lines render as ***.
+          # Register the mask before writing to outputs so any later log
+          # line that echoes the token renders as `***`. Note: GHA masking
+          # applies to log RENDERING — it does not strip the value from
+          # the runner's internal environment-file snapshot or from a
+          # third-party log sink ingesting GHA output. Treat the mask as
+          # defence-in-depth, not a strong secrecy guarantee.
           echo "::add-mask::$TOKEN"
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
           # Non-resolving placeholder. The B24Hook is materialised lazily on
@@ -228,7 +241,10 @@ jobs:
         run: |
           set -euo pipefail
           UID_IN=$(docker exec bx24-smoke id -u)
-          if [ "$UID_IN" = "0" ]; then
+          # Arithmetic compare (`-eq 0` not `= "0"`) so `id` variants that
+          # emit `"00"`, `" 0"`, or numeric-with-trailing-newline can't
+          # squeak past the string-equality check.
+          if [ "$UID_IN" -eq 0 ]; then
             echo "::error::Container is running as root (uid=0). Dockerfile USER directive regressed."
             exit 1
           fi
@@ -258,6 +274,13 @@ jobs:
         # socket past container teardown).
         run: |
           set -euo pipefail
+          # NITRO_PORT=3000 inside the container, published as 3001 on
+          # the host. If the Dockerfile ever changes the CMD's listen port
+          # (or `EXPOSE` drifts), this mapping silently maps to a closed
+          # port on the right-hand side; the health-wait below will then
+          # timeout with no clear signal. The Dockerfile pins 3000 — keep
+          # this `-e NITRO_PORT=3000 -p 3001:3000` shape in sync if it
+          # ever changes.
           docker run -d --name bx24-smoke-placeholder \
             -e NUXT_BITRIX24_WEBHOOK_URL=https://example.invalid/rest/1/x/ \
             -e NUXT_MCP_AUTH_TOKEN=replace-with-secure-token \

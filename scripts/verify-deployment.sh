@@ -64,7 +64,10 @@ Required:
                            Local docker-compose-example:  http://localhost:3000
                            Production behind nginx-proxy: https://prod.example.com
 
-Token (pick ONE — or omit to pull from \$NUXT_MCP_AUTH_TOKEN):
+Token (pick ONE — or omit to pull from \$NUXT_MCP_AUTH_TOKEN).
+Tokens are expected to be ASCII (e.g. \`openssl rand -hex 32\` output).
+Multi-byte values would skew the length-matched wrong-Bearer test in
+assertion 3 and weaken the regression guard there:
   --token TOKEN          Pass the value directly. Visible to other local
                          users via \`ps\` for the script's runtime — prefer
                          --token-stdin or the env var on shared hosts.
@@ -112,7 +115,12 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --url)             require_arg "$1" "$#"; URL="$2"; shift 2 ;;
     --token)           require_arg "$1" "$#"; TOKEN="$2"; shift 2 ;;
-    --token-stdin)     IFS= read -r TOKEN || true; shift ;;
+    --token-stdin)     IFS= read -r TOKEN || true
+                       if [ -z "$TOKEN" ]; then
+                         echo "--token-stdin: stdin was empty (no token to read)" >&2
+                         usage
+                       fi
+                       shift ;;
     --timeout)         require_arg "$1" "$#"; TIMEOUT="$2"; shift 2 ;;
     --health-retries)  require_arg "$1" "$#"; HEALTH_RETRIES="$2"; shift 2 ;;
     --health-interval) require_arg "$1" "$#"; HEALTH_INTERVAL="$2"; shift 2 ;;
@@ -159,26 +167,31 @@ info() { printf "%s•%s %s\n"      "$DIM"   "$RESET" "$1"; }
 
 FAILED=0
 
-# TLS knob assembled once. Default: verify. `--insecure` switches to `-k`
-# and is announced loudly so operators see in the log what they opted into.
-CURL_TLS_ARGS=()
-if [ "$INSECURE" = "yes" ]; then
-  CURL_TLS_ARGS=(-k)
-fi
-
-# Single curl wrapper — emits just the HTTP status code, never the body.
-# Bodies could leak version info or the MCP toolkit's tool catalogue; we
-# only ever assert on the status here. NOTE: under `set -e`, command
-# substitution in an assignment does NOT propagate the subshell's non-zero
-# exit (POSIX). On a connection failure curl prints `000` to stdout and
-# exits 7, so the caller sees STATUS=000 with rc=0; the per-case branches
-# below handle 000 explicitly. This is intentional — propagating curl's
-# rc would abort before the operator-facing hint can run.
+# Single curl wrapper — captures only the HTTP status code, never the body
+# (bodies could leak the MCP toolkit's tool catalogue or version data).
+#
+# NOTE on `set -e` semantics: command substitution in an assignment does
+# NOT propagate the subshell's non-zero exit (POSIX). On a connection
+# failure curl prints `000` to stdout and exits 7, so callers see
+# STATUS=000 with rc=0; the per-case branches below handle 000 explicitly.
+# This is intentional — propagating curl's rc here would abort the script
+# before the operator-facing hint can run. (Callers in sections 2-4 ALSO
+# append `|| echo "error"` as belt-and-braces, since they're tail calls
+# not health-loop iterations and want to keep failing assertions running.)
 status_of() {
   # Args: METHOD URL [extra curl args...]
   local method="$1" target="$2"
   shift 2
-  curl -sS "${CURL_TLS_ARGS[@]}" -o /dev/null -w '%{http_code}' --max-time "$TIMEOUT" -X "$method" "$target" "$@"
+  # `--insecure` flag is gated by `$INSECURE` (set by the CLI flag). Using
+  # a wrapper function rather than a bash array sidesteps the bash 3.2
+  # "unbound variable" crash on `"${empty_array[@]}"` under `set -u` —
+  # macOS ships /bin/bash 3.2 by default, and the script's shebang is
+  # `#!/usr/bin/env bash`, so it MUST stay portable to that interpreter.
+  if [ "$INSECURE" = "yes" ]; then
+    curl -sS -k -o /dev/null -w '%{http_code}' --max-time "$TIMEOUT" -X "$method" "$target" "$@"
+  else
+    curl -sS    -o /dev/null -w '%{http_code}' --max-time "$TIMEOUT" -X "$method" "$target" "$@"
+  fi
 }
 
 info "Target : $URL  (timeout ${TIMEOUT}s, health retries ${HEALTH_RETRIES}×${HEALTH_INTERVAL}s)"
@@ -225,28 +238,44 @@ else
   exit 1
 fi
 
-# Body shape — `jq -e` when available pins the exact "status":"ok" predicate
-# so a regression to `{"status":"ok-but-actually-degraded"}` would surface.
-# Falls back to a substring match when jq isn't on PATH (BusyBox / minimal
-# alpine operator hosts).
-BODY=$(curl -sS "${CURL_TLS_ARGS[@]}" --max-time "$TIMEOUT" "$URL/api/health" || true)
-if command -v jq >/dev/null 2>&1; then
-  if printf '%s' "$BODY" | jq -e '.status == "ok"' >/dev/null 2>&1; then
-    pass '/api/health body: jq matched .status == "ok"'
+# Body shape — `jq -e` when available pins the EXACT contract:
+#   .status == "ok" AND the body has exactly {status, timestamp} keys, no
+#   extras. Catches a regression to {"status":"ok","service":"bx24-mcp"}
+#   that would re-introduce the fingerprintable surface removed for #131
+#   (and pinned by tests/unit/api/health.test.ts).
+# Falls back to a whitespace-tolerant regex when jq isn't on PATH
+# (BusyBox / minimal alpine operator hosts) — note that the fallback only
+# matches the predicate, not the shape; install jq for the full guarantee.
+BODY=$(
+  if [ "$INSECURE" = "yes" ]; then
+    curl -sS -k --max-time "$TIMEOUT" "$URL/api/health" || true
   else
-    fail "/api/health body did not match .status == \"ok\" — got: $BODY"
+    curl -sS    --max-time "$TIMEOUT" "$URL/api/health" || true
+  fi
+)
+if command -v jq >/dev/null 2>&1; then
+  if printf '%s' "$BODY" | jq -e '(.status == "ok") and ((. | keys | sort) == ["status","timestamp"])' >/dev/null 2>&1; then
+    pass '/api/health body: jq matched .status == "ok" with shape {status, timestamp} only'
+  else
+    fail "/api/health body failed strict check (status=\"ok\" AND keys={status,timestamp}) — got: $BODY"
   fi
 else
-  if printf '%s' "$BODY" | grep -q '"status":"ok"'; then
-    pass '/api/health body contains "status":"ok" (substring; install jq for strict equality)'
+  # Whitespace-tolerant: matches both `"status":"ok"` (compact) and
+  # `"status": "ok"` (formatted). Server uses compact today, but the
+  # fallback should not break if a future serializer adds spaces.
+  if printf '%s' "$BODY" | grep -qE '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+    pass '/api/health body matches "status":"ok" predicate (substring; install jq for strict {status,timestamp} shape check)'
   else
-    fail "/api/health body did not contain '\"status\":\"ok\"' — got: $BODY"
+    fail "/api/health body did not match the \"status\":\"ok\" predicate — got: $BODY"
   fi
 fi
 
 # ─── 2. /mcp without Authorization → 401 ───────────────────────────────────
 # Pinned by server/middleware/mcp-auth.ts (h3 throws createError 401).
-STATUS=$(status_of GET "$URL/mcp")
+# `|| echo "error"` so a curl-level failure doesn't abort the rest of the
+# checks under `set -e` — the per-case branches surface the curl failure
+# as a fail() and we still get to assertion 3 + 4.
+STATUS=$(status_of GET "$URL/mcp" || echo "error")
 case "$STATUS" in
   401) pass "/mcp without Authorization → 401 (auth middleware engaged)" ;;
   503) fail "/mcp returned 503 — NUXT_MCP_AUTH_TOKEN is unset or still 'replace-with-secure-token'; the host is not actually configured" ;;
@@ -254,12 +283,19 @@ case "$STATUS" in
 esac
 
 # ─── 3. /mcp with a wrong Bearer → 401 ─────────────────────────────────────
-# Use a length-matched wrong value: a regression that compares only a
-# length prefix (or any byte-bounded slice) of the token would still
-# produce 401 against `not-the-token`, hiding the bug. Matching length
-# forces the comparison routine to look at content.
+# Length-matched wrong value: `server/middleware/mcp-auth.ts:42` short-
+# circuits to `return false` when the byte lengths differ, BEFORE calling
+# `cryptoTimingSafeEqual`. A `not-the-token` value would therefore reject
+# via the length short-circuit and never exercise the real comparator.
+# Matching the token's length forces the path past the short-circuit so
+# the timing-safe content comparison is the one that produces 401 — that's
+# the path operators actually depend on at runtime.
+#
+# Note: `${#TOKEN}` counts characters; `openssl rand -hex` tokens are pure
+# ASCII so character count equals byte count. Documented constraint in
+# usage().
 WRONG="$(printf '%*s' "${#TOKEN}" '' | tr ' ' 'x')"
-STATUS=$(status_of GET "$URL/mcp" -H "Authorization: Bearer $WRONG")
+STATUS=$(status_of GET "$URL/mcp" -H "Authorization: Bearer $WRONG" || echo "error")
 case "$STATUS" in
   401) pass "/mcp with wrong Bearer (length-matched) → 401" ;;
   *)   fail "/mcp with wrong Bearer → expected 401, got $STATUS (see server/middleware/mcp-auth.ts \`timingSafeEqual\`)" ;;
@@ -270,12 +306,12 @@ esac
 # 405, etc. depending on what the MCP toolkit's handler returns to a non-
 # JSON-RPC method. What matters here is that auth passed — i.e. NOT 401 / 403,
 # and NOT 503 (which would mean the token equals the placeholder).
-STATUS=$(status_of GET "$URL/mcp" -H "Authorization: Bearer $TOKEN")
+STATUS=$(status_of GET "$URL/mcp" -H "Authorization: Bearer $TOKEN" || echo "error")
 case "$STATUS" in
-  401|403) fail "/mcp with the configured Bearer → $STATUS (token mismatch — check the value on the host vs the one passed to this script)" ;;
-  503)     fail "/mcp with the configured Bearer → 503 (the host is treating the token as the placeholder — re-check NUXT_MCP_AUTH_TOKEN on the host)" ;;
-  000)     fail "/mcp with the configured Bearer → curl could not connect (TLS handshake / DNS / firewall)" ;;
-  *)       pass "/mcp with the configured Bearer → $STATUS (auth passed)" ;;
+  401|403)     fail "/mcp with the configured Bearer → $STATUS (token mismatch — check the value on the host vs the one passed to this script)" ;;
+  503)         fail "/mcp with the configured Bearer → 503 (the host is treating the token as the placeholder — re-check NUXT_MCP_AUTH_TOKEN on the host)" ;;
+  000|error)   fail "/mcp with the configured Bearer → curl could not connect (TLS handshake / DNS / firewall)" ;;
+  *)           pass "/mcp with the configured Bearer → $STATUS (auth passed)" ;;
 esac
 
 echo
