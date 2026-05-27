@@ -146,6 +146,22 @@ fi
 TOKEN="${TOKEN#"${TOKEN%%[![:space:]]*}"}"
 TOKEN="${TOKEN%"${TOKEN##*[![:space:]]}"}"
 
+# Reject embedded CR/LF in the body of the token after the strip above.
+# The strip only handles leading/trailing whitespace; a token like
+# `abc\r\nX-Injected: yes` would otherwise reach curl's `-H "Authorization:
+# Bearer $TOKEN"` and split into two headers on some curl versions —
+# header injection by way of a corrupted paste (e.g. a chat client that
+# line-wraps the secret). Threat actor is the operator themselves, so
+# severity is low, but the failure mode is silent and surprising.
+case "$TOKEN" in
+  *$'\r'*|*$'\n'*)
+    echo "Error: token contains an embedded newline (CR or LF) after stripping surrounding whitespace." >&2
+    echo "       The most likely cause is a chat/email client that line-wrapped the value during copy." >&2
+    echo "       Re-paste the token as a single unbroken line, or use --token-stdin with a single-line file." >&2
+    exit 64
+    ;;
+esac
+
 [ -n "$URL" ]   || { echo "Missing --url"   >&2; usage; }
 [ -n "$TOKEN" ] || { echo "Missing token (pass --token, --token-stdin, or set NUXT_MCP_AUTH_TOKEN)" >&2; usage; }
 
