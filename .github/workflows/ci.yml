@@ -33,6 +33,22 @@ jobs:
       - name: Lint commit messages
         run: pnpm exec commitlint --from=${{ github.event.pull_request.base.sha }} --to=${{ github.event.pull_request.head.sha }}
 
+  # Shell linter for `scripts/*.sh`. Catches the class of bugs a syntax-only
+  # `bash -n` step won't (unquoted expansions where word-splitting matters,
+  # pipe-buffering surprises, SC2155 declare-and-assign, missing `--`
+  # separators, etc.). Runs at the default severity baseline — the only file
+  # in scope today (`verify-deployment.sh`, ~430 lines) is clean against it,
+  # so any new finding is a real regression rather than legacy noise. `-x`
+  # follows sourced files (no-op today; future-proof). `ubuntu-latest` ships
+  # shellcheck ≥ 0.7 pre-installed, no apt-get.
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: ShellCheck scripts/*.sh
+        run: shellcheck -x scripts/*.sh
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -338,7 +354,7 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-latest
-    needs: [commitlint, lint, typecheck, test, integration, prepare-windows, build, scaffold-sync, docker-smoke]
+    needs: [commitlint, shellcheck, lint, typecheck, test, integration, prepare-windows, build, scaffold-sync, docker-smoke]
     if: always()
     steps:
       - name: Verify no required job failed or was cancelled
