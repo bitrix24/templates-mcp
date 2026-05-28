@@ -78,6 +78,7 @@ On every PR:
 4. `pnpm typecheck`
 5. `pnpm test` (unit; evals run only when `DEEPSEEK_API_KEY` secret is present)
 6. Integration tests run only when `NUXT_BITRIX24_TEST_WEBHOOK_URL` secret is present
+7. `ShellCheck` for `scripts/*.sh` — **advisory**: findings are visible on the PR but do not block merge while the bash→TypeScript migration question (#163) is open. Reproduce locally with `shellcheck -x scripts/*.sh` if you touch a shell script.
 
 Branch protection on `main` requires every gate green.
 

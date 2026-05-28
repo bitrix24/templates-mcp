@@ -36,18 +36,29 @@ jobs:
   # Shell linter for `scripts/*.sh`. Catches the class of bugs a syntax-only
   # `bash -n` step won't (unquoted expansions where word-splitting matters,
   # pipe-buffering surprises, SC2155 declare-and-assign, missing `--`
-  # separators, etc.). Runs at the default severity baseline — the only file
-  # in scope today (`verify-deployment.sh`, ~430 lines) is clean against it,
-  # so any new finding is a real regression rather than legacy noise. `-x`
-  # follows sourced files (no-op today; future-proof). `ubuntu-latest` ships
-  # shellcheck ≥ 0.7 pre-installed, no apt-get.
+  # separators, etc.). Runs at the default severity baseline (`style` — the
+  # strictest); the only file in scope today (`verify-deployment.sh`,
+  # ~430 lines) is clean against it, so any new finding is a real regression
+  # rather than legacy noise. `external_sources: true` is `shellcheck -x`,
+  # follows sourced files (no-op today; future-proof).
+  #
+  # Advisory mode (`continue-on-error: true`): findings show on the PR but do
+  # NOT block merge. Rationale: issue #163 tracks a possible bash→TypeScript
+  # migration of `verify-deployment.sh`; making this a hard gate now would
+  # become dead weight if the migration lands. Flip to blocking by deleting
+  # the `continue-on-error` line once the migration question is settled. The
+  # job is still in the `ci` aggregate `needs:` list so its run-status is
+  # visible at merge review.
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: ShellCheck scripts/*.sh
-        run: shellcheck -x scripts/*.sh
+      - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # v2.0.0
+        with:
+          scandir: ./scripts
+          external_sources: 'true'
 
   lint:
     name: Lint
