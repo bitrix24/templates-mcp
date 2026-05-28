@@ -73,6 +73,50 @@ jobs:
           scandir: ./scripts
           external_sources: 'true'
 
+  # Static analysers for the workflow files themselves. Advisory mode while
+  # the first runs settle and findings are triaged — the existing `lint` job
+  # below has a narrow regex guard ("Guard against expression-injection")
+  # that only catches `${{ github.event.*.(title|body|message) }}` inlined
+  # in `run:`. These two analysers close the class:
+  #   - actionlint: workflow syntax, expression validation, permissions
+  #     auditing, deprecated/mutable `uses:` refs, shellcheck integration.
+  #   - zizmor: security-focused — template injection across all event
+  #     paths and `vars.*` / `secrets.*`, artifact poisoning, dangerous
+  #     triggers, excessive permissions, secrets exposure.
+  # See #175. Acceptance: once both run clean for ~1 release cycle, flip
+  # `continue-on-error: false` and remove the regex guard in the `lint` job
+  # (it becomes a strict subset of what these two cover).
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install and run actionlint
+        env:
+          # Pin tool version. Bootstrap supply-chain link:
+          # raw.githubusercontent.com/rhysd/actionlint at a tagged commit
+          # serves the downloader, which fetches the same project's
+          # release tarball. Same trust boundary as running actionlint at
+          # all — not widening the threat model, just documenting it.
+          # The download script verifies the release artifact's SHA-256
+          # against the values it carries inline (`download-actionlint.bash`).
+          ACTIONLINT_VERSION: "1.6.24"
+        run: |
+          bash <(curl -fsSL "https://raw.githubusercontent.com/rhysd/actionlint/v${ACTIONLINT_VERSION}/scripts/download-actionlint.bash") "$ACTIONLINT_VERSION"
+          ./actionlint -color
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      # zizmor reads workflow files from the checkout only.
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: zizmorcore/zizmor-action@e639db99335bc9038abc0e066dfcd72e23d26fb4 # v0.3.0
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -107,9 +151,11 @@ jobs:
         # rule can describe itself without tripping itself.
         #
         # Known blind spot: multi-line `run: |` blocks where the
-        # interpolation lives on a later line escape this regex. A future
-        # actionlint/zizmor gate (separate follow-up) would close that
-        # gap; this guard is "good fence, cheap", not exhaustive.
+        # interpolation lives on a later line escape this regex; same for
+        # `${{ vars.* }}` and `${{ secrets.* }}` inlined in scripts. The
+        # `actionlint` and `zizmor` jobs above (added by #175) close that
+        # gap. Once they flip from advisory to blocking, delete this
+        # guard — it becomes a strict subset of what they cover.
         run: |
           pattern='run:.*\$\{\{[^}]*github\.event\.[^}]*\.(title|body|message)[^}]*\}\}'
           hits=$(grep -rnE "$pattern" .github/workflows/ | grep -vE ':[[:space:]]*#' || true)
@@ -403,7 +449,7 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-latest
-    needs: [commitlint, shellcheck, lint, typecheck, test, integration, prepare-windows, build, scaffold-sync, docker-smoke]
+    needs: [commitlint, shellcheck, actionlint, zizmor, lint, typecheck, test, integration, prepare-windows, build, scaffold-sync, docker-smoke]
     if: always()
     steps:
       - name: Verify no required job failed or was cancelled
