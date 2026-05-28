@@ -204,6 +204,19 @@ jobs:
               echo "No previous image recorded — manual rollback required." >&2
               exit 1
             fi
+            # `rollback.env` lives on the production host filesystem. The
+            # GitHub-Actions threat model does not cover a local actor with
+            # write access to `$DEPLOY_PATH` between deploy and rollback —
+            # such an actor could swap `previous=` for an attacker-chosen
+            # image ref. Restrict to the alphabet of a legal Docker
+            # reference (registry/repo[:tag][@sha256:digest]) so neither
+            # `docker pull` nor `BX24_IMAGE=…` ever sees shell
+            # metacharacters even if the file is tampered with.
+            if ! printf '%s' "$PREV" | grep -qE '^[A-Za-z0-9._/:@-]+$'; then
+              echo "Unexpected characters in recorded previous image — aborting rollback." >&2
+              echo "Got: $PREV" >&2
+              exit 1
+            fi
             echo "Rolling back to $PREV"
             docker pull "$PREV"
             # docker-compose.yml uses image: ${BX24_IMAGE:-…:latest}, so
