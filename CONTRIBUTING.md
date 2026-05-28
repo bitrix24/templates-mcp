@@ -80,6 +80,8 @@ On every PR:
 6. Integration tests run only when `NUXT_BITRIX24_TEST_WEBHOOK_URL` secret is present
 7. `ShellCheck` for `scripts/*.sh` — **advisory**: findings are visible on the PR but do not block merge while the bash→TypeScript migration question (#163) is open. Reproduce locally with `shellcheck -x scripts/*.sh` if you touch a shell script.
 
+> **CI authoring rule (closes #171):** Never interpolate `${{ … }}` directly inside a `run:` block — GitHub substitutes the expression into the script source before the shell parses it, so a malicious PR title or comment can execute commands on the runner. Bind the value through `env:` and reference it with `$VAR` in the script body (see the `commitlint` job for the canonical shape). The `lint` job has a regex guard that fails the build if a user-controllable event field (title / body / message) is reintroduced inline.
+
 Branch protection on `main` requires every gate green.
 
 ## Tests

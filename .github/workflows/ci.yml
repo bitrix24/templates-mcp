@@ -28,12 +28,23 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Both commitlint steps below pass the GitHub-event payload through
+      # `env:` rather than interpolating `${{ … }}` directly inside `run:`.
+      # That neutralises the script-injection class (see #171 and GitHub's
+      # security-hardening guide). SHA values can't carry shell
+      # metacharacters today, but the env-shim keeps the pattern uniform —
+      # the next contributor copies the right shape. The `lint` job has a
+      # regex guard that fails the build if a user-controllable event field
+      # (title/body/message) is re-introduced inline.
       - name: Lint PR title
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: echo "$PR_TITLE" | pnpm exec commitlint
       - name: Lint commit messages
-        run: pnpm exec commitlint --from=${{ github.event.pull_request.base.sha }} --to=${{ github.event.pull_request.head.sha }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: pnpm exec commitlint --from="$BASE_SHA" --to="$HEAD_SHA"
 
   # Shell linter for `scripts/*.sh`. Catches the class of bugs a syntax-only
   # `bash -n` step won't (unquoted expansions where word-splitting matters,
@@ -83,6 +94,31 @@ jobs:
             echo "If not, revert your change — widening invalidates the unit-suite isolation contract (see #144)."
             exit 1
           fi
+      - name: Guard against expression-injection in `run:` blocks (security #171)
+        # Catches the canonical single-line script-injection pattern: a
+        # `run` step that interpolates a user-controllable event field
+        # (title / body / message) directly inline. Those fields belong in
+        # `env:` (see the commitlint job above and CONTRIBUTING.md
+        # "CI authoring rule"). Hex-only fields (`.sha`, `.ref`, `.actor`)
+        # can't carry shell metacharacters and are not flagged.
+        #
+        # Self-match guard: the grep pipeline below filters out comment
+        # lines (lines whose first non-whitespace character is `#`) so the
+        # rule can describe itself without tripping itself.
+        #
+        # Known blind spot: multi-line `run: |` blocks where the
+        # interpolation lives on a later line escape this regex. A future
+        # actionlint/zizmor gate (separate follow-up) would close that
+        # gap; this guard is "good fence, cheap", not exhaustive.
+        run: |
+          pattern='run:.*\$\{\{[^}]*github\.event\.[^}]*\.(title|body|message)[^}]*\}\}'
+          hits=$(grep -rnE "$pattern" .github/workflows/ | grep -vE ':[[:space:]]*#' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::Direct interpolation of a user-controllable GitHub-event field into a run: block detected. Bind it through env: instead (see #171 and CONTRIBUTING.md 'CI authoring rule')."
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK: no script-injection patterns in run: blocks."
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
