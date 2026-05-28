@@ -1,6 +1,6 @@
 # Agent feedback guide
 
-`Last reviewed: 2026-05-16`
+`Last reviewed: 2026-05-28`
 
 This MCP exposes a meta-tool `bx24mcp_submit_feedback`. Use it to report **your own** experience using or developing this server. Each call creates a GitHub issue in `bitrix24/templates-mcp` with the `agent-feedback` label.
 

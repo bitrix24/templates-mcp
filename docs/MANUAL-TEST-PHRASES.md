@@ -1,6 +1,6 @@
 # Manual test phrases for the Bitrix24 MCP
 
-`Last reviewed: 2026-05-24`
+`Last reviewed: 2026-05-28`
 
 This is the operator's natural-language test pack for the MCP. Paste each phrase into Claude (or any MCP-connected LLM) with the connector enabled and observe:
 

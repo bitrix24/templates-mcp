@@ -1,6 +1,6 @@
 # Adding a new MCP tool
 
-`Last reviewed: 2026-05-24`
+`Last reviewed: 2026-05-28`
 
 Practical template for an AI agent (or human) adding a Bitrix24 MCP tool to this project. Read [`SKILL.md`](./SKILL.md) first — this doc fills in the concrete shape that the ground rules and persona walk describe.
 
