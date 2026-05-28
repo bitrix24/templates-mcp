@@ -162,6 +162,12 @@ jobs:
               CURRENT_DIGEST=$(docker image inspect --format='{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$IMAGE_ID" 2>/dev/null || true)
             fi
             echo "previous=$CURRENT_DIGEST" > rollback.env
+            # Restrict file to deploy-user only (root cause: write-race
+            # window between deploy and rollback). The regex check on the
+            # read side is defence-in-depth; this `chmod` is the actual
+            # fence — a co-tenant process on the prod host can no longer
+            # ghostwrite `previous=` without owning the deploy UID.
+            chmod 0600 rollback.env
             docker compose pull --quiet
             docker compose up -d --remove-orphans
             docker image prune -f
@@ -199,26 +205,54 @@ jobs:
               echo "rollback.env missing — manual rollback required." >&2
               exit 1
             fi
-            PREV=$(grep '^previous=' rollback.env | tail -n1 | cut -d= -f2-)
+            # `head -c 4096` caps input length (a legit `previous=…@sha256:…`
+            # line is ~80 bytes — 4 KiB is generous but bounds memory if the
+            # file is ever pathologically large). `head -n1` (not `tail`) of
+            # the matches: a write-race that appends a line after our own
+            # write should not promote the appended value over the
+            # legitimately-recorded one.
+            PREV=$(head -c 4096 rollback.env | grep '^previous=' | head -n1 | cut -d= -f2-)
             if [ -z "$PREV" ]; then
               echo "No previous image recorded — manual rollback required." >&2
               exit 1
             fi
             # `rollback.env` lives on the production host filesystem. The
-            # GitHub-Actions threat model does not cover a local actor with
-            # write access to `$DEPLOY_PATH` between deploy and rollback —
-            # such an actor could swap `previous=` for an attacker-chosen
-            # image ref. Restrict to the alphabet of a legal Docker
-            # reference (registry/repo[:tag][@sha256:digest]) so neither
-            # `docker pull` nor `BX24_IMAGE=…` ever sees shell
-            # metacharacters even if the file is tampered with.
-            if ! printf '%s' "$PREV" | grep -qE '^[A-Za-z0-9._/:@-]+$'; then
+            # "SSH — pull & up" step above writes it `chmod 0600`, so a
+            # co-tenant process can no longer rewrite `previous=` without
+            # owning the deploy UID — that is the actual fence. This regex
+            # is defence-in-depth: even with file ownership compromised, an
+            # attacker-chosen image ref still has to survive a strict charset
+            # gate before reaching `docker pull` / `BX24_IMAGE=…`.
+            #
+            # Charset: a legal Docker reference is
+            # `<registry>[:port]/<repo>[:tag][@sha256:<digest>]`, which uses
+            # only `[A-Za-z0-9._/:@-]`. The first character must be
+            # alphanumeric to deny refs that look like CLI flags (`-rf`,
+            # `--disable-content-trust`) — `docker pull "$PREV"` quotes the
+            # value but `docker pull` itself still parses leading `-` as a
+            # flag. Belt-and-braces: we also pass `--` below.
+            #
+            # Known limitations (acknowledged, NOT bugs):
+            #   * SemVer build metadata (`+`) — not in the Docker tag
+            #     spec; refs we generate via `docker/metadata-action`
+            #     with `type=semver,pattern={{version}}` strip it.
+            #   * IPv6 registry hosts (`[2001:db8::1]:5000/repo`) —
+            #     `[`/`]` excluded; legal per OCI but unused here
+            #     (we publish to ghcr.io).
+            #   * This is a CHARSET check, NOT authenticity. A
+            #     legitimate-looking attacker ref (`evil.example.com/img`)
+            #     still passes — that class is the underlying file-ownership
+            #     control above, not this regex.
+            if ! printf '%s' "$PREV" | grep -qE '^[A-Za-z0-9][A-Za-z0-9._/:@-]*$'; then
               echo "Unexpected characters in recorded previous image — aborting rollback." >&2
               echo "Got: $PREV" >&2
               exit 1
             fi
             echo "Rolling back to $PREV"
-            docker pull "$PREV"
+            # `--` ends option parsing — redundant with the alnum-first regex
+            # anchor above but cheap and idiomatic for any `docker pull`
+            # receiving a value that ultimately comes from disk.
+            docker pull -- "$PREV"
             # docker-compose.yml uses image: ${BX24_IMAGE:-…:latest}, so
             # exporting BX24_IMAGE pins the previous digest without rewriting
             # any files on disk.
