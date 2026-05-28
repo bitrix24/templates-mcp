@@ -27,11 +27,11 @@ jobs:
     name: Verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -95,11 +95,11 @@ jobs:
     # check; the artifact is still uploaded so it can be downloaded manually.
     if: always() && needs.test.result == 'success'
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ inputs.ref || github.ref }}
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -125,28 +125,31 @@ jobs:
     environment:
       name: production
       url: https://${{ vars.PROD_HOST }}
+    # Bind admin-controlled `vars.*` to env once at job level. The two SSH
+    # steps forward `DEPLOY_PATH` into the remote shell via appleboy/ssh-
+    # action's `envs:` parameter; the health-check step reads `PROD_HOST`
+    # directly. Keeping `${{ … }}` out of every `run:` / `script:` block is
+    # the same defence-in-depth shim used in `ci.yml` (see CONTRIBUTING.md
+    # "CI authoring rule" and #171 / #172).
+    env:
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/bx24-template-mcp' }}
+      PROD_HOST: ${{ vars.PROD_HOST }}
     steps:
       - name: SSH — pull & up
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
-        env:
-          # `vars.DEPLOY_PATH` is admin-controlled (repository variable). Even
-          # though only org admins can set it, binding it through `env:` +
-          # `envs:` keeps the SSH-side `script:` free of any `${{ … }}`
-          # interpolation. The remote shell sees `$DEPLOY_PATH` already
-          # quoted; metacharacters from the variable can no longer break out
-          # of `cd "$DEPLOY_PATH"`. Defence-in-depth, but it costs nothing.
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/bx24-template-mcp' }}
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          # `envs:` proxies the named env-vars from the runner into the
-          # SSH session — appleboy/ssh-action only forwards what is listed
-          # here.
+          # `envs:` proxies the named env-vars from the runner into the SSH
+          # session — appleboy/ssh-action injects `export VAR=value` at the
+          # head of `script:` rather than relying on the SSH protocol's
+          # `SendEnv` (which would need `AcceptEnv DEPLOY_PATH` in sshd_config).
           envs: DEPLOY_PATH
           script: |
             set -euo pipefail
+            : "${DEPLOY_PATH:?DEPLOY_PATH is empty — envs: forwarding failed}"
             cd "$DEPLOY_PATH"
             # Capture the image digest of the currently running container so the
             # rollback step can pin it via BX24_IMAGE. `docker inspect <container>`
@@ -165,13 +168,8 @@ jobs:
 
       - name: Health check
         id: health
-        env:
-          # Same defence-in-depth shim as the SSH steps: `vars.PROD_HOST`
-          # is admin-controlled and was being interpolated directly into
-          # a shell command. Binding via `env:` lets the script use
-          # `"$PROD_HOST"` under normal bash quoting rules.
-          PROD_HOST: ${{ vars.PROD_HOST }}
         run: |
+          : "${PROD_HOST:?PROD_HOST is not set — configure vars.PROD_HOST}"
           URL="https://$PROD_HOST/api/health"
           for i in $(seq 1 10); do
             if curl -fsS --max-time 5 "$URL" >/dev/null; then
@@ -186,9 +184,7 @@ jobs:
 
       - name: Rollback on failure
         if: failure() && steps.health.outcome == 'failure'
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
-        env:
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/bx24-template-mcp' }}
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
@@ -197,6 +193,7 @@ jobs:
           envs: DEPLOY_PATH
           script: |
             set -euo pipefail
+            : "${DEPLOY_PATH:?DEPLOY_PATH is empty — envs: forwarding failed}"
             cd "$DEPLOY_PATH"
             if [ ! -f rollback.env ]; then
               echo "rollback.env missing — manual rollback required." >&2
