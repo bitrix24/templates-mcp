@@ -83,27 +83,39 @@ jobs:
   #   - zizmor: security-focused — template injection across all event
   #     paths and `vars.*` / `secrets.*`, artifact poisoning, dangerous
   #     triggers, excessive permissions, secrets exposure.
-  # See #175. Acceptance: once both run clean for ~1 release cycle, flip
-  # `continue-on-error: false` and remove the regex guard in the `lint` job
-  # (it becomes a strict subset of what these two cover).
+  # See #175. Acceptance (concrete): flip `continue-on-error: false` and
+  # remove the regex guard in the `lint` job once issue #178 closes (all
+  # zizmor findings either fixed or annotated) AND no new findings have
+  # appeared on `main` for one release cycle (≥ 2 weeks of merged PRs).
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
     continue-on-error: true
+    permissions:
+      # Match `zizmor` job below: explicit read-only.
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # `persist-credentials: false` keeps zizmor's own `artipacked`
+          # rule quiet on this PR and is good hygiene (the job never pushes).
+          persist-credentials: false
       - name: Install and run actionlint
         env:
-          # Pin tool version. Bootstrap supply-chain link:
-          # raw.githubusercontent.com/rhysd/actionlint at a tagged commit
-          # serves the downloader, which fetches the same project's
-          # release tarball. Same trust boundary as running actionlint at
-          # all — not widening the threat model, just documenting it.
-          # The download script verifies the release artifact's SHA-256
-          # against the values it carries inline (`download-actionlint.bash`).
+          # Tool version + SHA-256 of the official release tarball.
+          # Update BOTH together; the sha256sum step below fails loudly if
+          # they drift, so a forgetful bump cannot land a backdoored binary.
+          # Trust boundary: github.com/rhysd/actionlint release artefacts.
+          # Compute the SHA-256 of a new release like:
+          #   curl -fsSLo /tmp/al.tgz "https://github.com/rhysd/actionlint/releases/download/v${VER}/actionlint_${VER}_linux_amd64.tar.gz"
+          #   sha256sum /tmp/al.tgz
           ACTIONLINT_VERSION: "1.6.24"
+          ACTIONLINT_SHA256: "3c5818744143a5d6754edd3dcc4c2b32c9dfcdd3bb30e0e108fb5e5c505262d4"
         run: |
-          bash <(curl -fsSL "https://raw.githubusercontent.com/rhysd/actionlint/v${ACTIONLINT_VERSION}/scripts/download-actionlint.bash") "$ACTIONLINT_VERSION"
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$tarball" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum --check --status
+          tar xzf "$tarball" actionlint
           ./actionlint -color
 
   zizmor:
@@ -115,6 +127,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # Same hygiene as the actionlint job above.
+          persist-credentials: false
       - uses: zizmorcore/zizmor-action@e639db99335bc9038abc0e066dfcd72e23d26fb4 # v0.3.0
 
   lint:
