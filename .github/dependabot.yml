@@ -1,20 +1,10 @@
 version: 2
 updates:
-  # GitHub Actions — Renovate does not cover these in the current config
-  - package-ecosystem: github-actions
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: "05:00"
-      timezone: Europe/Minsk
-    labels:
-      - dependencies
-    commit-message:
-      prefix: chore
-      include: scope
-
-  # Docker base images
+  # Docker base images. Renovate has its own docker handling but we keep it
+  # disabled there (renovate.json: `"docker": { "enabled": false }`) because
+  # Dependabot's Docker support is mature, and our base-image surface is
+  # small enough that two systems are overkill. Mutable tags are acceptable
+  # for this repo's base images (we pin via tag, not digest).
   - package-ecosystem: docker
     directory: /
     schedule:
@@ -28,7 +18,14 @@ updates:
       prefix: chore
       include: scope
 
-  # npm dependency updates and security alerts are handled by Renovate
+  # GitHub Actions are handled by Renovate (renovate.json), which uses the
+  # `helpers:pinGitHubActionDigests` preset to produce SHA-pinned + tag-
+  # commented bumps (`action@<SHA> # vX.Y.Z`). Dependabot only produces
+  # mutable-tag bumps (`@v4 → @v7`) — leaving it enabled here in parallel
+  # would regress every action to a mutable tag on each scheduled run and
+  # collide with zizmor's `unpinned-uses` rule (advisory since #177).
+
+  # npm dependency updates and security alerts are also handled by Renovate
   # (see renovate.json — vulnerabilityAlerts.enabled: true). No Dependabot
   # npm block is needed; adding one with open-pull-requests-limit: 0 only
   # creates noise without adding coverage.

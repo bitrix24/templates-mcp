@@ -4,7 +4,8 @@
     "config:recommended",
     ":semanticCommits",
     ":semanticCommitTypeAll(chore)",
-    ":dependencyDashboard"
+    ":dependencyDashboard",
+    "helpers:pinGitHubActionDigests"
   ],
   "timezone": "Europe/Minsk",
   "schedule": ["after 2am and before 7am every weekday"],
@@ -12,7 +13,6 @@
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "rangeStrategy": "bump",
-  "github-actions": { "enabled": false },
   "docker": { "enabled": false },
   "lockFileMaintenance": {
     "enabled": true,
