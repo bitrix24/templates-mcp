@@ -82,7 +82,8 @@ The repo ships a `Makefile` that wraps the most common operations so you don't h
 | Start application | `make up` |
 | Pull latest image + restart | `make redeploy` |
 | Follow logs | `make logs` |
-| Smoke-test a live server | `make verify URL=https://mcp.example.com` |
+| Smoke-test from external machine | `make verify URL=https://mcp.example.com` |
+| Smoke-test directly on the server | `make verify-local URL=https://mcp.example.com` |
 | Remove stopped containers / build cache | `make clean` |
 
 The reverse-proxy stack is defined in [`docker-compose.server.yml`](../docker-compose.server.yml). It runs `nginx-proxy` + `acme-companion` on the shared `proxy-net` network and handles TLS for any container that declares `VIRTUAL_HOST` / `LETSENCRYPT_HOST`. Start it once with `make server-up`; it survives host reboots via `restart: always`.
@@ -233,6 +234,13 @@ What it asserts:
   - *Why it's here*: this pins the `@nuxtjs/mcp-toolkit` dispatcher. A middleware refactor whose error lands in Nitro's uncaught-error handler (becoming a `500` instead of a JSON-RPC error envelope) ships green under the four checks above but fails here.
   - *Stateless mode*: the follow-up `tools/list` carries no `Mcp-Session-Id` — `@nuxtjs/mcp-toolkit`'s node provider defaults to **stateless mode**, so each `/mcp` request is independently authenticated and the SDK neither issues nor requires a session header.
   - *Requires `jq`*: if `jq` is not on PATH this assertion is **skipped** with a notice (the JSON-RPC predicates are too brittle without real parsing).
+
+**Running the check from the server itself (hairpin NAT).** Many VPS and dedicated-server setups use a firewall or NAT configuration where the host cannot reach its own public IP — `curl https://mcp.example.com` from the box times out even though the service is perfectly healthy. Use `make verify-local` instead of `make verify`: it passes `--resolve mcp.example.com:127.0.0.1` to curl so the connection goes through the loopback interface while TLS is still verified against the real certificate (no `--insecure` needed). You can also run it directly:
+
+```bash
+bash scripts/verify-deployment.sh --url https://mcp.example.com \
+  --resolve mcp.example.com:127.0.0.1
+```
 
 What it does **not** do:
 

@@ -52,6 +52,7 @@ HEALTH_RETRIES="20"
 HEALTH_INTERVAL="3"
 USE_COLOR="auto"
 INSECURE="no"
+RESOLVE=""
 
 # Pulled from env so an operator can avoid putting the token on the command
 # line (visible via `/proc/<pid>/cmdline` / `ps` to other local users for
@@ -90,6 +91,11 @@ Options:
                          self-signed staging hosts ONLY. Never use against
                          production — a broken chain there means MITM until
                          proven otherwise.
+  --resolve HOST:IP      Force curl to resolve HOST to IP instead of using DNS.
+                         Useful when the server cannot reach its own public IP
+                         (hairpin NAT). TLS is still verified against the real
+                         certificate — no --insecure needed. Example:
+                           --resolve mcp.example.com:127.0.0.1
   --no-color             Disable ANSI output (auto-disabled when stdout is not a TTY).
   -h, --help             Show this help.
 
@@ -129,6 +135,7 @@ while [ $# -gt 0 ]; do
     --health-retries)  require_arg "$1" "$#"; HEALTH_RETRIES="$2"; shift 2 ;;
     --health-interval) require_arg "$1" "$#"; HEALTH_INTERVAL="$2"; shift 2 ;;
     --insecure)        INSECURE="yes"; shift ;;
+    --resolve)         require_arg "$1" "$#"; RESOLVE="$2"; shift 2 ;;
     --no-color)        USE_COLOR="no"; shift ;;
     -h|--help)         usage ;;
     *)                 echo "Unknown argument: $1" >&2; usage ;;
@@ -173,6 +180,16 @@ case "$HEALTH_RETRIES" in (*[!0-9]*|"") echo "Invalid --health-retries: $HEALTH_
 # Strip a single trailing slash so the route concatenation stays sane.
 URL="${URL%/}"
 
+# Build --resolve flag for curl when --resolve HOST:IP was given.
+# The flag format curl expects is HOST:PORT:IP for each port, so we expand
+# the user-supplied HOST:IP shorthand into two entries (80 + 443).
+RESOLVE_ARG=""
+if [ -n "$RESOLVE" ]; then
+  _rhost="${RESOLVE%%:*}"
+  _rip="${RESOLVE##*:}"
+  RESOLVE_ARG="--resolve ${_rhost}:80:${_rip} --resolve ${_rhost}:443:${_rip}"
+fi
+
 # Colour handling — opt-out via --no-color, auto-off when not a TTY.
 if [ "$USE_COLOR" = "auto" ] && [ -t 1 ]; then USE_COLOR="yes"; fi
 if [ "$USE_COLOR" = "yes" ]; then
@@ -208,15 +225,16 @@ status_of() {
   # macOS ships /bin/bash 3.2 by default, and the script's shebang is
   # `#!/usr/bin/env bash`, so it MUST stay portable to that interpreter.
   if [ "$INSECURE" = "yes" ]; then
-    curl -sS -k -o /dev/null -w '%{http_code}' --max-time "$TIMEOUT" -X "$method" "$target" "$@"
+    curl -sS -k -o /dev/null -w '%{http_code}' --max-time "$TIMEOUT" -X "$method" $RESOLVE_ARG "$target" "$@"
   else
-    curl -sS    -o /dev/null -w '%{http_code}' --max-time "$TIMEOUT" -X "$method" "$target" "$@"
+    curl -sS    -o /dev/null -w '%{http_code}' --max-time "$TIMEOUT" -X "$method" $RESOLVE_ARG "$target" "$@"
   fi
 }
 
 info "Target : $URL  (timeout ${TIMEOUT}s, health retries ${HEALTH_RETRIES}×${HEALTH_INTERVAL}s)"
 info "Token  : ${#TOKEN}-char value (not echoed)"
 info "TLS    : $([ "$INSECURE" = yes ] && printf 'verification DISABLED (--insecure)' || printf 'verification ON')"
+[ -n "$RESOLVE_ARG" ] && info "Resolve: $RESOLVE  (hairpin NAT bypass — DNS skipped, cert still verified)"
 echo
 
 # ─── 1. /api/health ────────────────────────────────────────────────────────
@@ -268,9 +286,9 @@ fi
 # matches the predicate, not the shape; install jq for the full guarantee.
 BODY=$(
   if [ "$INSECURE" = "yes" ]; then
-    curl -sS -k --max-time "$TIMEOUT" "$URL/api/health" || true
+    curl -sS -k --max-time "$TIMEOUT" $RESOLVE_ARG "$URL/api/health" || true
   else
-    curl -sS    --max-time "$TIMEOUT" "$URL/api/health" || true
+    curl -sS    --max-time "$TIMEOUT" $RESOLVE_ARG "$URL/api/health" || true
   fi
 )
 if command -v jq >/dev/null 2>&1; then
@@ -368,7 +386,7 @@ if command -v jq >/dev/null 2>&1; then
   INIT_BODY='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"verify-deployment.sh","version":"1.0"}}}'
 
   if [ "$INSECURE" = "yes" ]; then
-    INIT_RAW=$(curl -sS -k --max-time "$TIMEOUT" \
+    INIT_RAW=$(curl -sS -k --max-time "$TIMEOUT" $RESOLVE_ARG \
       -X POST "$URL/mcp" \
       -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
@@ -376,7 +394,7 @@ if command -v jq >/dev/null 2>&1; then
       -w '\n%{http_code}' \
       -d "$INIT_BODY" 2>/dev/null || echo $'\nerror')
   else
-    INIT_RAW=$(curl -sS    --max-time "$TIMEOUT" \
+    INIT_RAW=$(curl -sS    --max-time "$TIMEOUT" $RESOLVE_ARG \
       -X POST "$URL/mcp" \
       -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
@@ -411,7 +429,7 @@ if command -v jq >/dev/null 2>&1; then
   # catalogue, registry filter drops everything, etc.) cannot ship green.
   TOOLS_BODY='{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
   if [ "$INSECURE" = "yes" ]; then
-    TOOLS_RAW=$(curl -sS -k --max-time "$TIMEOUT" \
+    TOOLS_RAW=$(curl -sS -k --max-time "$TIMEOUT" $RESOLVE_ARG \
       -X POST "$URL/mcp" \
       -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
@@ -419,7 +437,7 @@ if command -v jq >/dev/null 2>&1; then
       -w '\n%{http_code}' \
       -d "$TOOLS_BODY" 2>/dev/null || echo $'\nerror')
   else
-    TOOLS_RAW=$(curl -sS    --max-time "$TIMEOUT" \
+    TOOLS_RAW=$(curl -sS    --max-time "$TIMEOUT" $RESOLVE_ARG \
       -X POST "$URL/mcp" \
       -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \

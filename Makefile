@@ -8,7 +8,7 @@
 .PHONY: dev build test lint typecheck \
         init-network server-up server-down \
         up down pull redeploy logs ps \
-        build-dxt verify clean
+        build-dxt verify verify-local clean
 
 # Locate verify-deployment.sh whether the Makefile lives inside the repo
 # (scripts/) or in a separate deploy directory next to a cloned src/ tree
@@ -100,6 +100,21 @@ verify:
 	@[ -n "$(VERIFY_SCRIPT)" ] || (echo "Error: verify-deployment.sh not found in scripts/ or src/scripts/" && exit 1)
 	@set -a; [ -f .env ] && . ./.env; set +a; \
 	  bash $(VERIFY_SCRIPT) --url $(URL)
+
+# Run the smoke test directly on the server, bypassing DNS/NAT.
+# Useful when the host cannot reach its own public IP (hairpin NAT) —
+# a common firewall/routing setup where curl from the server itself times
+# out on the public domain even though the service is fully functional.
+# Resolves the domain to 127.0.0.1 so curl connects locally; TLS is still
+# verified against the real certificate — no --insecure needed.
+# Usage:
+#   make verify-local URL=https://mcp.example.com
+verify-local:
+	@[ -n "$(URL)" ] || (echo "Usage: make verify-local URL=https://mcp.example.com" && exit 1)
+	@[ -n "$(VERIFY_SCRIPT)" ] || (echo "Error: verify-deployment.sh not found in scripts/ or src/scripts/" && exit 1)
+	$(eval HOST := $(shell printf '%s' "$(URL)" | sed 's|https://||;s|/.*||'))
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	  bash $(VERIFY_SCRIPT) --url $(URL) --resolve $(HOST):127.0.0.1
 
 # ─── Cleanup ─────────────────────────────────────────────────────────────────
 
