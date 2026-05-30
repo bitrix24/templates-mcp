@@ -65,6 +65,11 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - `/mcp` returns 503 when `NUXT_MCP_AUTH_TOKEN` is left at the `.env.example` placeholder `replace-with-secure-token`, so a copied-but-unconfigured deployment cannot be guarded by a publicly-known token.
 - `bx24mcp_submit_feedback` validates the configured `owner/repo` before calling the GitHub API, and HTML-escapes the `relatedTool` field in the issue body.
 - `docker-compose.yml` drops all Linux capabilities and forbids privilege escalation (`cap_drop: [ALL]`, `no-new-privileges`).
+- Remediated all open Dependabot/`pnpm audit` advisories. Direct: `nuxt` → `^4.4.6` (GHSA-hg3f-28rg-4jxj middleware bypass, GHSA-g8wj-3cr3-6w7v island cache poisoning, plus transitive `@nuxt/nitro-server`). Transitive deps pinned via `overrides` in `pnpm-workspace.yaml`: `tmp` `^0.2.6` (GHSA-52f5-9888-hmc6), `file-type` `^22.0.1` (GHSA-5v7r-6r5c-r473), `@fastify/static` `^9.1.1` (GHSA-pr96-94w5-mx2h), `qs` `^6.15.2` (GHSA-6rw7-vpxm-498p / CVE-2025-15284). `pnpm audit` is now a blocking CI gate (`--audit-level=moderate`).
+
+### Changed (tooling)
+
+- **pnpm upgraded 10.33.4 → 11.5.0** (`packageManager`, pinned with a corepack `+sha512` integrity hash). pnpm v11 promotes `pnpm-workspace.yaml` as the canonical location for `overrides`; the Dockerfile builder stage now copies `pnpm-workspace.yaml` so `--frozen-lockfile` installs apply the overrides. Dev dependencies refreshed within their ranges (`@ai-sdk/openai`, `@commitlint/*`, `ai`, `vitest`, `vue-tsc`); `@types/node` kept on `^22` to track the Node 22 runtime.
 
 ## [0.1.0-alpha.1] - 2026-05-19
 

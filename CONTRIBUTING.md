@@ -9,6 +9,7 @@ git clone https://github.com/bitrix24/templates-mcp.git
 cd templates-mcp
 cp .env.example .env
 # edit .env: set NUXT_BITRIX24_WEBHOOK_URL and NUXT_MCP_AUTH_TOKEN
+corepack enable    # this repo pins pnpm v11 (packageManager) — corepack installs the right version
 pnpm install
 pnpm dev
 ```

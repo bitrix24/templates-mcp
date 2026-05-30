@@ -50,7 +50,7 @@ cd templates-mcp
 cp .env.example .env
 # edit .env: set NUXT_BITRIX24_WEBHOOK_URL (from the prerequisite above)
 #            and NUXT_MCP_AUTH_TOKEN (generate via: openssl rand -hex 32)
-corepack enable    # if pnpm is not installed
+corepack enable    # provides pnpm — this repo pins pnpm v11 via packageManager, corepack installs it automatically
 pnpm install
 # If npmjs.com is unreachable from your network (e.g. some corporate or
 # regional setups), point pnpm at a mirror first:

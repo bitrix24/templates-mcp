@@ -12,7 +12,7 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
 - **Auth to Bitrix24**: incoming webhook (Phase 1), OAuth (Phase 3)
 - **Auth from Claude to us**: Bearer token via middleware
 - **Deployment**: Docker behind `nginx-proxy` + `acme-companion` on shared `proxy-net` network. Server is self-sufficient — GH Actions deploys on `v*` tag, no manual ops required
-- **Dependency updates**: npm — Renovate Bot (see `renovate.json`); GitHub Actions + Docker base images — Dependabot (see `.github/dependabot.yml`)
+- **Dependency updates**: npm — Renovate Bot (see `renovate.json`); GitHub Actions + Docker base images — Dependabot (see `.github/dependabot.yml`). Transitive-dependency security advisories are patched manually via `overrides` in `pnpm-workspace.yaml` (pnpm v11 location) — Dependabot/Renovate don't open PRs for nested deps. A blocking `pnpm audit --audit-level=moderate` CI job guards against regressions.
 - **License**: MIT
 
 ## Ground rules
