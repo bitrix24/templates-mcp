@@ -60,11 +60,13 @@ Use an annotated (`-a`) `vMAJOR.MINOR.PATCH` (or `-alpha.N` / `-beta.N`) tag mat
 The deploy job SSHes into one host and runs `docker compose` there. Set the host up **once**:
 
 - [ ] **Docker Engine ≥ 24 + Compose v2**; the SSH user can run `docker` (in the `docker` group).
+- [ ] **`jq`** — required for the JSON-RPC assertion in the smoke test (`make verify-local`). Without it the last two checks are skipped. Install once: `sudo apt install -y jq` (Debian/Ubuntu) or `brew install jq` (macOS).
 - [ ] **A reverse proxy + TLS** — either the `nginx-proxy` + `acme-companion` stack on the shared `proxy-net` network (matches the default [`docker-compose.yml`](../docker-compose.yml)), or an alternative from [`REVERSE-PROXY.md`](./REVERSE-PROXY.md). nginx-proxy owns ports 80/443, watches for containers that declare `VIRTUAL_HOST`, and `acme-companion` issues/renews Let's Encrypt certs for any container that sets `LETSENCRYPT_HOST`.
 - [ ] **An external Docker network `proxy-net`**, joined by both the proxy stack and this service (`docker network create proxy-net`).
 - [ ] **DNS**: an `A`/`AAAA` record for your `VIRTUAL_HOST` / `LETSENCRYPT_HOST` pointing at the host, so acme-companion can complete the HTTP-01 challenge. Replace the `prod.example.com` placeholder used throughout with your real FQDN.
 - [ ] **A Bitrix24 incoming webhook URL** bound to a dedicated service user (see the README quick start).
 - [ ] **`NUXT_MCP_AUTH_TOKEN`** generated (`openssl rand -hex 32`).
+- [ ] **`NODE_ENV=production`** added to the host `.env` (not the repo `.env`) — see the note in `.env.example`. Without it docker compose prints a warning on every command. One-liner: `echo "NODE_ENV=production" >> .env`.
 
 `restart: always` on the service (and on the proxy stack) means everything comes back after a reboot — no host-level cron or systemd units.
 
@@ -94,6 +96,9 @@ The reverse-proxy stack is defined in [`docker-compose.server.yml`](../docker-co
 sudo mkdir -p /opt/bx24-template-mcp && sudo chown "$USER":"$USER" /opt/bx24-template-mcp
 cd /opt/bx24-template-mcp
 
+# Install jq — needed for the JSON-RPC assertions in the smoke test.
+sudo apt install -y jq     # Debian / Ubuntu
+
 # Pull the shipped compose (it pulls the GHCR image; it does NOT build).
 curl -sSLO https://raw.githubusercontent.com/bitrix24/templates-mcp/main/docker-compose.yml
 
@@ -101,6 +106,10 @@ curl -sSLO https://raw.githubusercontent.com/bitrix24/templates-mcp/main/docker-
 curl -sSLO https://raw.githubusercontent.com/bitrix24/templates-mcp/main/.env.example
 mv .env.example .env && chmod 600 .env
 ${EDITOR:-vi} .env
+
+# Add NODE_ENV for production — docker compose needs it, see .env.example for why
+# this goes in the HOST .env only (not the repo root .env).
+echo "NODE_ENV=production" >> .env
 
 # Default compose requires the shared proxy-net network.
 docker network create proxy-net 2>/dev/null || true
