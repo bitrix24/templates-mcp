@@ -86,23 +86,22 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  dxt:
-    name: Build & attach DXT
+  dxt-build:
+    name: Build DXT bundle
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # dxt depends on build so that a release is only assembled (image + DXT)
-    # when both halves succeed — prevents a DXT artifact from being attached
-    # to a GitHub Release whose Docker image failed to publish.
+    # Depends on build so a release is only assembled (image + DXT) when both
+    # halves succeed — prevents a DXT artifact attaching to a GitHub Release
+    # whose Docker image failed to publish. (closes #198 split)
     needs: [test, build]
     permissions:
-      contents: write
-    # Always build + upload artifact (useful for manual dispatch sanity check).
-    # Attaching to a release requires a v* tag — guarded in the step below.
+      contents: read
     if: needs.test.result == 'success' && needs.build.result == 'success'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
       - uses: pnpm/action-setup@08c4be7e2e672a47d11bd04269e27e5f3e8529cb # v6.0.0
       - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
@@ -116,8 +115,24 @@ jobs:
           name: bx24-template-mcp-dxt
           path: dist/bx24-template-mcp.dxt
           if-no-files-found: error
+
+  dxt-release:
+    name: Attach DXT to release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: dxt-build
+    # contents: write is only granted on v* tag runs — never on workflow_dispatch
+    # without a tag or on non-tag pushes (least-privilege, closes #198).
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download DXT artifact
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: bx24-template-mcp-dxt
+          path: dist
       - name: Attach DXT to release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           files: dist/bx24-template-mcp.dxt
