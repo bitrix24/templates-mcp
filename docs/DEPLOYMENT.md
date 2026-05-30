@@ -68,6 +68,25 @@ The deploy job SSHes into one host and runs `docker compose` there. Set the host
 
 `restart: always` on the service (and on the proxy stack) means everything comes back after a reboot — no host-level cron or systemd units.
 
+## Makefile quick-reference
+
+The repo ships a `Makefile` that wraps the most common operations so you don't have to memorise compose flags.
+
+| Goal | Command |
+|---|---|
+| Local dev server | `make dev` |
+| Unit tests | `make test` |
+| Create `proxy-net` network (once) | `make init-network` |
+| Start nginx-proxy + acme-companion (once) | `make server-up` |
+| Build image from local source | `make build` |
+| Start application | `make up` |
+| Pull latest image + restart | `make redeploy` |
+| Follow logs | `make logs` |
+| Smoke-test a live server | `make verify URL=https://mcp.example.com` |
+| Remove stopped containers / build cache | `make clean` |
+
+The reverse-proxy stack is defined in [`docker-compose.server.yml`](../docker-compose.server.yml). It runs `nginx-proxy` + `acme-companion` on the shared `proxy-net` network and handles TLS for any container that declares `VIRTUAL_HOST` / `LETSENCRYPT_HOST`. Start it once with `make server-up`; it survives host reboots via `restart: always`.
+
 ## First-time bootstrap on the host
 
 ```bash
