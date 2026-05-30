@@ -13,6 +13,8 @@ Already have the host set up? This is all you need:
 ```bash
 # 1. On your host — pull the new image and restart the container
 cd /opt/bx24-template-mcp
+# If Watchtower is running, stop it first so it doesn't race you:
+#   make watchtower-stop
 make redeploy          # = docker compose pull && docker compose up -d
 
 # 2. Verify it's healthy

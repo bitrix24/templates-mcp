@@ -33,6 +33,7 @@ Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.
 CI does **not** auto-rollback — there is no SSH deploy step. Manual rollback:
 
 ```bash
+# This is a manual operator step — CI does not SSH into production.
 ssh deploy@prod.example.com
 cd /opt/bx24-template-mcp
 # Stop Watchtower first if running (so it doesn't re-update while you roll back):
