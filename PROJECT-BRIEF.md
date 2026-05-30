@@ -44,7 +44,7 @@ bx24-template-mcp/
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml                       # lint + typecheck + tests on every PR
-│   │   └── deploy.yml                   # build + SSH deploy on v* tag
+│   │   └── deploy.yml                   # build & publish image on v* tag
 │   ├── PULL_REQUEST_TEMPLATE.md
 │   └── ISSUE_TEMPLATE/
 │       ├── bug_report.md
@@ -412,7 +412,7 @@ The server is configured once, then runs unattended:
 - **`proxy-net` network** exists as `external`, containers join via `networks: proxy-net`.
 - **acme-companion** issues and renews TLS certs for any container that sets `LETSENCRYPT_HOST`.
 - **MCP service** uses `restart: always`, starts with Docker, survives reboot.
-- **Deployment**: GitHub Actions on `v*` tag SSHes in, runs `docker compose pull && docker compose up -d`, polls health on public `https://prod.example.com/api/health` with retries; on failure — `docker compose rollback` (or manual via tag swap in the compose file).
+- **Deployment**: GitHub Actions on `v*` tag builds and pushes the image to GHCR. The operator deploys via Watchtower (automatic) or `make redeploy` on the host (manual). CI has no SSH access to production.
 - **Monitoring**: external UptimeRobot/Healthchecks.io pings `/api/health` once a minute (optional, not in MVP).
 - **Logs**: Docker JSON driver with rotation; long-term retention (Loki/Graylog) is out of scope.
 
@@ -714,23 +714,23 @@ networks:
     external: true
 ```
 
-## Auto-deploy via GitHub Actions
+## Build & publish via GitHub Actions
 
 `.github/workflows/deploy.yml`, triggered by `v*` tag push:
 
 1. pnpm + Node 22
 2. `pnpm install --frozen-lockfile`
-3. `pnpm lint && pnpm typecheck && pnpm test`
-4. Docker image build
+3. `pnpm lint && pnpm typecheck && pnpm test:unit`
+4. Docker image build (multi-platform buildx)
 5. Push to `ghcr.io/bitrix24/templates-mcp:VERSION` and `:latest`
-6. SSH: `cd /opt/bx24-template-mcp && docker compose pull && docker compose up -d`
-7. Health-check `https://prod.example.com/api/health` with retries (10×3s). On failure — rollback to previous tag.
+6. Build `.dxt` bundle and attach to GitHub Release
 
-Secrets:
+CI does **not** SSH into production. The operator pulls the new image via Watchtower or `make redeploy`.
 
-- `SSH_HOST`, `SSH_USER`, `SSH_KEY`
+Secrets needed in GitHub Actions:
+
 - `NUXT_GITHUB_FEEDBACK_TOKEN` (passed to the container on the server)
-- `NUXT_BITRIX24_TEST_WEBHOOK_URL` (optional)
+- `NUXT_BITRIX24_TEST_WEBHOOK_URL` (optional, for integration tests)
 - `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL` (eval)
 
 ## Wiring up Claude

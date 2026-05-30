@@ -23,7 +23,8 @@ services:
   nginx-proxy:
     # Pin to a specific release to avoid unintended breaking changes on pull.
     # Check for latest at: https://github.com/nginx-proxy/nginx-proxy/releases
-    image: nginxproxy/nginx-proxy:1.6
+    # Digest pinned to 1.6 (multi-arch manifest); verify: docker pull nginxproxy/nginx-proxy:1.6
+    image: nginxproxy/nginx-proxy:1.6@sha256:5dd14e68ea81f33692b810d096ac8ebe7aa789d75ce91e05f09d56d044ed8ee3
     container_name: nginx-proxy
     security_opt:
       - no-new-privileges:true
@@ -52,7 +53,8 @@ services:
   acme-companion:
     # Pin alongside nginx-proxy — versions are tested together upstream.
     # Check for latest at: https://github.com/nginx-proxy/acme-companion/releases
-    image: nginxproxy/acme-companion:2.5
+    # Digest pinned to 2.5 (multi-arch manifest); verify: docker pull nginxproxy/acme-companion:2.5
+    image: nginxproxy/acme-companion:2.5@sha256:308dd273fafec21ce5ea22e830adbf9248a9be18d1caff9f94be321ae9835015
     container_name: acme-companion
     security_opt:
       - no-new-privileges:true

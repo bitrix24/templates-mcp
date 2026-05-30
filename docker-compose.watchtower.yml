@@ -35,8 +35,8 @@ services:
     # Removes the old image after a successful update (--cleanup).
     # Pin to a specific release — never use :latest for infrastructure images.
     # Check for latest at: https://github.com/containrrr/watchtower/releases
-    # TODO(#191): pin by SHA digest instead of mutable tag.
-    image: containrrr/watchtower:1.7.1
+    # Digest pinned to 1.7.1 (multi-arch manifest); verify: docker pull containrrr/watchtower:1.7.1
+    image: containrrr/watchtower:1.7.1@sha256:6dd50763bbd632a83cb154d5451700530d1e44200b268a4e9488fefdfcf2b038
     container_name: watchtower
     # `unless-stopped` lets `docker compose stop watchtower` stay down until
     # explicitly started — required for the manual rollback procedure above.

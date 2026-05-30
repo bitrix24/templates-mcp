@@ -21,8 +21,7 @@ Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.
 | `/api/health` returns non-2xx for ≥3 minutes | Container crash-looped or stuck | `docker logs --tail=200 bx24-template-mcp`; if recent deploy, [rollback](#rollback) |
 | 503 "MCP endpoint is not available" on `/mcp` | `NUXT_MCP_AUTH_TOKEN` missing/empty in `.env` | Edit `/opt/bx24-template-mcp/.env`, `docker compose up -d` |
 | 401 "Invalid bearer token" from clients that worked yesterday | Token rotated, or client config drift | Diff client header against `.env` value; if intentional rotation, update clients |
-| GitHub Actions deploy job failed at "Health check" | Build/start OK, runtime broken — workflow auto-rolled back | Inspect `docker logs`; the previous digest is back. Investigate before re-deploying. |
-| GitHub Actions deploy job failed at "Build & push" | CI test fail, GHCR permission, or buildx error | Re-read job output; common: `pnpm test:unit` regression, GHCR rate limit |
+| GitHub Actions build job failed at "Build & push" | CI test fail, GHCR permission, or buildx error | Re-read job output; common: `pnpm test:unit` regression, GHCR rate limit |
 | Bitrix24 calls failing with 401/403 | Webhook revoked or scope changed in the portal | Recreate webhook in portal; update `NUXT_BITRIX24_WEBHOOK_URL` in `.env`; `docker compose up -d` |
 | Bitrix24 calls failing with `QUERY_LIMIT_EXCEEDED` / 503 | Rate limit on the portal side | No action needed — `RestrictionManager` retries with back-off. If sustained, lower client RPS or move to Enterprise tariff (see `server/utils/bitrix24.ts` notes). |
 | TLS cert expired / "first certificate" errors from clients | acme-companion stalled, or DNS changed | `docker logs nginx-proxy-acme`; restart the companion container. For Self-Hosted Bitrix24 with a private CA see `NODE_EXTRA_CA_CERTS` in `.env.example`. |
@@ -31,24 +30,26 @@ Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.
 
 ## Rollback
 
-Auto-rollback fired by the deploy workflow on health-check failure. Manual rollback:
+CI does **not** auto-rollback — there is no SSH deploy step. Manual rollback:
 
 ```bash
 ssh deploy@prod.example.com
 cd /opt/bx24-template-mcp
-cat rollback.env              # holds previous=ghcr.io/...@sha256:<digest>
-BX24_IMAGE="$(grep previous= rollback.env | cut -d= -f2-)" \
-  docker compose up -d --remove-orphans
-curl -fsS https://prod.example.com/api/health
+# Stop Watchtower first if running (so it doesn't re-update while you roll back):
+make watchtower-stop   # or: docker compose stop watchtower
 ```
 
-If `rollback.env` is missing or stale, list image history:
+List available image versions:
 
 ```bash
 docker image ls ghcr.io/bitrix24/templates-mcp --digests
-# pick a known-good digest; then:
+# pick a known-good digest or semver tag (no 'v' prefix); then:
 BX24_IMAGE="ghcr.io/bitrix24/templates-mcp@sha256:<digest>" docker compose up -d
+# or: BX24_IMAGE="ghcr.io/bitrix24/templates-mcp:0.1.0" docker compose up -d
+curl -fsS https://prod.example.com/api/health
 ```
+
+Resume Watchtower once stable: `make watchtower-start`
 
 ## Investigating from logs
 

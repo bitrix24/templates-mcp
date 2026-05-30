@@ -1,4 +1,4 @@
-name: Deploy
+name: Build & publish
 
 on:
   push:
@@ -7,9 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Git ref (tag/sha) to deploy'
+        description: 'Git ref (tag/sha) to build and publish'
         required: true
         default: 'main'
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -42,9 +46,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      version: ${{ steps.meta.outputs.version }}
-      tags: ${{ steps.meta.outputs.tags }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -83,12 +84,12 @@ jobs:
   dxt:
     name: Build & attach DXT
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, build]
     permissions:
       contents: write
-    # Only attach to a real release. `workflow_dispatch` builds for sanity-
-    # check; the artifact is still uploaded so it can be downloaded manually.
-    if: always() && needs.test.result == 'success'
+    # Always build + upload artifact (useful for manual dispatch sanity check).
+    # Attaching to a release requires a v* tag — guarded in the step below.
+    if: always() && needs.test.result == 'success' && needs.build.result == 'success'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:

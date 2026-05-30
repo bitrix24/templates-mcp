@@ -11,7 +11,7 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
 - **Stack**: Nuxt 4 (Nitro `node-server`), `@nuxtjs/mcp-toolkit`, `@bitrix24/b24jssdk-nuxt`
 - **Auth to Bitrix24**: incoming webhook (Phase 1), OAuth (Phase 3)
 - **Auth from Claude to us**: Bearer token via middleware
-- **Deployment**: Docker behind `nginx-proxy` + `acme-companion` on shared `proxy-net` network. Server is self-sufficient — GH Actions deploys on `v*` tag, no manual ops required
+- **Deployment**: Docker behind `nginx-proxy` + `acme-companion` on shared `proxy-net` network. CI builds and pushes the image to GHCR on `v*` tag; the operator deploys via Watchtower (auto) or `make redeploy` on the host (manual)
 - **Dependency updates**: npm — Renovate Bot (see `renovate.json`); GitHub Actions + Docker base images — Dependabot (see `.github/dependabot.yml`)
 - **License**: MIT
 

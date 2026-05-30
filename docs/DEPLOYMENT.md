@@ -6,43 +6,50 @@ The shipped [`docker-compose.yml`](../docker-compose.yml) assumes an `nginx-prox
 
 > This doc is the **operator how-to**. The design rationale lives in [`PROJECT-BRIEF.md` § Production server — self-sufficiency](../PROJECT-BRIEF.md#production-server--self-sufficiency); incident response lives in [`RUNBOOK.md`](./RUNBOOK.md); secret/threat detail in [`SECURITY.md`](./SECURITY.md). Everything below describes what the repo's [`Dockerfile`](../Dockerfile), [`docker-compose.yml`](../docker-compose.yml), and [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) actually do — keep them and this doc in sync when any of them change.
 
+## Quick deploy (3 steps)
+
+Already have the host set up? This is all you need:
+
+```bash
+# 1. On your host — pull the new image and restart the container
+cd /opt/bx24-template-mcp
+make redeploy          # = docker compose pull && docker compose up -d
+
+# 2. Verify it's healthy
+make verify-local URL=https://your-domain.com
+
+# 3. Done — check logs if something looks off
+make logs
+```
+
+That's the normal upgrade path. See [Manual rollback](#manual-rollback) if you need to revert.
+
 ## At a glance
-
-Two deploy paths — choose one:
-
-### Path A — Watchtower (opt-in, no SSH secrets needed)
 
 ```
 push a v* tag
         │
         ▼
-GitHub Actions (deploy.yml)
+GitHub Actions (deploy.yml → "Build & publish")
   test    — lint + typecheck + unit tests
-        ├─────────────┬───────────────┐
-        ▼             ▼               │
-  build           dxt                 │   build ∥ dxt run in parallel
-  buildx → push   bundle .dxt →       │   (both need `test`)
-  ghcr.io/…       attach to Release   │
-        │
-        │   (no SSH step — Watchtower takes it from here)
-        │
-        ▼
-Server — Watchtower checks GHCR nightly at 03:00 UTC
-  detects new :latest → docker pull → docker restart bx24-template-mcp
+        ├─────────────┬
+        ▼             ▼
+  build           dxt
+  buildx → push   bundle .dxt →
+  ghcr.io/…       attach to Release
 ```
 
-[`docker-compose.watchtower.yml`](../docker-compose.watchtower.yml) is a Compose overlay. Run `make watchtower-up` instead of `make up` to start the app with Watchtower alongside it. Watchtower watches only the app container (via label) and removes old images after update. No SSH secrets needed in GitHub Actions.
+CI builds and pushes the image to GHCR. **CI does not SSH into your server.** Pulling the image to production is the operator's responsibility — via Watchtower (automatic) or `make redeploy` (manual). No SSH secrets are needed in GitHub Actions.
+
+### Option A — Watchtower (automatic updates)
+
+[`docker-compose.watchtower.yml`](../docker-compose.watchtower.yml) is a Compose overlay. Run `make watchtower-up` instead of `make up` to start the app with Watchtower alongside it. Watchtower watches only the app container (via label) and removes old images after update.
 
 > ⚠️ **Pushing a `v*` tag publishes a new image.** Watchtower picks it up at the next nightly check (03:00 UTC). Before tagging, make sure the server's `.env` is complete and the container is healthy.
 
-### Path B — SSH deploy (for forks / self-hosted)
+### Option B — Manual redeploy
 
-```
-push a v* tag → CI build → SSH to prod → docker compose pull && up -d
-                                       → health check → rollback on failure
-```
-
-Configure `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `PROD_HOST` in GitHub secrets/variables (see [GitHub configuration](#github-configuration)). This path performs an in-pipeline health check and automatic rollback — useful when you want CI to own the deploy lifecycle end-to-end.
+SSH into the host and run `make redeploy` (or `docker compose pull && docker compose up -d`) whenever you want to deploy a new image. No special CI secrets needed — just your normal SSH access to the host.
 
 ### Cutting a release
 
@@ -73,7 +80,7 @@ Use an annotated (`-a`) `vMAJOR.MINOR.PATCH` (or `-alpha.N` / `-beta.N`) tag mat
 
 ## Prerequisites — once per host
 
-The deploy job SSHes into one host and runs `docker compose` there. Set the host up **once**:
+Set the host up **once**:
 
 - [ ] **Docker Engine ≥ 24 + Compose v2**; the SSH user can run `docker` (in the `docker` group).
 - [ ] **`jq`** — required for the JSON-RPC assertion in the smoke test (`make verify-local`). Without it the last two checks are skipped. Install once: `sudo apt install -y jq` (Debian/Ubuntu) or `brew install jq` (macOS).
@@ -149,30 +156,16 @@ The `.env` lives only on the host (mode `0600`, owned by the deploy user) and is
 
 ## GitHub configuration
 
-**Path A (Watchtower)** — only `GITHUB_TOKEN` is needed. It is auto-provided and pushes the image to GHCR. No SSH secrets. The repo's package settings must allow Actions to write packages.
+Only `GITHUB_TOKEN` is needed — it is auto-provided and used by the `build` job to push the image to GHCR. No SSH secrets. Make sure the repo's package settings allow Actions to write packages (**Settings → Actions → General → Workflow permissions → Read and write**).
 
-**Path B (SSH deploy)** — configure these in **Settings → Secrets and variables → Actions**:
+The workflow runs least-privilege (`contents: read`), elevating per-job only where needed (`build` → `packages: write`, `dxt` → `contents: write`).
 
-| Kind | Name | Purpose |
-|---|---|---|
-| Secret | `SSH_HOST` | Production host address. |
-| Secret | `SSH_USER` | SSH user (must be able to run `docker`). |
-| Secret | `SSH_KEY` | Private key for that user. |
-| Secret | `SSH_PORT` | Optional. Read as `secrets.SSH_PORT \|\| 22`, so leaving it unset defaults to `22` — don't create an empty secret, just omit it. (Moving this to a Variable is tracked in [#90](https://github.com/bitrix24/templates-mcp/issues/90).) |
-| Variable | `PROD_HOST` | Public hostname for the post-deploy health check (`https://<PROD_HOST>/api/health`) and the environment URL. |
-| Variable | `DEPLOY_PATH` | Optional; deploy directory on the host. Defaults to `/opt/bx24-template-mcp`. |
+### Bring-your-own CD (forks / self-hosted)
 
-The workflow runs least-privilege (`contents: read` + `packages: read`), elevating per-job only where needed (`build` → `packages: write`, `dxt` → `contents: write`).
+If you fork this repo and want CI to deploy automatically, you have two options:
 
-> ⚠️ **Hardening — host-key verification (open gap)**: the deploy uses `appleboy/ssh-action`, which does **not** verify the production host's SSH fingerprint by default. The runner trusts whatever host answers on `SSH_HOST` — so anyone able to redirect that address (DNS spoofing, BGP hijack, a cloud-network MITM) can capture `SSH_KEY` and gain shell + Docker-daemon access to production. Docker-daemon access is effectively root: the `.env` secrets, every running container, and the host filesystem are all reachable. **Not recommended for production without pinning.** Close it by setting the action's `fingerprint` input in `deploy.yml`, e.g.:
->
-> ```yaml
->     with:
->       host: ${{ secrets.SSH_HOST }}
->       fingerprint: ${{ secrets.SSH_FINGERPRINT }}   # ssh-keyscan -p <port> <host>
-> ```
->
-> Tracked in [#89](https://github.com/bitrix24/templates-mcp/issues/89); it should land before the host serves real traffic.
+1. **Watchtower**: the `build` job already pushes to GHCR on every `v*` tag. Add the Watchtower overlay on your host — no workflow changes needed.
+2. **Custom deploy step**: add a job to `deploy.yml` that SSHes in or calls a webhook after `build` succeeds. Keep secrets in GitHub Actions secrets; bind them through `env:` rather than interpolating `${{ secrets.* }}` directly into `run:` blocks (expression-injection risk — see CI authoring rule in `CONTRIBUTING.md`).
 
 ## Environment variables
 
@@ -197,39 +190,9 @@ Set these in the `.env` file in the deploy directory (consumed by [`docker-compo
 
 > **Secrets management**: the `.env` lives only on the host, never in the repo; the image carries no secrets and reads everything from the environment at runtime. Rotating `NUXT_MCP_AUTH_TOKEN` is **not zero-downtime** — editing `.env` and running `docker compose up -d` restarts the container and severs all current MCP clients at once (no dual-accept window), so plan a short maintenance window and re-issue the new token. Rotate `NUXT_GITHUB_FEEDBACK_TOKEN` the same way. Per-secret rotation detail lives in [`SECURITY.md`](./SECURITY.md) and [`FEEDBACK.md`](./FEEDBACK.md).
 
-## What the deploy job does on the host (Path B — SSH)
-
-From [`deploy.yml`](../.github/workflows/deploy.yml), after the image is pushed:
-
-```bash
-cd "$DEPLOY_PATH"                      # default /opt/bx24-template-mcp
-# Record the running image's repo digest for rollback. Two steps: the
-# container exposes only its image ID (.Image), and only the image's own
-# inspect carries .RepoDigests. Overwrite (not append) so we keep the
-# last-known-good ref. On the very first deploy there is no container, so
-# this resolves to an empty `previous=`.
-CURRENT_DIGEST=""
-IMAGE_ID=$(docker container inspect --format='{{.Image}}' bx24-template-mcp 2>/dev/null || true)
-if [ -n "$IMAGE_ID" ]; then
-  CURRENT_DIGEST=$(docker image inspect --format='{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' "$IMAGE_ID" 2>/dev/null || true)
-fi
-echo "previous=$CURRENT_DIGEST" > rollback.env
-docker compose pull --quiet
-docker compose up -d --remove-orphans
-docker image prune -f
-```
-
-Then it polls `https://<PROD_HOST>/api/health` up to 10 times (5s timeout each, 3s apart — worst case ~80s before declaring failure). If the service never returns 200, the **rollback** step distinguishes two cases: a **missing** `rollback.env` → "rollback.env missing — manual rollback required"; a present file with an **empty** `previous=` → "No previous image recorded — manual rollback required". Otherwise it pulls the recorded digest and re-pins it:
-
-```bash
-BX24_IMAGE="$PREV" docker compose up -d --remove-orphans
-```
-
-`docker-compose.yml` defaults its `image:` to `${BX24_IMAGE:-ghcr.io/bitrix24/templates-mcp:latest}`, so exporting `BX24_IMAGE` pins a specific digest without editing any file on disk.
-
 ## Manual rollback
 
-### Watchtower path
+### With Watchtower
 
 Watchtower always converges on the latest pushed image. To roll back:
 
@@ -254,17 +217,17 @@ Watchtower always converges on the latest pushed image. To roll back:
 
 Available image tags are published on the [GHCR page](https://github.com/bitrix24/templates-mcp/pkgs/container/templates-mcp) — copy the digest or tag from there. For a version tag, CI publishes both `v0.1.0` and `0.1.0` (no-prefix semver) — either works in `BX24_IMAGE`.
 
-### SSH deploy path
+### Without Watchtower (manual redeploy)
 
-If you need to roll back outside the automated flow, pin a known-good tag or digest. **Use only a literal tag or digest — never a value read from an untrusted source (a tampered `rollback.env`, env, or log output); it is passed to the shell.**
+Pin a known-good tag or digest. **Use only a literal tag or digest — never a value read from an untrusted source (log output, env dump); it is passed to the shell.**
 
 ```bash
-cd "$DEPLOY_PATH"
+cd /opt/bx24-template-mcp
 BX24_IMAGE="ghcr.io/bitrix24/templates-mcp:0.1.0" docker compose up -d --remove-orphans
-curl -fsS https://<PROD_HOST>/api/health
+curl -fsS https://<your-domain>/api/health
 ```
 
-`BX24_IMAGE` must be a valid image reference — a digest (`ghcr.io/bitrix24/templates-mcp@sha256:…`) or a `name:tag`. To make the pin permanent, set `BX24_IMAGE=…` in `.env` (otherwise the next `v*` deploy pulls `:latest` again). See [`RUNBOOK.md`](./RUNBOOK.md) for the full incident flow.
+`BX24_IMAGE` must be a valid image reference — a digest (`ghcr.io/bitrix24/templates-mcp@sha256:…`) or a `name:tag`. To make the pin permanent, set `BX24_IMAGE=…` in `.env` (otherwise the next `make redeploy` pulls `:latest`). See [`RUNBOOK.md`](./RUNBOOK.md) for the full incident flow.
 
 ## Running a production-like container locally
 

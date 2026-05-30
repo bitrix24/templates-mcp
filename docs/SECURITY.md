@@ -35,7 +35,6 @@ While the project is pre-release, only the latest tag receives fixes. Once a `v0
 | `NUXT_BITRIX24_WEBHOOK_URL` | Host `.env` (production); `.env` on laptop (local HTTP); OS keychain (DXT) | Revoke webhook in Bitrix24 portal → create new → update store → `docker compose up -d` (production) or restart client (DXT). The old URL fails closed (401/403). |
 | `NUXT_MCP_AUTH_TOKEN` | Host `.env` (production); `.env` on laptop (local HTTP); not used for DXT | Generate new (`openssl rand -hex 32`), update `.env`, `docker compose up -d`, update every connected client header. No revocation list — old token is dead the instant the new one is loaded. |
 | GitHub feedback PAT [^pat] | Host `.env` / laptop `.env` / DXT user_config | Revoke PAT on GitHub → create new → update store → restart service. |
-| `SSH_KEY` (GitHub Actions secret) | GitHub repo secrets | Generate new key pair, add public half to deploy user's `authorized_keys`, replace `SSH_KEY` secret value, remove old public key. |
 
 [^pat]: All transports use `NUXT_GITHUB_FEEDBACK_TOKEN` — HTTP modes read it via Nuxt runtime-config, and the DXT manifest injects that same name. `mcp-stdio/nuxt-shims.ts` resolves `NUXT_GITHUB_FEEDBACK_TOKEN ?? GITHUB_FEEDBACK_TOKEN`, keeping the un-prefixed `GITHUB_FEEDBACK_TOKEN` only as a back-compat fallback for older bundles.
 
