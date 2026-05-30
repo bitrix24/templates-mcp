@@ -1,6 +1,6 @@
 # Automated tool-selection evals
 
-`Last reviewed: 2026-05-28`
+`Last reviewed: 2026-05-30`
 
 ## What this is
 

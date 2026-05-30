@@ -1,6 +1,6 @@
 # bx24-template-mcp — Agent Skill
 
-`Last reviewed: 2026-05-28`
+`Last reviewed: 2026-05-30`
 
 You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. Read this before making changes.
 

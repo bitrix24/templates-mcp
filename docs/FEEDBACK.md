@@ -1,6 +1,6 @@
 # Agent feedback (`bx24mcp_submit_feedback`)
 
-`Last reviewed: 2026-05-28`
+`Last reviewed: 2026-05-30`
 
 This MCP exposes a meta-tool — `bx24mcp_submit_feedback` — that lets the AI agent file a GitHub issue against this repository when it notices something worth reporting. The mechanism is the project's primary channel for structured, machine-authored feedback. This document is for **maintainers** triaging those issues and **operators** configuring the integration; agents should look at [`../skills/manage-bx24-template-mcp/feedback.md`](../skills/manage-bx24-template-mcp/feedback.md) for the calling guide.
 
