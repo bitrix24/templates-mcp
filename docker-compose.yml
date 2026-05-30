@@ -49,7 +49,13 @@ services:
     # Check for latest at: https://github.com/containrrr/watchtower/releases
     image: containrrr/watchtower:1.7.1
     container_name: watchtower
-    restart: always
+    # `unless-stopped` lets `docker compose stop watchtower` stay down until
+    # explicitly started again — required for the manual rollback procedure
+    # (DEPLOYMENT.md "Manual rollback → Watchtower path"). `restart: always`
+    # would cause the daemon to immediately resurrect the container after stop.
+    restart: unless-stopped
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
     deploy:
@@ -60,13 +66,15 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      # Docker Engine 24+ uses API 1.47; Watchtower 1.7.x needs this hint.
+      # Docker Engine 26+ uses API 1.47; Watchtower 1.7.x needs this hint
+      # if the daemon advertises an API version higher than the client default.
       DOCKER_API_VERSION: "1.47"
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_POLL_INTERVAL: "300"
-    networks:
-      - proxy-net
+    # Watchtower uses Docker socket only — it needs no network access to other
+    # containers. No networks: block means Docker Compose creates an isolated
+    # default network for this service only; it cannot reach the app or proxy.
 
 networks:
   proxy-net:

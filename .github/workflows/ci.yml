@@ -72,6 +72,17 @@ jobs:
         with:
           scandir: ./scripts
 
+  compose-validate:
+    name: Compose config validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Validate docker-compose files
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.server.yml config --quiet
+          docker compose -f docker-compose.example.yml config --quiet
+
   # Static analysers for the workflow files themselves. Advisory mode while
   # the first runs settle and findings are triaged — the existing `lint` job
   # below has a narrow regex guard ("Guard against expression-injection")
@@ -463,7 +474,7 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-latest
-    needs: [commitlint, shellcheck, actionlint, zizmor, lint, typecheck, test, integration, prepare-windows, build, scaffold-sync, docker-smoke]
+    needs: [commitlint, shellcheck, compose-validate, actionlint, zizmor, lint, typecheck, test, integration, prepare-windows, build, scaffold-sync, docker-smoke]
     if: always()
     steps:
       - name: Verify no required job failed or was cancelled

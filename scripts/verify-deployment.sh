@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2086  # RESOLVE_ARG intentional word-split (bash 3.2 compat, no arrays)
 # Operator-runnable smoke check for a freshly stood-up bx24-template-mcp
 # HTTP deployment. Mirrors the contract the CI `docker-smoke` job pins on
 # every PR, so a green run here means the deployed bundle matches what

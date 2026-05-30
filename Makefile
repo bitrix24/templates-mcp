@@ -13,6 +13,7 @@
 .PHONY: dev build test lint typecheck \
         init-network server-up server-down \
         up down pull redeploy logs ps \
+        watchtower-stop watchtower-start \
         build-dxt verify verify-local clean
 
 # Locate verify-deployment.sh whether the Makefile lives inside the repo
@@ -90,6 +91,18 @@ logs:
 # List running containers with status.
 ps:
 	docker compose ps
+
+# ─── Watchtower control (auto-deploy) ────────────────────────────────────────
+
+# Stop Watchtower to prevent it from re-updating during a manual rollback.
+# After pinning BX24_IMAGE in .env and restarting the app with `make up`,
+# run this to hold the rollback state. Resume auto-updates with watchtower-start.
+watchtower-stop:
+	docker compose stop watchtower
+
+# Resume Watchtower auto-updates (after a manual rollback is verified stable).
+watchtower-start:
+	docker compose start watchtower
 
 # ─── Smoke test ───────────────────────────────────────────────────────────────
 

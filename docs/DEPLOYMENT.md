@@ -31,7 +31,7 @@ Server — Watchtower polls GHCR every 5 min
   detects new :latest → docker pull → docker restart bx24-template-mcp
 ```
 
-`docker-compose.yml` ships a `watchtower` service. It watches only containers labelled `com.centurylinklabs.watchtower.enable=true` (the app carries that label) and removes old images after update. No SSH secrets needed in GitHub Actions.
+`docker-compose.yml` ships a `watchtower` service alongside the app. Both start together with `make up` — no extra step. Watchtower watches only containers labelled `com.centurylinklabs.watchtower.enable=true` (the app carries that label) and removes old images after update. No SSH secrets needed in GitHub Actions.
 
 > ⚠️ **Pushing a `v*` tag publishes a new image.** Watchtower picks it up within 5 minutes. Before tagging, make sure the server's `.env` is complete and the container is healthy.
 
@@ -99,12 +99,14 @@ The repo ships a `Makefile` that wraps the most common operations so you don't h
 | Start nginx-proxy + acme-companion (once, skip if already running) | `make server-up` |
 | Stop nginx-proxy + acme-companion | `make server-down` |
 | Build image from local source (requires repo clone with Dockerfile) | `make build` |
-| Start application | `make up` |
+| Start application (+ Watchtower) | `make up` |
 | Stop application | `make down` |
 | Pull latest image from GHCR (requires published release) | `make pull` |
 | Pull latest image + restart | `make redeploy` |
 | Show container status | `make ps` |
 | Follow logs | `make logs` |
+| Stop Watchtower (hold state during manual rollback) | `make watchtower-stop` |
+| Resume Watchtower auto-updates after rollback | `make watchtower-start` |
 | Smoke-test from external machine | `make verify URL=https://mcp.example.com` |
 | Smoke-test directly on the server (hairpin NAT) | `make verify-local URL=https://mcp.example.com` |
 | Remove stopped containers, dangling images, build cache ⚠️ also removes unused networks | `make clean` |
