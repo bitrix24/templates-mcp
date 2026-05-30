@@ -17,7 +17,7 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "packageManager": "pnpm@10.33.4",
+  "packageManager": "pnpm@11.5.0",
   "scripts": {
     "build": "nuxt build",
     "build:dxt": "node mcp-stdio/build.mjs",
@@ -41,7 +41,7 @@
     "@bitrix24/b24ui-nuxt": "^2.8.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nuxtjs/mcp-toolkit": "^0.17.2",
-    "nuxt": "^4.4.5",
+    "nuxt": "^4.4.6",
     "tailwindcss": "^4.3.0",
     "zod": "^4.4.3"
   },
