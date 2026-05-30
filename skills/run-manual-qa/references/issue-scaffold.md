@@ -80,6 +80,7 @@ NUXT_GITHUB_FEEDBACK_TOKEN=github_pat_xxxxxxxxxxxxxxxxxx
 NUXT_GITHUB_FEEDBACK_REPO=<test-repo>
 NUXT_LOG_LEVEL=info        # raise to debug for the A8 logger/retry checks
 NITRO_PORT=3000            # server port; connector URL below must match
+# NODE_ENV=production      # host .env only — do NOT uncomment here (Nuxt dev rejects it)
 ```
 
 Optional, only if the run includes integration tests or evals (see `.env.example`):
