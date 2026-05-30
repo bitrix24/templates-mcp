@@ -8,6 +8,10 @@ The shipped [`docker-compose.yml`](../docker-compose.yml) assumes an `nginx-prox
 
 ## At a glance
 
+Two deploy paths — choose one:
+
+### Path A — Watchtower (default, no SSH secrets needed)
+
 ```
 push a v* tag
         │
@@ -15,18 +19,30 @@ push a v* tag
 GitHub Actions (deploy.yml)
   test    — lint + typecheck + unit tests
         ├─────────────┬───────────────┐
-        ▼             ▼                │
+        ▼             ▼               │
   build           dxt                 │   build ∥ dxt run in parallel
   buildx → push   bundle .dxt →       │   (both need `test`)
   ghcr.io/…       attach to Release   │
-        │                             │
-        ▼                             │
-  deploy  — SSH to prod: docker compose pull && up -d   (needs `build`)
-  health  — curl https://<PROD_HOST>/api/health (10 tries, 5s timeout, 3s apart)
-  rollback— on health failure, re-pin the previous image digest
+        │
+        │   (no SSH step — Watchtower takes it from here)
+        │
+        ▼
+Server — Watchtower polls GHCR every 5 min
+  detects new :latest → docker pull → docker restart bx24-template-mcp
 ```
 
-> ⚠️ **Pushing a `v*` tag triggers an immediate production deploy.** There is no "build now, ship later" gate — the tag IS the release. Before tagging, make sure the deploy secrets/variables (below) are configured and you are ready for prod to change. If they are *not* configured the build still runs, but the deploy step fails at the SSH stage (no silent half-deploy). To add a manual approval gate, set required reviewers on the `production` Environment (Settings → Environments).
+`docker-compose.yml` ships a `watchtower` service. It watches only containers labelled `com.centurylinklabs.watchtower.enable=true` (the app carries that label) and removes old images after update. No SSH secrets needed in GitHub Actions.
+
+> ⚠️ **Pushing a `v*` tag publishes a new image.** Watchtower picks it up within 5 minutes. Before tagging, make sure the server's `.env` is complete and the container is healthy.
+
+### Path B — SSH deploy (for forks / self-hosted)
+
+```
+push a v* tag → CI build → SSH to prod → docker compose pull && up -d
+                                       → health check → rollback on failure
+```
+
+Configure `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `PROD_HOST` in GitHub secrets/variables (see [GitHub configuration](#github-configuration)). This path performs an in-pipeline health check and automatic rollback — useful when you want CI to own the deploy lifecycle end-to-end.
 
 ### Cutting a release
 
@@ -129,7 +145,9 @@ The `.env` lives only on the host (mode `0600`, owned by the deploy user) and is
 
 ## GitHub configuration
 
-The `deploy` job reads these from **Settings → Secrets and variables → Actions**:
+**Path A (Watchtower)** — only `GITHUB_TOKEN` is needed. It is auto-provided and pushes the image to GHCR. No SSH secrets. The repo's package settings must allow Actions to write packages.
+
+**Path B (SSH deploy)** — configure these in **Settings → Secrets and variables → Actions**:
 
 | Kind | Name | Purpose |
 |---|---|---|
@@ -140,7 +158,7 @@ The `deploy` job reads these from **Settings → Secrets and variables → Actio
 | Variable | `PROD_HOST` | Public hostname for the post-deploy health check (`https://<PROD_HOST>/api/health`) and the environment URL. |
 | Variable | `DEPLOY_PATH` | Optional; deploy directory on the host. Defaults to `/opt/bx24-template-mcp`. |
 
-`GITHUB_TOKEN` (auto-provided) pushes the image to GHCR — no extra secret, but the repo's package settings must allow Actions to write packages. The workflow runs least-privilege (`contents: read` + `packages: read`), elevating per-job only where needed (`build` → `packages: write`, `dxt` → `contents: write`).
+The workflow runs least-privilege (`contents: read` + `packages: read`), elevating per-job only where needed (`build` → `packages: write`, `dxt` → `contents: write`).
 
 > ⚠️ **Hardening — host-key verification (open gap)**: the deploy uses `appleboy/ssh-action`, which does **not** verify the production host's SSH fingerprint by default. The runner trusts whatever host answers on `SSH_HOST` — so anyone able to redirect that address (DNS spoofing, BGP hijack, a cloud-network MITM) can capture `SSH_KEY` and gain shell + Docker-daemon access to production. Docker-daemon access is effectively root: the `.env` secrets, every running container, and the host filesystem are all reachable. **Not recommended for production without pinning.** Close it by setting the action's `fingerprint` input in `deploy.yml`, e.g.:
 >
@@ -175,7 +193,7 @@ Set these in the `.env` file in the deploy directory (consumed by [`docker-compo
 
 > **Secrets management**: the `.env` lives only on the host, never in the repo; the image carries no secrets and reads everything from the environment at runtime. Rotating `NUXT_MCP_AUTH_TOKEN` is **not zero-downtime** — editing `.env` and running `docker compose up -d` restarts the container and severs all current MCP clients at once (no dual-accept window), so plan a short maintenance window and re-issue the new token. Rotate `NUXT_GITHUB_FEEDBACK_TOKEN` the same way. Per-secret rotation detail lives in [`SECURITY.md`](./SECURITY.md) and [`FEEDBACK.md`](./FEEDBACK.md).
 
-## What the deploy job does on the host
+## What the deploy job does on the host (Path B — SSH)
 
 From [`deploy.yml`](../.github/workflows/deploy.yml), after the image is pushed:
 
@@ -206,6 +224,30 @@ BX24_IMAGE="$PREV" docker compose up -d --remove-orphans
 `docker-compose.yml` defaults its `image:` to `${BX24_IMAGE:-ghcr.io/bitrix24/templates-mcp:latest}`, so exporting `BX24_IMAGE` pins a specific digest without editing any file on disk.
 
 ## Manual rollback
+
+### Watchtower path
+
+Watchtower always converges on the latest pushed image. To roll back:
+
+1. **Pin the old version** in `.env`:
+   ```bash
+   # Use the semver tag (no 'v' prefix) or the full digest
+   echo 'BX24_IMAGE=ghcr.io/bitrix24/templates-mcp:0.1.0' >> .env
+   ```
+2. **Restart the app** with the pinned image:
+   ```bash
+   docker compose up -d --remove-orphans bx24-template-mcp
+   ```
+3. **Stop Watchtower** so it doesn't immediately re-update:
+   ```bash
+   docker compose stop watchtower
+   ```
+4. Verify: `make verify-local URL=https://your-domain.com`
+5. When ready to resume auto-updates, remove `BX24_IMAGE` from `.env` and restart Watchtower: `docker compose up -d watchtower`.
+
+Available image tags are published on the [GHCR page](https://github.com/bitrix24/templates-mcp/pkgs/container/templates-mcp) — copy the digest or tag from there. For a version tag, CI publishes both `v0.1.0` and `0.1.0` (no-prefix semver) — either works in `BX24_IMAGE`.
+
+### SSH deploy path
 
 If you need to roll back outside the automated flow, pin a known-good tag or digest. **Use only a literal tag or digest — never a value read from an untrusted source (a tampered `rollback.env`, env, or log output); it is passed to the shell.**
 

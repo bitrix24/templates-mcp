@@ -119,6 +119,16 @@ jobs:
           fail_on_unmatched_files: true
 
   deploy:
+    # SSH-based deploy — intended for fork / self-hosted deployments where the
+    # operator configures SSH_HOST / SSH_USER / SSH_KEY secrets and wants CI to
+    # push new images directly to the server.
+    #
+    # If you run Watchtower on the server (the default `docker-compose.yml`
+    # includes it), this job is optional: Watchtower polls GHCR every 5 min
+    # and restarts the app container automatically after `build` pushes the
+    # image. Leave the SSH_* secrets unconfigured to skip the SSH stage while
+    # still publishing to GHCR (the job will error at the SSH step, but the
+    # image is already live for Watchtower to pick up).
     name: Deploy to production
     runs-on: ubuntu-latest
     needs: build
