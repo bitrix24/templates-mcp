@@ -82,6 +82,7 @@ jobs:
           docker compose -f docker-compose.yml config --quiet
           docker compose -f docker-compose.server.yml config --quiet
           docker compose -f docker-compose.example.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.watchtower.yml config --quiet
 
   # Static analysers for the workflow files themselves. Advisory mode while
   # the first runs settle and findings are triaged — the existing `lint` job

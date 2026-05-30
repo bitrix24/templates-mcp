@@ -13,8 +13,10 @@
 .PHONY: dev build test lint typecheck \
         init-network server-up server-down \
         up down pull redeploy logs ps \
-        watchtower-stop watchtower-start \
+        watchtower-up watchtower-down watchtower-stop watchtower-start \
         build-dxt verify verify-local clean
+
+WATCHTOWER_COMPOSE := docker-compose.watchtower.yml
 
 # Locate verify-deployment.sh whether the Makefile lives inside the repo
 # (scripts/) or in a separate deploy directory next to a cloned src/ tree
@@ -92,17 +94,26 @@ logs:
 ps:
 	docker compose ps
 
-# ─── Watchtower control (auto-deploy) ────────────────────────────────────────
+# ─── Watchtower (opt-in auto-deploy) ─────────────────────────────────────────
 
-# Stop Watchtower to prevent it from re-updating during a manual rollback.
-# After pinning BX24_IMAGE in .env and restarting the app with `make up`,
-# run this to hold the rollback state. Resume auto-updates with watchtower-start.
+# Start application + Watchtower (auto-update overlay).
+# Watchtower checks GHCR nightly at 03:00 UTC and restarts the app when a new
+# image is available. See docker-compose.watchtower.yml for configuration.
+watchtower-up:
+	docker compose -f docker-compose.yml -f $(WATCHTOWER_COMPOSE) up -d
+
+# Stop application + Watchtower.
+watchtower-down:
+	docker compose -f docker-compose.yml -f $(WATCHTOWER_COMPOSE) down
+
+# Pause Watchtower during a manual rollback (stays down until watchtower-start).
+# See docs/DEPLOYMENT.md "Manual rollback → Watchtower path".
 watchtower-stop:
-	docker compose stop watchtower
+	docker compose -f docker-compose.yml -f $(WATCHTOWER_COMPOSE) stop watchtower
 
-# Resume Watchtower auto-updates (after a manual rollback is verified stable).
+# Resume Watchtower after the rollback is verified stable.
 watchtower-start:
-	docker compose start watchtower
+	docker compose -f docker-compose.yml -f $(WATCHTOWER_COMPOSE) start watchtower
 
 # ─── Smoke test ───────────────────────────────────────────────────────────────
 

@@ -1,0 +1,68 @@
+# Watchtower — automatic container update overlay (opt-in).
+#
+# Compose override that adds Watchtower alongside the main application.
+# Use it when you want automatic rolling updates: every time a new image is
+# pushed to GHCR after a `v*` tag, Watchtower pulls it and restarts the app
+# container within the configured schedule window — no SSH access needed.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.watchtower.yml up -d
+#   make watchtower-up      # shortcut in the Makefile
+#
+# Rollback (pin the old version while Watchtower is paused):
+#   make watchtower-stop    # pause auto-updates
+#   echo 'BX24_IMAGE=ghcr.io/bitrix24/templates-mcp:0.1.0' >> .env
+#   docker compose up -d bx24-template-mcp
+#   make verify-local URL=https://your-domain.com
+#   make watchtower-start   # resume auto-updates when stable
+#
+# Security note: Watchtower mounts /var/run/docker.sock which grants full
+# Docker API access on the host. This is an intentional trade-off — see
+# issue #190 for a tracked improvement (docker-socket-proxy).
+#
+# See docs/DEPLOYMENT.md "Path A — Watchtower" for the full picture.
+
+services:
+  bx24-template-mcp:
+    # Inherit all settings from docker-compose.yml; add Watchtower opt-in label.
+    # The label is harmless without this overlay — Watchtower only runs here.
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+
+  watchtower:
+    # Watches containers labelled com.centurylinklabs.watchtower.enable=true
+    # (--label-enable) and restarts them when a newer image is available.
+    # Removes the old image after a successful update (--cleanup).
+    # Pin to a specific release — never use :latest for infrastructure images.
+    # Check for latest at: https://github.com/containrrr/watchtower/releases
+    # TODO(#191): pin by SHA digest instead of mutable tag.
+    image: containrrr/watchtower:1.7.1
+    container_name: watchtower
+    # `unless-stopped` lets `docker compose stop watchtower` stay down until
+    # explicitly started — required for the manual rollback procedure above.
+    # `restart: always` would cause the daemon to immediately resurrect it.
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 64M
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Docker Engine 26+ uses API 1.47; Watchtower 1.7.x needs this hint
+      # if the daemon advertises an API version higher than the client default.
+      DOCKER_API_VERSION: "1.47"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      # Check for updates nightly at 03:00 UTC (cron: second minute hour day month weekday).
+      # Predictable window avoids mid-traffic restarts. To check more frequently,
+      # replace WATCHTOWER_SCHEDULE with WATCHTOWER_POLL_INTERVAL (seconds):
+      #   WATCHTOWER_POLL_INTERVAL: "300"   # every 5 minutes
+      WATCHTOWER_SCHEDULE: "0 0 3 * * *"
+    # Watchtower uses Docker socket only — no network access to other containers
+    # needed. Omitting networks: gives it an isolated default compose network.

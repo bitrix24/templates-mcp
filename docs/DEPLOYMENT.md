@@ -10,7 +10,7 @@ The shipped [`docker-compose.yml`](../docker-compose.yml) assumes an `nginx-prox
 
 Two deploy paths — choose one:
 
-### Path A — Watchtower (default, no SSH secrets needed)
+### Path A — Watchtower (opt-in, no SSH secrets needed)
 
 ```
 push a v* tag
@@ -27,13 +27,13 @@ GitHub Actions (deploy.yml)
         │   (no SSH step — Watchtower takes it from here)
         │
         ▼
-Server — Watchtower polls GHCR every 5 min
+Server — Watchtower checks GHCR nightly at 03:00 UTC
   detects new :latest → docker pull → docker restart bx24-template-mcp
 ```
 
-`docker-compose.yml` ships a `watchtower` service alongside the app. Both start together with `make up` — no extra step. Watchtower watches only containers labelled `com.centurylinklabs.watchtower.enable=true` (the app carries that label) and removes old images after update. No SSH secrets needed in GitHub Actions.
+[`docker-compose.watchtower.yml`](../docker-compose.watchtower.yml) is a Compose overlay. Run `make watchtower-up` instead of `make up` to start the app with Watchtower alongside it. Watchtower watches only the app container (via label) and removes old images after update. No SSH secrets needed in GitHub Actions.
 
-> ⚠️ **Pushing a `v*` tag publishes a new image.** Watchtower picks it up within 5 minutes. Before tagging, make sure the server's `.env` is complete and the container is healthy.
+> ⚠️ **Pushing a `v*` tag publishes a new image.** Watchtower picks it up at the next nightly check (03:00 UTC). Before tagging, make sure the server's `.env` is complete and the container is healthy.
 
 ### Path B — SSH deploy (for forks / self-hosted)
 
@@ -99,14 +99,16 @@ The repo ships a `Makefile` that wraps the most common operations so you don't h
 | Start nginx-proxy + acme-companion (once, skip if already running) | `make server-up` |
 | Stop nginx-proxy + acme-companion | `make server-down` |
 | Build image from local source (requires repo clone with Dockerfile) | `make build` |
-| Start application (+ Watchtower) | `make up` |
-| Stop application | `make down` |
+| Start application only | `make up` |
+| Start application + Watchtower (auto-update overlay) | `make watchtower-up` |
+| Stop application + Watchtower | `make watchtower-down` |
+| Stop application only | `make down` |
 | Pull latest image from GHCR (requires published release) | `make pull` |
 | Pull latest image + restart | `make redeploy` |
 | Show container status | `make ps` |
 | Follow logs | `make logs` |
-| Stop Watchtower (hold state during manual rollback) | `make watchtower-stop` |
-| Resume Watchtower auto-updates after rollback | `make watchtower-start` |
+| Pause Watchtower during manual rollback | `make watchtower-stop` |
+| Resume Watchtower after rollback | `make watchtower-start` |
 | Smoke-test from external machine | `make verify URL=https://mcp.example.com` |
 | Smoke-test directly on the server (hairpin NAT) | `make verify-local URL=https://mcp.example.com` |
 | Remove stopped containers, dangling images, build cache ⚠️ also removes unused networks | `make clean` |
@@ -231,21 +233,24 @@ BX24_IMAGE="$PREV" docker compose up -d --remove-orphans
 
 Watchtower always converges on the latest pushed image. To roll back:
 
-1. **Pin the old version** in `.env`:
+1. **Stop Watchtower** so it doesn't re-update while you roll back:
+   ```bash
+   make watchtower-stop
+   ```
+2. **Pin the old version** in `.env`:
    ```bash
    # Use the semver tag (no 'v' prefix) or the full digest
    echo 'BX24_IMAGE=ghcr.io/bitrix24/templates-mcp:0.1.0' >> .env
    ```
-2. **Restart the app** with the pinned image:
+3. **Restart the app** with the pinned image:
    ```bash
-   docker compose up -d --remove-orphans bx24-template-mcp
-   ```
-3. **Stop Watchtower** so it doesn't immediately re-update:
-   ```bash
-   docker compose stop watchtower
+   make up
    ```
 4. Verify: `make verify-local URL=https://your-domain.com`
-5. When ready to resume auto-updates, remove `BX24_IMAGE` from `.env` and restart Watchtower: `docker compose up -d watchtower`.
+5. When stable, remove `BX24_IMAGE` from `.env` and resume Watchtower:
+   ```bash
+   make watchtower-start
+   ```
 
 Available image tags are published on the [GHCR page](https://github.com/bitrix24/templates-mcp/pkgs/container/templates-mcp) — copy the digest or tag from there. For a version tag, CI publishes both `v0.1.0` and `0.1.0` (no-prefix semver) — either works in `BX24_IMAGE`.
 
