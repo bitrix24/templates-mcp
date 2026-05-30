@@ -77,18 +77,25 @@ The repo ships a `Makefile` that wraps the most common operations so you don't h
 | Goal | Command |
 |---|---|
 | Local dev server | `make dev` |
-| Unit tests | `make test` |
+| Unit tests / lint / typecheck | `make test` / `make lint` / `make typecheck` |
+| Build DXT bundle for Claude Desktop | `make build-dxt` |
 | Create `proxy-net` network (once) | `make init-network` |
-| Start nginx-proxy + acme-companion (once) | `make server-up` |
-| Build image from local source | `make build` |
+| Start nginx-proxy + acme-companion (once, skip if already running) | `make server-up` |
+| Stop nginx-proxy + acme-companion | `make server-down` |
+| Build image from local source (requires repo clone with Dockerfile) | `make build` |
 | Start application | `make up` |
+| Stop application | `make down` |
+| Pull latest image from GHCR (requires published release) | `make pull` |
 | Pull latest image + restart | `make redeploy` |
+| Show container status | `make ps` |
 | Follow logs | `make logs` |
 | Smoke-test from external machine | `make verify URL=https://mcp.example.com` |
-| Smoke-test directly on the server | `make verify-local URL=https://mcp.example.com` |
-| Remove stopped containers / build cache | `make clean` |
+| Smoke-test directly on the server (hairpin NAT) | `make verify-local URL=https://mcp.example.com` |
+| Remove stopped containers, dangling images, build cache ⚠️ also removes unused networks | `make clean` |
 
 The reverse-proxy stack is defined in [`docker-compose.server.yml`](../docker-compose.server.yml). It runs `nginx-proxy` + `acme-companion` on the shared `proxy-net` network and handles TLS for any container that declares `VIRTUAL_HOST` / `LETSENCRYPT_HOST`. Start it once with `make server-up`; it survives host reboots via `restart: always`.
+
+> **If nginx-proxy is already running on your host** (a common setup when you host multiple services), skip `make server-up` — running it twice causes a port 80/443 conflict. Check with `docker ps | grep nginx-proxy` before running.
 
 ## First-time bootstrap on the host
 

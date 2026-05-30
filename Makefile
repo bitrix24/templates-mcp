@@ -4,6 +4,11 @@
 # First-time server:   make init-network && make server-up
 # Deploy application:  make up
 # Verify deployment:   make verify URL=https://mcp.example.com
+#
+# NOTE: make build requires a local clone of the repo (needs Dockerfile).
+# Operators who deploy from a pre-built GHCR image only need docker-compose.yml
+# and .env — they can skip build and use `make up` (pull on first run) or
+# `make redeploy` after a new release tag.
 
 .PHONY: dev build test lint typecheck \
         init-network server-up server-down \
@@ -44,6 +49,7 @@ init-network:
 	docker network create proxy-net 2>/dev/null || true
 
 # Start nginx-proxy + acme-companion (TLS terminator).
+# Skip if nginx-proxy is already running on the host — see docker-compose.server.yml.
 # Requires init-network to have run first.
 server-up:
 	docker compose -f docker-compose.server.yml up -d
@@ -54,11 +60,11 @@ server-down:
 
 # ─── Application lifecycle ────────────────────────────────────────────────────
 
-# Build the application image from local source.
+# Build the application image from local source (requires Dockerfile in repo).
 build:
 	docker compose build
 
-# Start the application (builds first if no image exists).
+# Start the application.
 up:
 	docker compose up -d
 
@@ -99,7 +105,7 @@ verify:
 	@[ -n "$(URL)" ] || (echo "Usage: make verify URL=https://mcp.example.com" && exit 1)
 	@[ -n "$(VERIFY_SCRIPT)" ] || (echo "Error: verify-deployment.sh not found in scripts/ or src/scripts/" && exit 1)
 	@set -a; [ -f .env ] && . ./.env; set +a; \
-	  bash $(VERIFY_SCRIPT) --url $(URL)
+	  bash "$(VERIFY_SCRIPT)" --url "$(URL)"
 
 # Run the smoke test directly on the server, bypassing DNS/NAT.
 # Useful when the host cannot reach its own public IP (hairpin NAT) —
@@ -112,13 +118,15 @@ verify:
 verify-local:
 	@[ -n "$(URL)" ] || (echo "Usage: make verify-local URL=https://mcp.example.com" && exit 1)
 	@[ -n "$(VERIFY_SCRIPT)" ] || (echo "Error: verify-deployment.sh not found in scripts/ or src/scripts/" && exit 1)
-	$(eval HOST := $(shell printf '%s' "$(URL)" | sed 's|https://||;s|/.*||'))
 	@set -a; [ -f .env ] && . ./.env; set +a; \
-	  bash $(VERIFY_SCRIPT) --url $(URL) --resolve $(HOST):127.0.0.1
+	  HOST=$$(printf '%s' "$(URL)" | sed 's|^https://||;s|^http://||;s|/.*||;s|:.*||'); \
+	  bash "$(VERIFY_SCRIPT)" --url "$(URL)" --resolve "$$HOST:127.0.0.1"
 
 # ─── Cleanup ─────────────────────────────────────────────────────────────────
 
-# Remove stopped containers, unused images and build cache.
-# Does NOT touch running containers or named volumes.
+# Remove stopped containers, dangling images and build cache.
+# WARNING: also removes unused Docker networks — including proxy-net if no
+# container is currently attached. Run `make init-network` afterwards if needed.
+# Does NOT touch named volumes or running containers.
 clean:
 	docker system prune -f

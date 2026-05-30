@@ -4,19 +4,35 @@
 #   make init-network
 #   make server-up
 #
+# Skip if nginx-proxy is already running on your host — running it twice
+# causes a port 80/443 conflict. Check with: docker ps | grep nginx-proxy
+#
 # After that, every container that declares VIRTUAL_HOST / LETSENCRYPT_HOST
 # on the proxy-net network gets TLS served automatically.
 #
 # See docs/REVERSE-PROXY.md for alternative TLS terminators (Caddy, Traefik,
 # plain nginx + certbot) and docs/DEPLOYMENT.md for the full host setup guide.
+#
+# Security note: both containers mount /var/run/docker.sock so nginx-proxy can
+# watch for new containers automatically. This grants the container full Docker
+# API access (equivalent to root on the host). It is an intentional architectural
+# trade-off required by the autodiscovery mechanism — keep this stack isolated
+# from untrusted workloads on the same host.
 
 services:
   nginx-proxy:
-    image: nginxproxy/nginx-proxy
+    # Pin to a specific release to avoid unintended breaking changes on pull.
+    # Check for latest at: https://github.com/nginx-proxy/nginx-proxy/releases
+    image: nginxproxy/nginx-proxy:1.6
     container_name: nginx-proxy
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
+          # Adjust cpus/memory to match your host profile — these defaults suit
+          # a low-traffic single-tenant VPS. Remove the limits block entirely on
+          # hosts with many proxied services or high request volume.
           cpus: '0.3'
           memory: 256M
     ports:
@@ -34,8 +50,12 @@ services:
     restart: always
 
   acme-companion:
-    image: nginxproxy/acme-companion
+    # Pin alongside nginx-proxy — versions are tested together upstream.
+    # Check for latest at: https://github.com/nginx-proxy/acme-companion/releases
+    image: nginxproxy/acme-companion:2.5
     container_name: acme-companion
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
