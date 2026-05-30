@@ -8,6 +8,9 @@ on:
     inputs:
       ref:
         description: 'Git ref (tag/sha) to build and publish'
+        # Useful for: re-triggering a failed release build, building a
+        # release candidate from a branch, or verifying the DXT bundle
+        # from a specific commit without pushing a new tag.
         required: true
         default: 'main'
 
@@ -25,6 +28,7 @@ jobs:
   test:
     name: Verify
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -42,6 +46,7 @@ jobs:
   build:
     name: Build & push image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: test
     permissions:
       contents: read
@@ -84,6 +89,10 @@ jobs:
   dxt:
     name: Build & attach DXT
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # dxt depends on build so that a release is only assembled (image + DXT)
+    # when both halves succeed — prevents a DXT artifact from being attached
+    # to a GitHub Release whose Docker image failed to publish.
     needs: [test, build]
     permissions:
       contents: write
@@ -113,4 +122,10 @@ jobs:
         with:
           files: dist/bx24-template-mcp.dxt
           fail_on_unmatched_files: true
+
+# NOTE: This workflow ends at publishing to GHCR — it does NOT SSH into
+# production. Pulling the new image to the server is the operator's job:
+#   - Automatic: Watchtower (docker-compose.watchtower.yml) checks GHCR nightly
+#   - Manual:    `make redeploy` on the host (docker compose pull && up -d)
+# See docs/DEPLOYMENT.md for the full operator guide.
 
