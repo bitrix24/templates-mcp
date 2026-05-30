@@ -86,10 +86,14 @@ ps:
 # Usage:
 #   make verify URL=https://mcp.example.com
 #   make verify URL=http://localhost:3000
-# Token is read from $NUXT_MCP_AUTH_TOKEN in the environment.
+# Token is read from $NUXT_MCP_AUTH_TOKEN in the environment, or from .env if
+# the variable is not already set. Shell-export semantics: values already in
+# the environment take precedence over .env, so `NUXT_MCP_AUTH_TOKEN=x make
+# verify URL=…` still works as expected.
 verify:
 	@[ -n "$(URL)" ] || (echo "Usage: make verify URL=https://mcp.example.com" && exit 1)
-	bash scripts/verify-deployment.sh --url $(URL)
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	  bash scripts/verify-deployment.sh --url $(URL)
 
 # ─── Cleanup ─────────────────────────────────────────────────────────────────
 
