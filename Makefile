@@ -10,6 +10,11 @@
         up down pull redeploy logs ps \
         build-dxt verify clean
 
+# Locate verify-deployment.sh whether the Makefile lives inside the repo
+# (scripts/) or in a separate deploy directory next to a cloned src/ tree
+# (src/scripts/).
+VERIFY_SCRIPT := $(firstword $(wildcard scripts/verify-deployment.sh src/scripts/verify-deployment.sh))
+
 # ─── Local development ────────────────────────────────────────────────────────
 
 # Start Nuxt dev server with hot-reload.
@@ -92,8 +97,9 @@ ps:
 # verify URL=…` still works as expected.
 verify:
 	@[ -n "$(URL)" ] || (echo "Usage: make verify URL=https://mcp.example.com" && exit 1)
+	@[ -n "$(VERIFY_SCRIPT)" ] || (echo "Error: verify-deployment.sh not found in scripts/ or src/scripts/" && exit 1)
 	@set -a; [ -f .env ] && . ./.env; set +a; \
-	  bash scripts/verify-deployment.sh --url $(URL)
+	  bash $(VERIFY_SCRIPT) --url $(URL)
 
 # ─── Cleanup ─────────────────────────────────────────────────────────────────
 
