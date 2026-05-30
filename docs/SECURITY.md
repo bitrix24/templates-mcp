@@ -41,11 +41,37 @@ While the project is pre-release, only the latest tag receives fixes. Once a `v0
 ## Dependency policy
 
 - Renovate is configured (`renovate.json`); PRs land continuously.
+- **Image updates are split by file, not duplicated:** Dockerfile base images → Dependabot (`.github/dependabot.yml`); docker-compose infra images (digest-pinned `nginx-proxy` / `acme-companion` / `watchtower`) → Renovate's `docker-compose` manager. The full who-watches-what matrix and the step-by-step CVE response live in [Patching upstream CVEs in pinned images](#patching-upstream-cves-in-pinned-images).
 - *(TODO(team): merge cadence — weekly batch vs. immediate per-PR.)*
 - Major bumps to `@bitrix24/b24jssdk`, `@modelcontextprotocol/sdk`, `zod`, or `@nuxtjs/mcp-toolkit` MUST trigger:
   - Re-run of the SDK-logger audit in [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md).
   - Manual smoke of all three transports (Remote HTTP, Local HTTP, DXT) — see [`MANUAL-TEST-PHRASES.md`](./MANUAL-TEST-PHRASES.md).
 - The DXT bundle pins zod via a workaround (`mcp-stdio/nuxt-shims.ts` forces init). zod major bumps require revalidating that workaround.
+
+## Patching upstream CVEs in pinned images
+
+The reverse-proxy stack pins infra images by **SHA digest** — `nginx-proxy` and `acme-companion` in [`docker-compose.server.yml`](../docker-compose.server.yml), `watchtower` in [`docker-compose.watchtower.yml`](../docker-compose.watchtower.yml). A digest pin is immutable on purpose: `docker compose pull`, `make redeploy`, and Watchtower will **not** pull an upstream security fix on their own — the digest has to be bumped in git. So for every pinned image we own the patch cadence; it is not automatic.
+
+### Who watches what
+
+| Surface | Owner | Behaviour |
+|---|---|---|
+| npm dependencies | Renovate (`renovate.json`, `vulnerabilityAlerts: true`) | PRs land continuously |
+| GitHub Actions | Renovate (`helpers:pinGitHubActionDigests`) | SHA-pinned + `# vX.Y.Z` comment |
+| Dockerfile base images | Dependabot (`.github/dependabot.yml`) | mutable-tag bumps, weekly |
+| docker-compose infra images | Renovate `docker-compose` manager | tag **and** `@sha256` bumped together, all `docker-compose*.yml` |
+
+> Dependabot's docker ecosystem only sees the canonical `docker-compose.yml`, not split names like `docker-compose.server.yml` ([dependabot-core#12134](https://github.com/dependabot/dependabot-core/issues/12134)) — that is why the Compose infra images are routed to Renovate. Don't re-enable Dependabot for compose; the two would race on the same image.
+
+### When a CVE drops in nginx (or any pinned image)
+
+1. **Locate every copy.** Grep the repo for the image. The same nginx engine ships inside our `nginx-proxy` reverse proxy — this is plain upstream nginx, **not** the `bx-nginx` package from the Bitrix virtual machine (VMBitrix). A "bx-nginx" advisory does **not** apply to this project directly (we don't run VMBitrix; we talk to Bitrix24 over REST). The underlying nginx CVE, however, *does* apply to `nginx-proxy`. Keep these two layers separate when triaging.
+2. **Check the real version, not the wrapper's.** Wrapper images (`nginx-proxy`, `acme-companion`) carry their own version number; find the *bundled* nginx — `docker exec nginx-proxy nginx -v`, or the wrapper's release notes — and compare *that* against the CVE's fixed version.
+3. **Bump to a patched release and re-pin the digest.** Update the tag **and** the `@sha256:` digest — never leave the old digest behind (that would re-introduce the vulnerable image). Get the multi-arch manifest digest with `docker buildx imagetools inspect <ref>` (or `docker pull <ref>` → the `Digest:` line). Never hand-type or guess a digest.
+4. **Roll it out.** The digest change in git is what makes `make redeploy` / `docker compose pull` actually fetch the fix on the host.
+5. **Verify the patched version is live.** e.g. `docker exec nginx-proxy nginx -v` on the host must report the fixed version.
+
+If Renovate has already opened the bump PR, prefer merging that — it computes the new digest for you. The manual steps above are the break-glass path when you can't wait for the next scheduled run.
 
 ## Pre-commit & CI scans
 

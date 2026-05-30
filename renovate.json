@@ -14,6 +14,7 @@
   "prHourlyLimit": 2,
   "rangeStrategy": "bump",
   "docker": { "enabled": false },
+  "docker-compose": { "enabled": true },
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 6am on monday"]

@@ -1,10 +1,18 @@
 version: 2
 updates:
-  # Docker base images. Renovate has its own docker handling but we keep it
-  # disabled there (renovate.json: `"docker": { "enabled": false }`) because
-  # Dependabot's Docker support is mature, and our base-image surface is
-  # small enough that two systems are overkill. Mutable tags are acceptable
-  # for this repo's base images (we pin via tag, not digest).
+  # Dockerfile base images ONLY (e.g. node:22-alpine). Mutable tags are
+  # acceptable here — Dockerfile bases are pinned by tag, not digest.
+  #
+  # This block does NOT cover the docker-compose stack. Dependabot's docker
+  # ecosystem only detects the canonical `docker-compose.yml`; it cannot see
+  # our split, digest-pinned infra files (docker-compose.server.yml /
+  # docker-compose.watchtower.yml) — dependabot-core#12134. Those infra
+  # images (nginx-proxy / acme-companion / watchtower) are handled by
+  # Renovate's `docker-compose` manager instead (renovate.json:
+  # `"docker-compose": { "enabled": true }`), which matches every
+  # `docker-compose*.yml` name and bumps tag + @sha256 digest together.
+  # Keep the two systems on disjoint files so they never race on one image.
+  # See docs/SECURITY.md § "Patching upstream CVEs in pinned images".
   - package-ecosystem: docker
     directory: /
     schedule:
