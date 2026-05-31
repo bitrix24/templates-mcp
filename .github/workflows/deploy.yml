@@ -11,6 +11,13 @@ on:
         # Useful for: re-triggering a failed release build, building a
         # release candidate from a branch, or verifying the DXT bundle
         # from a specific commit without pushing a new tag.
+        #
+        # Note: every dispatch still builds and PUSHES a `sha-<short>`-tagged
+        # image to GHCR (not `:latest`), so Watchtower — which tracks `:latest`
+        # — will not pick it up; pull that sha tag explicitly to put it on a
+        # host. `dxt-release` runs ONLY on a real `v*` tag push, never on a
+        # dispatch (even if `ref` points at a tag), since it gates on
+        # `github.ref`, which on dispatch is the branch.
         required: true
         default: 'main'
 

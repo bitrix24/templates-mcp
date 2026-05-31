@@ -51,6 +51,8 @@ CI builds and pushes the image to GHCR. **CI does not SSH into your server.** Pu
 
 [`docker-compose.watchtower.yml`](../docker-compose.watchtower.yml) is a Compose overlay. Run `make watchtower-up` instead of `make up` to start the app with Watchtower alongside it. Watchtower watches only the app container (via label) and removes old images after update.
 
+> ⚠️ **No health gate.** Watchtower restarts on the new `:latest` without checking `/api/health`, and it cannot roll back — a crash-looping image keeps running until you act. Two mitigations, set in [`docker-compose.watchtower.yml`](../docker-compose.watchtower.yml): set `WATCHTOWER_NOTIFICATION_URL` so every update pages you, and point an external monitor (UptimeRobot / Healthchecks.io) at `/api/health`. If you want a *hard* gate instead of auto-apply, set `WATCHTOWER_MONITOR_ONLY: "true"` and apply updates with the health-gated `make redeploy` (Option B) from a cron / systemd timer.
+
 > ⚠️ **Pushing a `v*` tag publishes a new image.** Watchtower picks it up at the next nightly check (03:00 UTC). Before tagging, make sure the server's `.env` is complete and the container is healthy.
 
 ### Option B — Manual redeploy

@@ -69,5 +69,15 @@ services:
       # replace WATCHTOWER_SCHEDULE with WATCHTOWER_POLL_INTERVAL (seconds):
       #   WATCHTOWER_POLL_INTERVAL: "300"   # every 5 minutes
       WATCHTOWER_SCHEDULE: "0 0 3 * * *"
+      # Watchtower has NO post-update health gate or rollback — it restarts on
+      # the new :latest without checking /api/health. So make updates VISIBLE
+      # to catch a bad one fast: set a notification URL (shoutrrr format —
+      # Slack / Telegram / email / etc.) and point an external monitor at
+      # /api/health. Uncomment and fill in:
+      #   WATCHTOWER_NOTIFICATION_URL: "slack://token@channel"
+      #   WATCHTOWER_NOTIFICATIONS_LEVEL: "info"
+      # Prefer a HARD gate over auto-apply? Run monitor-only and apply via the
+      # health-gated `make redeploy` (manually, or from a cron / systemd timer):
+      #   WATCHTOWER_MONITOR_ONLY: "true"
     # Watchtower uses Docker socket only — no network access to other containers
     # needed. Omitting networks: gives it an isolated default compose network.

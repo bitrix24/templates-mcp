@@ -1,6 +1,6 @@
 # Runbook
 
-> **Status: DRAFT — operational placeholders (`TODO(team)`) pending.** Procedures and rollback flows are accurate against the workflow at the time of writing; on-call schedule, paging path, and escalation contacts are still being finalised.
+> **Status: pre-release.** Procedures and rollback flows are accurate against the workflow at the time of writing. This project runs as a **single-maintainer, best-effort** operation: there is no formal on-call rotation, paging path, or RTO until GA.
 >
 > **Placeholders:** every literal `prod.example.com` below is your production host — substitute your own domain. Every `/opt/bx24-template-mcp` is your deploy directory (the default shown; wherever you cloned the compose stack). These are host-side values — after the SSH-deploy removal, CI holds no `PROD_HOST` / `DEPLOY_PATH` variables.
 
@@ -12,7 +12,7 @@ Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.
 - **Healthcheck URL:** `https://prod.example.com/api/health` (and `http://localhost:3000/api/health` from the host).
 - **Logs:** `docker logs --since=15m bx24-template-mcp` on the host. SDK logs are URL-redacted via `makeRedactingLogger`.
 - **Compose dir:** `/opt/bx24-template-mcp` (or wherever you deployed the compose stack).
-- *(TODO(team): on-call schedule, paging channel, target response time / RTO.)*
+- **On-call:** pre-GA this is a single maintainer on a best-effort basis — no formal rotation, paging channel, or RTO yet.
 
 ## Alert → action
 
@@ -62,6 +62,6 @@ Once a fixed image ships forward, delete the `BX24_IMAGE` line from `.env` to re
 
 ## Escalation
 
-- *(TODO(team): paging path — who to wake up, in what order.)*
+- Pre-GA: single maintainer, best-effort — no formal paging path / escalation order yet.
 - Security incident (credential disclosure suspected): follow [`SECURITY.md`](./SECURITY.md) **before** any public post-mortem.
-- Bitrix24-portal-side issue (rate cap, auth, missing data): contact the portal admin via the channels in *(TODO(team))*.
+- Bitrix24-portal-side issue (rate cap, auth, missing data): contact the portal admin (the account that owns the configured Bitrix24 webhook).

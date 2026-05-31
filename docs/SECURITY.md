@@ -1,6 +1,6 @@
 # Security policy
 
-> **Status: DRAFT — operational placeholders (`TODO(team)`) pending.** The technical content is accurate against the code at the time of writing; team-specific values (response windows, on-call schedule) are still being finalised.
+> **Status: pre-release.** The technical content is accurate against the code at the time of writing. This project runs as a **single-maintainer, best-effort** operation: there is no formal security-response SLA, on-call rotation, or RTO until GA — the values below reflect that and will be revisited at the first stable release.
 
 Policy and process. The dependency-level audit (what the SDK logs, what the redactor catches) lives in [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md).
 
@@ -8,7 +8,7 @@ Policy and process. The dependency-level audit (what the SDK logs, what the reda
 
 - **Do not** open a public GitHub issue for security reports.
 - Use **GitHub Security Advisories** for this repository: <https://github.com/bitrix24/templates-mcp/security/advisories/new>. The form is private to the reporter and the maintainers, lets us iterate on a fix in a private fork, and pins a CVE on publication. Include reproduction steps, affected version, and the impact you observed.
-- Acknowledgement within *(TODO(team): response window)*. Fix timeline depends on severity.
+- Acknowledgement on a **best-effort basis** (pre-release; no formal SLA until GA). Fix timeline depends on severity.
 
 ## Supported versions
 
@@ -26,7 +26,7 @@ While the project is pre-release, only the latest tag receives fixes. Once a `v0
 
 - Multi-tenant deployment. The Bearer model is single-tenant; a multi-tenant variant needs per-tenant scoping and is not on the roadmap.
 - DoS mitigation beyond Docker resource limits.
-- Audit log of tool invocations. *(TODO(team): retention policy / log shipping if/when this lands.)*
+- Audit log of tool invocations. *Planned (pre-GA): retention policy / log shipping when this lands.*
 
 ## Secret rotation
 
@@ -42,7 +42,7 @@ While the project is pre-release, only the latest tag receives fixes. Once a `v0
 
 - Renovate is configured (`renovate.json`); PRs open on the configured schedule (weekday 02:00–07:00 Europe/Minsk), with `vulnerabilityAlerts` raised out-of-schedule.
 - **Image updates are split by file, not duplicated:** Dockerfile base images → Dependabot (`.github/dependabot.yml`); docker-compose infra images (digest-pinned `nginx-proxy` / `acme-companion` / `watchtower`) → Renovate's `docker-compose` manager. The full who-watches-what matrix and the step-by-step CVE response live in [Patching upstream CVEs in pinned images](#patching-upstream-cves-in-pinned-images).
-- *(TODO(team): merge cadence — weekly batch vs. immediate per-PR.)*
+- Merge cadence: Renovate auto-merges `patch` / `pin` / `digest` updates; `minor`, `major`, and all docker-compose infra-image bumps are held for review. PRs open in the weekday 02:00–07:00 (Europe/Minsk) window.
 - Major bumps to `@bitrix24/b24jssdk`, `@modelcontextprotocol/sdk`, `zod`, or `@nuxtjs/mcp-toolkit` MUST trigger:
   - Re-run of the SDK-logger audit in [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md).
   - Manual smoke of all three transports (Remote HTTP, Local HTTP, DXT) — see [`MANUAL-TEST-PHRASES.md`](./MANUAL-TEST-PHRASES.md).
@@ -79,4 +79,4 @@ If Renovate has already opened the bump PR, prefer merging that — it computes 
 
 - `commitlint` runs on every commit message (conventional commits).
 - ESLint enforces no direct `actions.*` calls; only `callV2/callV3/batchV2/batchV3` from `server/utils/sdk-helpers.ts`.
-- *(TODO(team): add a secret-scanning hook (e.g. `gitleaks`) to pre-commit and to CI; today the only line of defence is reviewer eyes.)*
+- *Planned (pre-GA): a secret-scanning hook (e.g. `gitleaks`) in pre-commit and CI. Today the only line of defence is reviewer eyes.*
