@@ -1,14 +1,12 @@
 # Security policy
 
-> **Status: pre-release.** The technical content is accurate against the code at the time of writing. This project runs as a **single-maintainer, best-effort** operation: there is no formal security-response SLA, on-call rotation, or RTO until GA — the values below reflect that and will be revisited at the first stable release.
-
 Policy and process. The dependency-level audit (what the SDK logs, what the redactor catches) lives in [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md).
 
 ## Reporting a vulnerability
 
 - **Do not** open a public GitHub issue for security reports.
 - Use **GitHub Security Advisories** for this repository: <https://github.com/bitrix24/templates-mcp/security/advisories/new>. The form is private to the reporter and the maintainers, lets us iterate on a fix in a private fork, and pins a CVE on publication. Include reproduction steps, affected version, and the impact you observed.
-- Acknowledgement on a **best-effort basis** (pre-release; no formal SLA until GA). Fix timeline depends on severity.
+- Acknowledgement within **~5 business days** (best-effort, pre-release; no formal SLA until GA). Fix timeline depends on severity.
 
 ## Supported versions
 

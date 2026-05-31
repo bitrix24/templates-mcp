@@ -1,7 +1,5 @@
 # Runbook
 
-> **Status: pre-release.** Procedures and rollback flows are accurate against the workflow at the time of writing. This project runs as a **single-maintainer, best-effort** operation: there is no formal on-call rotation, paging path, or RTO until GA.
->
 > **Placeholders:** every literal `prod.example.com` below is your production host — substitute your own domain. Every `/opt/bx24-template-mcp` is your deploy directory (the default shown; wherever you cloned the compose stack). These are host-side values — after the SSH-deploy removal, CI holds no `PROD_HOST` / `DEPLOY_PATH` variables.
 
 Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.md`](./DEPLOYMENT.md) (how the system is set up) and [`SECURITY.md`](./SECURITY.md) (incidents that require disclosure).
