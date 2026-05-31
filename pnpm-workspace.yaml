@@ -4,3 +4,22 @@ allowBuilds:
   esbuild: true
   unrs-resolver: true
   vue-demi: true
+
+# Transitive dependency overrides remediating Dependabot/security advisories.
+# pnpm v11 promotes pnpm-workspace.yaml as the canonical location for overrides;
+# the package.json "pnpm" field is deprecated in v11 (it still works in v10).
+#
+# Caret ranges (not open-ended ">=") keep builds reproducible and patch/minor
+# fixes flowing while blocking surprise major bumps from `pnpm update` /
+# Renovate lockFileMaintenance. Remove each entry once the direct dependency
+# resolves a safe version on its own (run `pnpm audit` after dropping it).
+overrides:
+  # GHSA-52f5-9888-hmc6 — arbitrary temp file write via symlink (tmp <0.2.6)
+  # via @anthropic-ai/mcpb > @inquirer/prompts > … > external-editor
+  tmp: '^0.2.6'
+  # GHSA-5v7r-6r5c-r473 — infinite loop in ASF parser (file-type <21.3.1); via evalite (dev)
+  file-type: '^22.0.1'
+  # GHSA-pr96-94w5-mx2h — path traversal in directory listing (@fastify/static <=9.1.0); via evalite (dev)
+  '@fastify/static': '^9.1.1'
+  # GHSA-6rw7-vpxm-498p — arrayLimit bypass DoS (qs <=6.15.1); via @modelcontextprotocol/sdk > express
+  qs: '^6.15.2'
