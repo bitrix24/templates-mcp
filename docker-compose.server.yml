@@ -23,8 +23,11 @@ services:
   nginx-proxy:
     # Pin to a specific release to avoid unintended breaking changes on pull.
     # Check for latest at: https://github.com/nginx-proxy/nginx-proxy/releases
-    # Digest pinned to 1.6 (multi-arch manifest); verify: docker pull nginxproxy/nginx-proxy:1.6
-    image: nginxproxy/nginx-proxy:1.6@sha256:5dd14e68ea81f33692b810d096ac8ebe7aa789d75ce91e05f09d56d044ed8ee3
+    # Digest pinned to 1.11.0 (multi-arch manifest, nginx 1.31.1 — patched for
+    # CVE-2026-42945 "NGINX Rift" + 6 related nginx CVEs; vulnerable range was
+    # 0.6.27–1.30.0). Bump procedure: docs/SECURITY.md § "Patching upstream
+    # CVEs in pinned images". Verify: docker pull nginxproxy/nginx-proxy:1.11.0
+    image: nginxproxy/nginx-proxy:1.11.0@sha256:da8c15b11c6bd0560d919d99876b2d32f61a882852473f8d08d14e17ba4be480
     container_name: nginx-proxy
     security_opt:
       - no-new-privileges:true
@@ -53,8 +56,8 @@ services:
   acme-companion:
     # Pin alongside nginx-proxy — versions are tested together upstream.
     # Check for latest at: https://github.com/nginx-proxy/acme-companion/releases
-    # Digest pinned to 2.5 (multi-arch manifest); verify: docker pull nginxproxy/acme-companion:2.5
-    image: nginxproxy/acme-companion:2.5@sha256:308dd273fafec21ce5ea22e830adbf9248a9be18d1caff9f94be321ae9835015
+    # Digest pinned to 2.6.3 (multi-arch manifest); verify: docker pull nginxproxy/acme-companion:2.6.3
+    image: nginxproxy/acme-companion:2.6.3@sha256:6d6f5def449901135b7a64c57e18d132ad911af6b8bd6274768051adfb1f7d43
     container_name: acme-companion
     security_opt:
       - no-new-privileges:true
