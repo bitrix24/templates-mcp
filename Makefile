@@ -81,9 +81,12 @@ pull:
 
 # Pull the latest image and restart the container.
 # Use after `git tag v… && git push origin v…` triggers CI and the new image lands.
+# `--wait` gates on the container HEALTHCHECK: a crash-looping new image makes
+# this command fail loudly instead of silently replacing a healthy one.
+# (Watchtower's auto-update has no equivalent gate — see docs/RUNBOOK.md.)
 redeploy:
 	docker compose pull
-	docker compose up -d
+	docker compose up -d --wait --wait-timeout 90
 	docker image prune -f
 
 # Follow application logs.

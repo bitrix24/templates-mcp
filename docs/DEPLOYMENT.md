@@ -15,7 +15,7 @@ Already have the host set up? This is all you need:
 cd /opt/bx24-template-mcp
 # If Watchtower is running, stop it first so it doesn't race you:
 #   make watchtower-stop
-make redeploy          # = docker compose pull && docker compose up -d
+make redeploy          # = pull + up -d --wait (blocks until the container is healthy)
 
 # 2. Verify it's healthy
 make verify-local URL=https://your-domain.com

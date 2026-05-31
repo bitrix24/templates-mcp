@@ -52,6 +52,11 @@ services:
           cpus: '0.1'
           memory: 64M
     volumes:
+      # rw mount is required — Watchtower restarts/recreates containers, which
+      # grants host-root-equivalent access (see #190 for the docker-socket-proxy
+      # hardening). Note Watchtower has NO post-update health gate or rollback:
+      # a crash-looping :latest stays running until an operator acts. The manual
+      # path (`make redeploy`) is health-gated via `--wait`; see docs/RUNBOOK.md.
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       # Docker Engine 26+ uses API 1.47; Watchtower 1.7.x needs this hint

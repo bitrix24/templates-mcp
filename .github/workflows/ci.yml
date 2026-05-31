@@ -72,6 +72,20 @@ jobs:
         with:
           scandir: ./scripts
 
+  # Behavioural coverage for verify-deployment.sh argument validation (the
+  # numeric guards and --resolve shape). Pure bash, no server/network — exits
+  # before any curl. Blocking (unlike the advisory `shellcheck` job): a
+  # regression in the operator-facing validation contract is a real bug.
+  shell-tests:
+    name: Shell behaviour tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: verify-deployment.sh argument validation
+        run: bash tests/shell/verify-deployment-args.test.sh
+
   compose-validate:
     name: Compose config validate
     runs-on: ubuntu-latest
@@ -85,6 +99,17 @@ jobs:
           docker compose -f docker-compose.server.yml config --quiet
           docker compose -f docker-compose.example.yml config --quiet
           docker compose -f docker-compose.yml -f docker-compose.watchtower.yml config --quiet
+      - name: Verify pinned infra image digests resolve in the registry
+        run: |
+          # Catch a typo'd or nonexistent @sha256 pin at PR time, instead of on a
+          # production host during `make redeploy`. Only infra images are digest-
+          # pinned (the app image rides :latest), so scope the check to them.
+          set -euo pipefail
+          grep -hoE '(nginxproxy|containrrr)/[a-z-]+:[0-9.]+@sha256:[0-9a-f]{64}' \
+            docker-compose.server.yml docker-compose.watchtower.yml | sort -u | while read -r ref; do
+            echo "Resolving $ref"
+            docker buildx imagetools inspect "$ref" >/dev/null
+          done
 
   # Static analysers for the workflow files themselves. Advisory mode while
   # the first runs settle and findings are triaged — the existing `lint` job
@@ -496,7 +521,7 @@ jobs:
   ci:
     name: ci
     runs-on: ubuntu-latest
-    needs: [commitlint, shellcheck, compose-validate, actionlint, zizmor, lint, typecheck, test, audit, integration, prepare-windows, build, scaffold-sync, docker-smoke]
+    needs: [commitlint, shellcheck, shell-tests, compose-validate, actionlint, zizmor, lint, typecheck, test, audit, integration, prepare-windows, build, scaffold-sync, docker-smoke]
     if: always()
     steps:
       - name: Verify no required job failed or was cancelled
