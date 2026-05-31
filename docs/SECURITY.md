@@ -40,7 +40,7 @@ While the project is pre-release, only the latest tag receives fixes. Once a `v0
 
 ## Dependency policy
 
-- Renovate is configured (`renovate.json`); PRs land continuously.
+- Renovate is configured (`renovate.json`); PRs open on the configured schedule (weekday 02:00–07:00 Europe/Minsk), with `vulnerabilityAlerts` raised out-of-schedule.
 - **Image updates are split by file, not duplicated:** Dockerfile base images → Dependabot (`.github/dependabot.yml`); docker-compose infra images (digest-pinned `nginx-proxy` / `acme-companion` / `watchtower`) → Renovate's `docker-compose` manager. The full who-watches-what matrix and the step-by-step CVE response live in [Patching upstream CVEs in pinned images](#patching-upstream-cves-in-pinned-images).
 - *(TODO(team): merge cadence — weekly batch vs. immediate per-PR.)*
 - Major bumps to `@bitrix24/b24jssdk`, `@modelcontextprotocol/sdk`, `zod`, or `@nuxtjs/mcp-toolkit` MUST trigger:
@@ -56,12 +56,14 @@ The reverse-proxy stack pins infra images by **SHA digest** — `nginx-proxy` an
 
 | Surface | Owner | Behaviour |
 |---|---|---|
-| npm dependencies | Renovate (`renovate.json`, `vulnerabilityAlerts: true`) | PRs land continuously |
+| npm dependencies | Renovate (`renovate.json`, `vulnerabilityAlerts: true`) | PRs on schedule (weekday 02:00–07:00 Europe/Minsk); security alerts out-of-schedule |
 | GitHub Actions | Renovate (`helpers:pinGitHubActionDigests`) | SHA-pinned + `# vX.Y.Z` comment |
 | Dockerfile base images | Dependabot (`.github/dependabot.yml`) | mutable-tag bumps, weekly |
 | docker-compose infra images | Renovate `docker-compose` manager | tag **and** `@sha256` bumped together, all `docker-compose*.yml` |
 
 > Dependabot's docker ecosystem only sees the canonical `docker-compose.yml`, not split names like `docker-compose.server.yml` ([dependabot-core#12134](https://github.com/dependabot/dependabot-core/issues/12134)) — that is why the Compose infra images are routed to Renovate. Don't re-enable Dependabot for compose; the two would race on the same image.
+>
+> Two `renovate.json` packageRules keep this clean: the app's own image (`docker-compose.yml`) is **excluded** from the docker-compose manager (it ships via CI `v*` tags), and infra-image bumps are **never auto-merged** — every nginx-proxy / acme-companion / watchtower change requires review.
 
 ### When a CVE drops in nginx (or any pinned image)
 

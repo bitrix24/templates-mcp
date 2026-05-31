@@ -57,6 +57,18 @@
       "matchUpdateTypes": ["major"],
       "automerge": false,
       "labels": ["dependencies", "needs-review"]
+    },
+    {
+      "description": "Our own app image ships via CI v* tags, not Renovate. The docker-compose manager's default fileMatch also scans docker-compose.yml where this image lives (on :latest), so exclude it explicitly to avoid Renovate racing the release flow.",
+      "matchManagers": ["docker-compose"],
+      "matchPackageNames": ["ghcr.io/bitrix24/templates-mcp"],
+      "enabled": false
+    },
+    {
+      "description": "Infra images (nginx-proxy / acme-companion / watchtower) are production-facing — never auto-merge their digest/version bumps; require review. Overrides the patch/pin/digest auto-merge rule above for the docker-compose manager.",
+      "matchManagers": ["docker-compose"],
+      "automerge": false,
+      "labels": ["dependencies", "needs-review"]
     }
   ],
   "vulnerabilityAlerts": {

@@ -177,9 +177,9 @@ esac
 case "$HEALTH_RETRIES"  in (*[!0-9]*|"") echo "Invalid --health-retries: $HEALTH_RETRIES (expected positive integer)" >&2; usage ;; esac
 case "$TIMEOUT"         in (*[!0-9]*|"") echo "Invalid --timeout: $TIMEOUT (expected positive integer)" >&2; usage ;; esac
 case "$HEALTH_INTERVAL" in (*[!0-9]*|"") echo "Invalid --health-interval: $HEALTH_INTERVAL (expected positive integer)" >&2; usage ;; esac
-[ "$HEALTH_RETRIES"  -ge 1 ] || { echo "Invalid --health-retries: must be ≥ 1" >&2; usage; }
-[ "$TIMEOUT"         -ge 1 ] || { echo "Invalid --timeout: must be ≥ 1" >&2; usage; }
-[ "$HEALTH_INTERVAL" -ge 1 ] || { echo "Invalid --health-interval: must be ≥ 1" >&2; usage; }
+[ "$HEALTH_RETRIES"  -ge 1 ] || { echo "Invalid --health-retries: $HEALTH_RETRIES (must be ≥ 1)" >&2; usage; }
+[ "$TIMEOUT"         -ge 1 ] || { echo "Invalid --timeout: $TIMEOUT (must be ≥ 1)" >&2; usage; }
+[ "$HEALTH_INTERVAL" -ge 1 ] || { echo "Invalid --health-interval: $HEALTH_INTERVAL (must be ≥ 1)" >&2; usage; }
 
 # Strip a single trailing slash so the route concatenation stays sane.
 URL="${URL%/}"
@@ -195,6 +195,9 @@ if [ -n "$RESOLVE" ]; then
   # spaces in RESOLVE_ARG would cause unwanted word-splitting of the flag.
   _rhost="${_rhost// /}"
   _rip="${_rip// /}"
+  # Reject a half-specified pair (e.g. ":1.2.3.4" or "host:") here — otherwise it
+  # reaches curl as a malformed --resolve and fails later with an opaque error.
+  [ -n "$_rhost" ] && [ -n "$_rip" ] || { echo "Invalid --resolve: expected HOST:IP, got '$RESOLVE'" >&2; usage; }
   RESOLVE_ARG="--resolve ${_rhost}:80:${_rip} --resolve ${_rhost}:443:${_rip}"
 fi
 

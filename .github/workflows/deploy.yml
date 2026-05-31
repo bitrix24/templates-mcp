@@ -33,6 +33,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ inputs.ref || github.ref }}
+          # No git push from this job — don't leave GITHUB_TOKEN in .git/config
+          # where a compromised dependency postinstall could read it.
+          persist-credentials: false
       - uses: pnpm/action-setup@08c4be7e2e672a47d11bd04269e27e5f3e8529cb # v6.0.0
       - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
@@ -55,6 +58,9 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+          # GHCR auth comes from docker/login-action (secrets.GITHUB_TOKEN),
+          # not the git credential store — so don't persist it on checkout.
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 

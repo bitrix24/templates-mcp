@@ -11,8 +11,11 @@ updates:
   # Renovate's `docker-compose` manager instead (renovate.json:
   # `"docker-compose": { "enabled": true }`), which matches every
   # `docker-compose*.yml` name and bumps tag + @sha256 digest together.
-  # Keep the two systems on disjoint files so they never race on one image.
-  # See docs/SECURITY.md § "Patching upstream CVEs in pinned images".
+  # The two tools are split by IMAGE, not strictly by file: both also match
+  # the canonical docker-compose.yml, but it carries only the app's own image
+  # (on :latest, which Dependabot/Renovate skip; and excluded from the
+  # Renovate docker-compose manager via a packageRule) — so they never race on
+  # a real image. See docs/SECURITY.md § "Patching upstream CVEs in pinned images".
   - package-ecosystem: docker
     directory: /
     schedule:

@@ -33,12 +33,16 @@ push a v* tag
         │
         ▼
 GitHub Actions (deploy.yml → "Build & publish")
-  test    — lint + typecheck + unit tests
-        ├─────────────┬
-        ▼             ▼
-  build           dxt
-  buildx → push   bundle .dxt →
-  ghcr.io/…       attach to Release
+  test         — lint + typecheck + unit tests
+        │
+        ▼
+  build        — buildx → push image to ghcr.io/…
+        │
+        ▼
+  dxt-build    — bundle .dxt, upload as a workflow artifact
+        │
+        ▼  (only on a v* tag)
+  dxt-release  — attach the .dxt artifact to the GitHub Release
 ```
 
 CI builds and pushes the image to GHCR. **CI does not SSH into your server.** Pulling the image to production is the operator's responsibility — via Watchtower (automatic) or `make redeploy` (manual). No SSH secrets are needed in GitHub Actions.
@@ -84,7 +88,7 @@ Use an annotated (`-a`) `vMAJOR.MINOR.PATCH` (or `-alpha.N` / `-beta.N`) tag mat
 
 Set the host up **once**:
 
-- [ ] **Docker Engine ≥ 24 + Compose v2**; the SSH user can run `docker` (in the `docker` group).
+- [ ] **Docker Engine ≥ 24 + Compose v2**; the operator's account can run `docker` (in the `docker` group).
 - [ ] **`jq`** — required for the JSON-RPC assertion in the smoke test (`make verify-local`). Without it the last two checks are skipped. Install once: `sudo apt install -y jq` (Debian/Ubuntu) or `brew install jq` (macOS).
 - [ ] **A reverse proxy + TLS** — either the `nginx-proxy` + `acme-companion` stack on the shared `proxy-net` network (matches the default [`docker-compose.yml`](../docker-compose.yml)), or an alternative from [`REVERSE-PROXY.md`](./REVERSE-PROXY.md). nginx-proxy owns ports 80/443, watches for containers that declare `VIRTUAL_HOST`, and `acme-companion` issues/renews Let's Encrypt certs for any container that sets `LETSENCRYPT_HOST`.
 - [ ] **An external Docker network `proxy-net`**, joined by both the proxy stack and this service (`docker network create proxy-net`).
@@ -282,7 +286,7 @@ Failure behaviour: the `/api/health` step **bails early** if it can't reach `200
 
 ## Monitoring & logs
 
-- **Health**: `/api/health` is unauthenticated and returns `{ status, timestamp }` (no `service` or version field — kept minimal so the probe is not a fingerprinting surface). Point an external monitor (UptimeRobot / Healthchecks.io) at `https://<PROD_HOST>/api/health` for liveness alerting; key your checks on `status: "ok"`, not on a service-name field.
+- **Health**: `/api/health` is unauthenticated and returns `{ status, timestamp }` (no `service` or version field — kept minimal so the probe is not a fingerprinting surface). Point an external monitor (UptimeRobot / Healthchecks.io) at `https://<your-domain>/api/health` for liveness alerting; key your checks on `status: "ok"`, not on a service-name field.
 - **Logs**: container logs go to Docker's JSON driver (`docker compose logs -f`). Configure rotation at the daemon level. Long-term aggregation (Loki / Graylog) is out of scope for the template.
 - **Audit log**: the OAuth/Bearer audit trail (`server/utils/audit-log.ts`) appends JSONL to `/data/audit/` (override with `NUXT_AUDIT_DIR`), creating the directory `0750` and files `0640`. Those modes are applied **only on creation** — if the directory already exists with broader permissions (e.g. after a redeploy or a manually-created mount), re-assert them: `chmod 0750 /data/audit && find /data/audit -name '*.jsonl' -exec chmod 0640 {} +`. **Files grow forever — operators MUST configure rotation/retention** (`logrotate` or `find -mtime`). Records carry `ip`/`ua` (GDPR personal data); cap retention at ~90 days (max 12 months absent a legal hold). Currently exercised only by the OAuth flow (Phase 3); a webhook-only Phase-1 deploy writes nothing here yet. See [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md).
 - **Resources**: the compose service caps at 0.5 CPU / 512 MB — raise these in `docker-compose.yml` if your tool volume needs more.

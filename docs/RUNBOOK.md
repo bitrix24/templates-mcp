@@ -2,7 +2,7 @@
 
 > **Status: DRAFT — operational placeholders (`TODO(team)`) pending.** Procedures and rollback flows are accurate against the workflow at the time of writing; on-call schedule, paging path, and escalation contacts are still being finalised.
 >
-> **Placeholders:** every literal `prod.example.com` below is your production host — substitute the value of GitHub Actions variable `PROD_HOST`. Every `/opt/bx24-template-mcp` is your `DEPLOY_PATH` (set as a repo variable, defaults shown).
+> **Placeholders:** every literal `prod.example.com` below is your production host — substitute your own domain. Every `/opt/bx24-template-mcp` is your deploy directory (the default shown; wherever you cloned the compose stack). These are host-side values — after the SSH-deploy removal, CI holds no `PROD_HOST` / `DEPLOY_PATH` variables.
 
 Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.md`](./DEPLOYMENT.md) (how the system is set up) and [`SECURITY.md`](./SECURITY.md) (incidents that require disclosure).
 
@@ -11,7 +11,7 @@ Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.
 - **Service:** `bx24-template-mcp` Docker container on `prod.example.com`.
 - **Healthcheck URL:** `https://prod.example.com/api/health` (and `http://localhost:3000/api/health` from the host).
 - **Logs:** `docker logs --since=15m bx24-template-mcp` on the host. SDK logs are URL-redacted via `makeRedactingLogger`.
-- **Compose dir:** `/opt/bx24-template-mcp` (or whatever `DEPLOY_PATH` is set to).
+- **Compose dir:** `/opt/bx24-template-mcp` (or wherever you deployed the compose stack).
 - *(TODO(team): on-call schedule, paging channel, target response time / RTO.)*
 
 ## Alert → action
@@ -30,7 +30,7 @@ Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.
 
 ## Rollback
 
-CI does **not** auto-rollback — there is no SSH deploy step. Manual rollback:
+CI does **not** auto-rollback — there is no SSH deploy step. **Neither does Watchtower:** it applies a new `:latest` image (≈03:00 UTC after a `v*` tag) without a post-update health check, so a bad image keeps running until you act. After every release tag, watch `/api/health` for the first few minutes. Manual rollback:
 
 ```bash
 # This is a manual operator step — CI does not SSH into production.
@@ -44,13 +44,15 @@ List available image versions:
 
 ```bash
 docker image ls ghcr.io/bitrix24/templates-mcp --digests
-# pick a known-good digest or semver tag (no 'v' prefix); then:
-BX24_IMAGE="ghcr.io/bitrix24/templates-mcp@sha256:<digest>" docker compose up -d
-# or: BX24_IMAGE="ghcr.io/bitrix24/templates-mcp:0.1.0" docker compose up -d
+# Pick a known-good digest or semver tag (no 'v' prefix), then PIN it in .env —
+# an inline `BX24_IMAGE=… docker compose up -d` is undone the moment Watchtower
+# (or the next `make redeploy`) re-pulls :latest, so persist it:
+echo 'BX24_IMAGE=ghcr.io/bitrix24/templates-mcp@sha256:<digest>' >> .env
+docker compose up -d --remove-orphans
 curl -fsS https://prod.example.com/api/health
 ```
 
-Resume Watchtower once stable: `make watchtower-start`
+Once a fixed image ships forward, delete the `BX24_IMAGE` line from `.env` to resume tracking `:latest`, then resume Watchtower: `make watchtower-start`
 
 ## Investigating from logs
 
