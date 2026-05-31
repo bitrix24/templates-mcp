@@ -1,9 +1,12 @@
 # Watchtower — automatic container update overlay (opt-in).
 #
 # Compose override that adds Watchtower alongside the main application.
-# Use it when you want automatic rolling updates: every time a new image is
-# pushed to GHCR after a `v*` tag, Watchtower pulls it and restarts the app
-# container within the configured schedule window — no SSH access needed.
+# Defaults to MONITOR-ONLY: Watchtower checks GHCR on a schedule and reports
+# that a newer image exists, but does NOT apply it — you promote it through the
+# health-gated `make redeploy`. This is the safe default because Watchtower has
+# no post-update health gate or rollback. Opt into unattended auto-apply by
+# removing WATCHTOWER_MONITOR_ONLY below (see the note next to it). No SSH access
+# is needed either way.
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.watchtower.yml up -d
@@ -69,15 +72,20 @@ services:
       # replace WATCHTOWER_SCHEDULE with WATCHTOWER_POLL_INTERVAL (seconds):
       #   WATCHTOWER_POLL_INTERVAL: "300"   # every 5 minutes
       WATCHTOWER_SCHEDULE: "0 0 3 * * *"
-      # Watchtower has NO post-update health gate or rollback — it restarts on
-      # the new :latest without checking /api/health. So make updates VISIBLE
-      # to catch a bad one fast: set a notification URL (shoutrrr format —
-      # Slack / Telegram / email / etc.) and point an external monitor at
-      # /api/health. Uncomment and fill in:
+      # Watchtower has NO post-update health gate or rollback: if it auto-applied
+      # a crash-looping :latest it would stay broken until an operator noticed.
+      # So the SAFE DEFAULT here is monitor-only — Watchtower just detects that a
+      # newer image exists and (if you set a notification URL below) tells you;
+      # you then apply it through the health-gated `make redeploy` (manually, or
+      # from a cron / systemd timer), which gates on /api/health via `--wait`.
+      WATCHTOWER_MONITOR_ONLY: "true"
+      # Make detections VISIBLE: set a notification URL (shoutrrr format —
+      # Slack / Telegram / email / etc.). Strongly recommended in monitor-only
+      # mode, since nothing is applied automatically. Uncomment and fill in:
       #   WATCHTOWER_NOTIFICATION_URL: "slack://token@channel"
       #   WATCHTOWER_NOTIFICATIONS_LEVEL: "info"
-      # Prefer a HARD gate over auto-apply? Run monitor-only and apply via the
-      # health-gated `make redeploy` (manually, or from a cron / systemd timer):
-      #   WATCHTOWER_MONITOR_ONLY: "true"
+      # Want UNATTENDED auto-apply instead (no health gate — accept the risk)?
+      # Remove WATCHTOWER_MONITOR_ONLY above, and pair it with the notification
+      # URL plus an external monitor on /api/health to catch a bad release fast.
     # Watchtower uses Docker socket only — no network access to other containers
     # needed. Omitting networks: gives it an isolated default compose network.

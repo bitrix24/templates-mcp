@@ -70,6 +70,7 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ### Changed (tooling)
 
+- **CI no longer deploys over SSH.** The `deploy` job (SSH login + `appleboy/ssh-action`, the `rollback.env` mechanism, and all `SSH_HOST` / `SSH_USER` / `SSH_KEY` / `SSH_PORT` / `PROD_HOST` / `DEPLOY_PATH` secrets and variables) was removed, and the workflow renamed `Deploy` → **Build & publish**. CI now stops at pushing the image to GHCR; deployment is the operator's responsibility — automatic via Watchtower (`make watchtower-up`) or manual via the health-gated `make redeploy` on the host. The `dxt` job was split into `dxt-build` (`contents: read`, uploads the `.dxt` artifact) and `dxt-release` (`contents: write`, attaches it to the Release only on `v*` tags) for least-privilege. See [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md).
 - **pnpm upgraded 10.33.4 → 11.5.0** (`packageManager`, pinned with a corepack `+sha512` integrity hash). pnpm v11 promotes `pnpm-workspace.yaml` as the canonical location for `overrides`; the Dockerfile builder stage now copies `pnpm-workspace.yaml` so `--frozen-lockfile` installs apply the overrides. Dev dependencies refreshed within their ranges (`@ai-sdk/openai`, `@commitlint/*`, `ai`, `vitest`, `vue-tsc`); `@types/node` kept on `^22` to track the Node 22 runtime.
 
 ## [0.1.0-alpha.1] - 2026-05-19

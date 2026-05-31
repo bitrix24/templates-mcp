@@ -189,6 +189,14 @@ URL="${URL%/}"
 # the user-supplied HOST:IP shorthand into two entries (80 + 443).
 RESOLVE_ARG=""
 if [ -n "$RESOLVE" ]; then
+  # A value with no ':' is malformed — reject it up front. Without this guard
+  # both ${RESOLVE%%:*} and ${RESOLVE##*:} return the whole string, the
+  # non-empty check below passes, and curl later dies with an opaque
+  # "Couldn't parse CURLOPT_RESOLVE entry" after the full retry loop.
+  case "$RESOLVE" in
+    *:*) : ;;
+    *) echo "Invalid --resolve: expected HOST:IP, got '$RESOLVE'" >&2; usage ;;
+  esac
   _rhost="${RESOLVE%%:*}"
   _rip="${RESOLVE##*:}"
   # Strip spaces — curl rejects host/ip values with embedded whitespace and
@@ -198,6 +206,12 @@ if [ -n "$RESOLVE" ]; then
   # Reject a half-specified pair (e.g. ":1.2.3.4" or "host:") here — otherwise it
   # reaches curl as a malformed --resolve and fails later with an opaque error.
   [ -n "$_rhost" ] && [ -n "$_rip" ] || { echo "Invalid --resolve: expected HOST:IP, got '$RESOLVE'" >&2; usage; }
+  # Charset-validate both halves. RESOLVE_ARG is intentionally word-split into
+  # curl (no arrays under bash 3.2), so a value carrying whitespace/newlines or
+  # shell-meta could otherwise smuggle extra curl flags (e.g. --output) past the
+  # split. Hostnames: letters/digits/dot/hyphen; IP: digits/dots/colons (v4+v6).
+  case "$_rhost" in (*[!A-Za-z0-9.-]*) echo "Invalid --resolve host: '$_rhost'" >&2; usage ;; esac
+  case "$_rip"   in (*[!0-9.:]*)       echo "Invalid --resolve ip: '$_rip'"     >&2; usage ;; esac
   RESOLVE_ARG="--resolve ${_rhost}:80:${_rip} --resolve ${_rhost}:443:${_rip}"
 fi
 

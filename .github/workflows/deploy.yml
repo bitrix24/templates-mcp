@@ -87,6 +87,11 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=tag
+            # sha-<short> on every run — this is the ONLY tag a workflow_dispatch
+            # produces (its github.ref is a branch, so none of the tag-gated rules
+            # above fire). Without it metadata-action emits zero tags on dispatch
+            # and build-push fails. Watchtower tracks :latest, so it ignores these.
+            type=sha,prefix=sha-
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build & push

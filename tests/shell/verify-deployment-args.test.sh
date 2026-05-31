@@ -46,18 +46,30 @@ assert_fails() {
 base=(--url https://example.com --token x)
 
 # Numeric guards reject zero, non-integers, and negatives, and echo the value.
+# Each knob is checked against BOTH barriers: the case-pattern (non-digit/empty,
+# which also catches the leading-'-' of a negative) and the `-ge 1` range check.
 assert_fails "Invalid --health-retries: 0 (must be ≥ 1)"      "${base[@]}" --health-retries 0
 assert_fails "Invalid --health-retries: abc (expected"        "${base[@]}" --health-retries abc
+assert_fails "Invalid --health-retries: -1 (expected"         "${base[@]}" --health-retries -1
 assert_fails "Invalid --timeout: 0 (must be ≥ 1)"             "${base[@]}" --timeout 0
 assert_fails "Invalid --timeout: 1.5 (expected"               "${base[@]}" --timeout 1.5
+assert_fails "Invalid --timeout: -1 (expected"                "${base[@]}" --timeout -1
+assert_fails "Invalid --health-interval: 0 (must be ≥ 1)"     "${base[@]}" --health-interval 0
 assert_fails "Invalid --health-interval: -1 (expected"        "${base[@]}" --health-interval -1
 
-# --resolve must be HOST:IP; a half-specified pair is rejected before curl.
+# --resolve must be HOST:IP. Reject a half-specified pair, a value with no colon
+# at all (regression: both %%/## expansions return the whole string, so the
+# non-empty check alone passed it through to curl), and a spaces-only value.
 assert_fails "Invalid --resolve: expected HOST:IP"            "${base[@]}" --resolve :1.2.3.4
 assert_fails "Invalid --resolve: expected HOST:IP"            "${base[@]}" --resolve host:
+assert_fails "Invalid --resolve: expected HOST:IP"            "${base[@]}" --resolve nocolon
+assert_fails "Invalid --resolve: expected HOST:IP"            "${base[@]}" --resolve "   "
+# …and a value carrying shell-meta / whitespace that could smuggle curl flags.
+assert_fails "Invalid --resolve host"                         "${base[@]}" --resolve 'h$(id):1.2.3.4'
 
-# Required arg still enforced.
+# Required args still enforced.
 assert_fails "Missing --url"                                  --token x
+assert_fails "Missing token"                                  --url https://example.com
 
 echo "----"
 echo "passed: $pass, failed: $fail"

@@ -45,15 +45,15 @@ GitHub Actions (deploy.yml → "Build & publish")
   dxt-release  — attach the .dxt artifact to the GitHub Release
 ```
 
-CI builds and pushes the image to GHCR. **CI does not SSH into your server.** Pulling the image to production is the operator's responsibility — via Watchtower (automatic) or `make redeploy` (manual). No SSH secrets are needed in GitHub Actions.
+CI builds and pushes the image to GHCR. **CI does not SSH into your server.** Pulling the image to production is the operator's responsibility — via Watchtower (detects updates; applies them only if you opt into auto-apply) or `make redeploy` (manual). No SSH secrets are needed in GitHub Actions.
 
-### Option A — Watchtower (automatic updates)
+### Option A — Watchtower (update detection; monitor-only by default)
 
-[`docker-compose.watchtower.yml`](../docker-compose.watchtower.yml) is a Compose overlay. Run `make watchtower-up` instead of `make up` to start the app with Watchtower alongside it. Watchtower watches only the app container (via label) and removes old images after update.
+[`docker-compose.watchtower.yml`](../docker-compose.watchtower.yml) is a Compose overlay. Run `make watchtower-up` instead of `make up` to start the app with Watchtower alongside it. Watchtower watches only the app container (via label). It ships **monitor-only by default** (`WATCHTOWER_MONITOR_ONLY: "true"`): it detects that a newer `:latest` exists and notifies you, but does **not** restart the container — you promote the update with the health-gated `make redeploy` (Option B), by hand or from a cron / systemd timer.
 
-> ⚠️ **No health gate.** Watchtower restarts on the new `:latest` without checking `/api/health`, and it cannot roll back — a crash-looping image keeps running until you act. Two mitigations, set in [`docker-compose.watchtower.yml`](../docker-compose.watchtower.yml): set `WATCHTOWER_NOTIFICATION_URL` so every update pages you, and point an external monitor (UptimeRobot / Healthchecks.io) at `/api/health`. If you want a *hard* gate instead of auto-apply, set `WATCHTOWER_MONITOR_ONLY: "true"` and apply updates with the health-gated `make redeploy` (Option B) from a cron / systemd timer.
+> ⚠️ **No native health gate or rollback.** This is why monitor-only is the default: if Watchtower auto-applied a crash-looping `:latest`, it would keep it running until you noticed. In monitor-only mode set `WATCHTOWER_NOTIFICATION_URL` so detections actually reach you — nothing is applied automatically. If you instead opt into unattended **auto-apply** (remove `WATCHTOWER_MONITOR_ONLY`), pair it with that notification URL **and** an external monitor (UptimeRobot / Healthchecks.io) on `/api/health` to catch a bad release fast.
 
-> ⚠️ **Pushing a `v*` tag publishes a new image.** Watchtower picks it up at the next nightly check (03:00 UTC). Before tagging, make sure the server's `.env` is complete and the container is healthy.
+> ⚠️ **Pushing a `v*` tag publishes a new image.** Watchtower detects it at the next nightly check (03:00 UTC); in auto-apply mode it would also restart onto it. Before tagging, make sure the server's `.env` is complete and the container is healthy.
 
 ### Option B — Manual redeploy
 
@@ -76,7 +76,7 @@ git push origin v0.1.0
 
 Use an annotated (`-a`) `vMAJOR.MINOR.PATCH` (or `-alpha.N` / `-beta.N`) tag matching the bumped `package.json` version. A lightweight tag also fires the `v*` trigger, but annotated tags carry an author/date/message and are what `git describe` and the GitHub release UI expect.
 
-**Re-deploying an existing release**: `workflow_dispatch` (Actions → Deploy → Run workflow) takes a `ref` input and re-runs the pipeline. ⚠️ Image *tagging* follows the `metadata-action` rules, which emit the semver tags (`0.1.0`, `0.1`) and `:latest` **only** when the triggering ref is a `v*` **tag**. Dispatching against a branch or bare SHA produces neither `:latest` nor the semver tags, so the deploy step's `docker compose pull` of `:latest` would pull a **stale** image. Always dispatch against a `v*` tag, never a branch/SHA — or override `BX24_IMAGE` to the exact digest/tag you intend.
+**Re-deploying an existing release**: `workflow_dispatch` (Actions → **Build & publish** → Run workflow) takes a `ref` input and re-runs the pipeline. ⚠️ Image *tagging* follows the `metadata-action` rules: the semver tags (`0.1.0`, `0.1`) and `:latest` are emitted **only** when the triggering ref is a `v*` **tag**. A dispatch against a branch or bare SHA publishes just a `sha-<short>` tag (never `:latest`/semver), so Watchtower — which tracks `:latest` — won't pick it up, and a `make redeploy` pulling `:latest` would get a **stale** image. To deploy a dispatched build, pull that exact `sha-<short>` tag (or set `BX24_IMAGE` to it). For a normal release, dispatch against a `v*` tag.
 
 ## The image
 
@@ -84,7 +84,7 @@ Use an annotated (`-a`) `vMAJOR.MINOR.PATCH` (or `-alpha.N` / `-beta.N`) tag mat
 - Published to **GitHub Container Registry**: `ghcr.io/bitrix24/templates-mcp`.
 - Tags applied on a `v*` release (via `docker/metadata-action`): the semver `{{version}}` **without** the `v` prefix (e.g. `0.1.0`), `{{major}}.{{minor}}` (e.g. `0.1`), the raw tag ref **with** the prefix (e.g. `v0.1.0`), and `latest`. Note the prefix difference — for a manual rollback pin (below) use the no-prefix semver form `:0.1.0` or the digest, not the `v`-prefixed ref unless you mean it.
 - The container `EXPOSE`s `3000` and ships a `HEALTHCHECK` (`wget -qO- http://localhost:3000/api/health`, `--interval=30s --timeout=5s --retries=3`). `docker-compose.yml` declares an equivalent compose-level healthcheck.
-- The `dxt` job bundles the same tool catalogue as a Claude-Desktop `.dxt` and attaches it to the GitHub Release (see [`ARCHITECTURE.md`](./ARCHITECTURE.md) and [`../mcp-stdio/README.md`](../mcp-stdio/README.md)). It does not gate the deploy.
+- The `dxt-build` job bundles the same tool catalogue as a Claude-Desktop `.dxt` and uploads it as a workflow artifact; `dxt-release` attaches that artifact to the GitHub Release (only on `v*` tags) — see [`ARCHITECTURE.md`](./ARCHITECTURE.md) and [`../mcp-stdio/README.md`](../mcp-stdio/README.md). Neither gates the image build.
 
 ## Prerequisites — once per host
 
@@ -166,7 +166,7 @@ The `.env` lives only on the host (mode `0600`, owned by the deploy user) and is
 
 Only `GITHUB_TOKEN` is needed — it is auto-provided and used by the `build` job to push the image to GHCR. No SSH secrets. Make sure the repo's package settings allow Actions to write packages (**Settings → Actions → General → Workflow permissions → Read and write**).
 
-The workflow runs least-privilege (`contents: read`), elevating per-job only where needed (`build` → `packages: write`, `dxt` → `contents: write`).
+The workflow runs least-privilege (`contents: read`), elevating per-job only where needed (`build` → `packages: write`, `dxt-release` → `contents: write`, granted only on `v*` tag runs).
 
 ### Bring-your-own CD (forks / self-hosted)
 
