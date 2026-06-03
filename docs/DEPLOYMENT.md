@@ -110,6 +110,7 @@ The repo ships a `Makefile` that wraps the most common operations so you don't h
 | Local dev server | `make dev` |
 | Unit tests / lint / typecheck | `make test` / `make lint` / `make typecheck` |
 | Build DXT bundle for Claude Desktop | `make build-dxt` |
+| Verify bootstrap files are present | `make bootstrap-check` |
 | Create `proxy-net` network (once) | `make init-network` |
 | Start nginx-proxy + acme-companion (once, skip if already running) | `make server-up` |
 | Stop nginx-proxy + acme-companion | `make server-down` |
@@ -144,35 +145,31 @@ The reverse-proxy stack is defined in [`docker-compose.server.yml`](../docker-co
 Use whichever suits your host. Substitute it everywhere below.
 
 ```bash
-# 1. Create the deploy directory (adjust the path to your preference).
-DEPLOY_DIR=/opt/bx24-template-mcp   # ← change to your preferred path
-# Note: for /opt/ on a shared host you may need:
-#   sudo mkdir -p "$DEPLOY_DIR" && sudo chown "$USER":"$USER" "$DEPLOY_DIR"
-mkdir -p "$DEPLOY_DIR"
-cd "$DEPLOY_DIR" || exit 1
-
-# Install jq — needed for the JSON-RPC assertions in the smoke test.
+# 0. Install jq — needed for the JSON-RPC assertions in the smoke test.
 sudo apt install -y jq     # Debian / Ubuntu
 
-# 2. Download all required files — pin to the release tag you are deploying.
+# 1. Clone only the deploy files — sparse-checkout pulls a single tagged snapshot
+#    without downloading source code, test fixtures, or CI pipelines.
 #    Check the latest tag at: https://github.com/bitrix24/templates-mcp/releases
-TAG=v0.1.1   # ← update to the tag you are deploying before each release
-BASE="https://raw.githubusercontent.com/bitrix24/templates-mcp/${TAG}"
-curl -fsSLO "${BASE}/docker-compose.yml"
-curl -fsSLO "${BASE}/docker-compose.server.yml"
-curl -fsSLO "${BASE}/docker-compose.watchtower.yml"
-curl -fsSLO "${BASE}/Makefile"
-
-# verify-deployment.sh must live in scripts/ — that is where Makefile expects it.
-# Review the script before executing: cat scripts/verify-deployment.sh
-mkdir -p scripts
-curl -fsSL "${BASE}/scripts/verify-deployment.sh" -o scripts/verify-deployment.sh
+TAG=v0.1.1          # ← update to the tag you are deploying before each release
+DEPLOY_DIR=/opt/bx24-template-mcp   # ← change to your preferred path
+# Note: for /opt/ on a shared host you may need sudo for the mkdir below.
+git clone --depth 1 --filter=blob:none --sparse \
+  --branch "$TAG" \
+  https://github.com/bitrix24/templates-mcp.git "$DEPLOY_DIR"
+cd "$DEPLOY_DIR" || exit 1
+git sparse-checkout set \
+  docker-compose.yml docker-compose.server.yml \
+  docker-compose.watchtower.yml Makefile \
+  scripts/verify-deployment.sh .env.example
 chmod +x scripts/verify-deployment.sh
+
+# 2. Verify the bootstrap is complete.
+make bootstrap-check
 
 # 3. Create .env from the template, then fill in the values (see Environment below).
 # Skip if .env already exists (re-running bootstrap on an existing deploy).
-curl -fsSLO "${BASE}/.env.example"
-[ -f .env ] || { mv .env.example .env && chmod 600 .env; }
+[ -f .env ] || { cp .env.example .env && chmod 600 .env; }
 ${EDITOR:-vi} .env
 
 # Add NODE_ENV for production — docker compose needs it, see .env.example for why
