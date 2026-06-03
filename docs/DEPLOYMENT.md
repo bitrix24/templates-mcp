@@ -156,7 +156,7 @@ sudo apt install -y jq     # Debian / Ubuntu
 
 # 2. Download all required files — pin to the release tag you are deploying.
 #    Check the latest tag at: https://github.com/bitrix24/templates-mcp/releases
-TAG=v0.1.1   # ← set to the tag you are deploying  # ← update on each release
+TAG=v0.1.1   # ← update to the tag you are deploying before each release
 BASE="https://raw.githubusercontent.com/bitrix24/templates-mcp/${TAG}"
 curl -fsSLO "${BASE}/docker-compose.yml"
 curl -fsSLO "${BASE}/docker-compose.server.yml"
