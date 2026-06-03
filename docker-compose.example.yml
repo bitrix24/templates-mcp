@@ -51,7 +51,18 @@ services:
       NUXT_BITRIX24_OAUTH_DB_PATH: ${NUXT_BITRIX24_OAUTH_DB_PATH:-/data/oauth.sqlite}
     # Persistent storage for the audit log + OAuth token store. Required
     # whenever NUXT_BITRIX24_OAUTH_ENABLED=true; harmless (just empty) for
-    # webhook-only forks. The named volume survives `docker compose down`.
+    # webhook-only forks. The named volume survives `docker compose down`
+    # (but NOT `docker compose down -v` — that deletes ALL named volumes
+    # including the audit log and OAuth tokens, irrecoverably).
+    #
+    # UPGRADE WARNING: deployments that ran an earlier image without this
+    # volume kept audit JSONL files in the container's ephemeral layer at
+    # `/data/audit/`. After `docker compose pull && up -d`, the named
+    # volume mounts over `/data` and those files become invisible — for
+    # compliance you MUST copy them out first:
+    #     docker cp bx24-template-mcp-local:/data/audit ./audit-backup-$(date +%F)
+    # Then `docker compose pull && docker compose up -d`. If you have no
+    # earlier audit history, no action needed.
     volumes:
       - bx24_data:/data
       # Uncomment to mount a private CA bundle from the host. Adjust the

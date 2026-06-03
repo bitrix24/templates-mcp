@@ -47,7 +47,9 @@ services:
     # (`oauth.sqlite`, lands in PR-2b). Without this volume both are lost
     # on container recreate — silently breaking compliance/forensics and,
     # once OAuth is on, every installed tenant. Webhook-only forks gain
-    # durable audit logs as a side-effect.
+    # durable audit logs as a side-effect. The named volume survives
+    # `docker compose down` — but NOT `docker compose down -v`, which
+    # deletes ALL named volumes including the audit log and OAuth tokens.
     #
     # UPGRADE WARNING: deployments that ran an earlier image without this
     # volume kept audit JSONL files in the container's ephemeral layer at

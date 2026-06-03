@@ -64,4 +64,31 @@ describe('request-context — AsyncLocalStorage tenant binding (PR-2a scaffold)'
     expect(observed.viaRawExport).toEqual(ctx)
     expect(observed.viaHelper).toBe(observed.viaRawExport)
   })
+
+  it('throw inside fn propagates out and the ALS scope is still cleaned up after', async () => {
+    // The middleware (PR-2c) will catch errors from `next()` to translate
+    // them into HTTP responses. If a thrown error inside `runWithTenant`
+    // ever leaked the tenant scope into subsequent unrelated work in the
+    // same process — that would be a cross-tenant leak class. Native
+    // AsyncLocalStorage gives us this for free, but pinning it here
+    // protects against a future wrapper that wraps `tenantContext.run` in
+    // a try/finally and forgets to re-throw or to exit the scope.
+    await expect(
+      runWithTenant({ memberId: 'p', userId: '1' }, async () => {
+        throw new Error('handler-boom')
+      }),
+    ).rejects.toThrow('handler-boom')
+    expect(getTenantContext()).toBeUndefined()
+  })
+
+  it('accepts a sync fn — type-level compat for PR-2c middleware wiring', async () => {
+    // The toolkit's `next()` is async today, but PR-2c may want to wrap a
+    // sync helper before awaiting. `runWithTenant` widens `fn` to
+    // `() => T | Promise<T>` so a sync wrapper compiles without forcing
+    // `async`. Returns the raw `T` here (not a Promise) — the await on the
+    // outside is a no-op.
+    const result = runWithTenant({ memberId: 'sync', userId: '0' }, () => 'sync-result' as const)
+    expect(result).toBe('sync-result')
+    expect(getTenantContext()).toBeUndefined()
+  })
 })

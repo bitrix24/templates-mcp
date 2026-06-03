@@ -70,8 +70,14 @@ export const tenantContext = new AsyncLocalStorage<TenantContext>()
 /**
  * Runs `fn` inside a tenant scope. The middleware (PR-2c) wraps every OAuth
  * request with this; tests use it to drive deterministic tenant binding.
+ *
+ * `fn` can be sync or async — the toolkit's `next()` returns whatever the
+ * caller returns, so a wrapper that wants to pass sync work through (e.g.
+ * `runWithTenant(ctx, () => next())` where the toolkit hasn't decided to
+ * make `next` awaitable yet) shouldn't have to wrap with `async`. Native
+ * `AsyncLocalStorage.run` accepts either shape; we just widen the type.
  */
-export function runWithTenant<T>(ctx: TenantContext, fn: () => Promise<T>): Promise<T> {
+export function runWithTenant<T>(ctx: TenantContext, fn: () => T | Promise<T>): T | Promise<T> {
   return tenantContext.run(ctx, fn)
 }
 

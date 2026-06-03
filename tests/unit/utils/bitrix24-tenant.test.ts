@@ -2,11 +2,15 @@
  * Tests for the `useBitrix24Tenant()` flag-gated dispatcher (PR-2a scaffold,
  * design in `docs/OAUTH-DESIGN.md §7`/§10 — lives on PR #58 until merged).
  *
- * The `loadFresh()` helper resets the module cache per test so the
- * `AsyncLocalStorage` singleton from `request-context.ts` and the
- * dispatcher's import of it land in the SAME cache iteration — without
- * that, the dispatcher reads from one ALS instance while `runWithTenant`
- * writes to another and the tenant always reads `undefined`.
+ * **Depends on `server/utils/request-context.ts`** — the dispatcher reads
+ * its tenant from the ALS singleton exported there. The `loadFresh()`
+ * helper resets the module cache per test so both modules come from the
+ * SAME `vi.resetModules()` iteration; without that, the dispatcher would
+ * read from one ALS instance while `runWithTenant` writes to another and
+ * the tenant always reads `undefined`. The two `await import(…)` calls in
+ * `loadFresh()` MUST stay sequential (not `Promise.all`) — a parallel
+ * import could land each module in a separate module-resolution batch and
+ * defeat the shared-cache invariant.
  *
  * `webhookSingleton` is a `Symbol` cast to `B24Hook`: we only need identity
  * comparison (`toBe`) to prove the dispatcher returns the singleton the
@@ -14,7 +18,7 @@
  * access on the stand-in throw loudly.
  */
 import type { B24Hook } from '@bitrix24/b24jssdk'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as ContextModule from '../../../server/utils/request-context'
 import type * as TenantModule from '../../../server/utils/bitrix24-tenant'
 
@@ -82,11 +86,36 @@ describe('useBitrix24Tenant — flag-gated dispatcher (PR-2a scaffold)', () => {
       )
       expect(result).toBe(webhookSingleton)
     })
+
+    it('two concurrent OFF requests under different ALS scopes share the same singleton', async () => {
+      // Symmetric to the "two concurrent OAuth-ON" test below. When OAuth
+      // is OFF, the dispatcher returns the webhook singleton REGARDLESS of
+      // whether the request happens to be wrapped in an ALS scope (e.g.
+      // because a future middleware bug always wraps). Pinning this
+      // catches a refactor that adds a "if tenant present, route to OAuth
+      // even when flag is off" shortcut.
+      const { tenant: { useBitrix24Tenant }, ctx: { runWithTenant } } = await loadFresh()
+      const [a, b] = await Promise.all([
+        runWithTenant({ memberId: 'portal-A', userId: '1' }, async () => useBitrix24Tenant()),
+        runWithTenant({ memberId: 'portal-B', userId: '2' }, async () => useBitrix24Tenant()),
+      ])
+      expect(a).toBe(webhookSingleton)
+      expect(b).toBe(webhookSingleton)
+      expect(a).toBe(b)
+    })
   })
 
   describe('NUXT_BITRIX24_OAUTH_ENABLED=true (OAuth wiring landing in PR-2c)', () => {
     beforeEach(() => {
       runtimeConfig.bitrix24OauthEnabled = true
+    })
+
+    afterEach(() => {
+      // Reset to the outer-describe default explicitly — if a future test
+      // is added BETWEEN the two `describe` blocks (or outside both), it
+      // would otherwise inherit `true` and behave unexpectedly. Belt and
+      // braces alongside the outer `beforeEach` reset.
+      runtimeConfig.bitrix24OauthEnabled = false
     })
 
     it('throws clearly when no tenant context is bound — and the error names the flag the operator must flip', async () => {
