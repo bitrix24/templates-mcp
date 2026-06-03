@@ -1,0 +1,70 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+
+/**
+ * Per-request tenant context for the multi-tenant OAuth surface — the seam
+ * between `defineMcpHandler`'s `middleware` hook and the tool handlers it
+ * dispatches into.
+ *
+ * Why ALS (not h3 `event.context`):
+ *   `@nuxtjs/mcp-toolkit`'s `defineMcpTool` handler signature is
+ *   `async ({ input }) => …` — the h3 event is NOT passed through. The
+ *   toolkit's `middleware` → `next()` → handler chain is plain `await`
+ *   (verified in `@nuxtjs/mcp-toolkit@0.17 dist/runtime/server/mcp/utils.js`
+ *   L191-209, and confirmed empirically by
+ *   `tests/unit/als-propagation.test.ts` from #60/#64). Stashing tenant on
+ *   `event.context` would require forking the toolkit; ALS doesn't.
+ *
+ * Why a module-level singleton AsyncLocalStorage:
+ *   Node's contract is that an ALS instance is process-wide and binds via
+ *   its own .run() call — multiple ALS instances cannot bleed into each
+ *   other. The instance is exported only so the OAuth middleware (PR-2c)
+ *   and `useBitrix24Tenant()` (here, via `getTenantContext`) read/write
+ *   the SAME store. Production code MUST NOT poke at the export directly;
+ *   tests may use it to assert the store at handler depth.
+ *
+ * Lifecycle:
+ *   1. Middleware reads Bearer → looks up `(memberId, userId)` from token
+ *      store → calls `runWithTenant({memberId, userId}, () => next())`.
+ *   2. Inside the resulting promise tree, every tool handler that resolves
+ *      its client via `useBitrix24Tenant()` (PR-2a; OAuth wiring lands in
+ *      PR-2c) reads the tenant via `getTenantContext()`.
+ *   3. When `NUXT_BITRIX24_OAUTH_ENABLED=false`, the middleware does NOT
+ *      run the wrap, the store stays `undefined`, and the tenant dispatcher
+ *      falls back to the webhook singleton — zero behaviour change for
+ *      existing forks.
+ *
+ * Scope: PR-2a (this file) introduces the store and helpers only. The
+ * actual middleware wrap + token-store lookup lands in PR-2c.
+ */
+
+/** Tenant identity for the multi-tenant OAuth surface. */
+export interface TenantContext {
+  /** Bitrix24 `member_id` — opaque portal identifier from the OAuth payload. */
+  readonly memberId: string
+  /** Bitrix24 user id (`access_token` owner). */
+  readonly userId: string
+}
+
+/**
+ * Process-wide ALS instance. Exported for the middleware + helpers in this
+ * module and for tests; production tool code MUST use {@link getTenantContext}
+ * / {@link runWithTenant} rather than poking at this directly.
+ */
+export const tenantContext = new AsyncLocalStorage<TenantContext>()
+
+/**
+ * Runs `fn` inside a tenant scope. The middleware (PR-2c) wraps every OAuth
+ * request with this; tests use it to drive deterministic tenant binding.
+ */
+export function runWithTenant<T>(ctx: TenantContext, fn: () => Promise<T>): Promise<T> {
+  return tenantContext.run(ctx, fn)
+}
+
+/**
+ * Returns the tenant bound to the current async scope, or `undefined` when
+ * called outside any `runWithTenant` (typical for webhook-only forks where
+ * the middleware never runs the wrap).
+ */
+export function getTenantContext(): TenantContext | undefined {
+  return tenantContext.getStore()
+}

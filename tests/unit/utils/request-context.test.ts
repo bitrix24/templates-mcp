@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest'
+import { getTenantContext, runWithTenant, tenantContext } from '../../../server/utils/request-context'
+
+describe('request-context — AsyncLocalStorage tenant binding (PR-2a scaffold)', () => {
+  it('getTenantContext returns undefined outside any runWithTenant scope', () => {
+    expect(getTenantContext()).toBeUndefined()
+  })
+
+  it('runWithTenant binds the tenant for the awaited duration of fn', async () => {
+    const ctx = { memberId: 'portal-a', userId: '42' }
+    const observed = await runWithTenant(ctx, async () => getTenantContext())
+    expect(observed).toEqual(ctx)
+  })
+
+  it('binding is gone after runWithTenant resolves', async () => {
+    await runWithTenant({ memberId: 'p', userId: '1' }, async () => undefined)
+    expect(getTenantContext()).toBeUndefined()
+  })
+
+  it('binding survives multiple `await` hops inside fn (microtask scheduler)', async () => {
+    const ctx = { memberId: 'portal-async', userId: '99' }
+    const observed = await runWithTenant(ctx, async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await new Promise<void>(resolve => setImmediate(resolve))
+      return getTenantContext()
+    })
+    expect(observed).toEqual(ctx)
+  })
+
+  it('two concurrent runWithTenant scopes each see their own context (no cross-tenant leak)', async () => {
+    // The PR-2 design depends on per-request ALS isolation — duplicating
+    // the cross-tenant leak guard from tests/unit/als-propagation.test.ts
+    // (#60) here so the tenant helper itself is regression-pinned, not
+    // just the underlying transport.
+    const a = runWithTenant({ memberId: 'portal-A', userId: '1' }, async () => {
+      await new Promise<void>(resolve => setImmediate(resolve))
+      return getTenantContext()
+    })
+    const b = runWithTenant({ memberId: 'portal-B', userId: '2' }, async () => {
+      await Promise.resolve()
+      return getTenantContext()
+    })
+    const [ra, rb] = await Promise.all([a, b])
+    expect(ra).toEqual({ memberId: 'portal-A', userId: '1' })
+    expect(rb).toEqual({ memberId: 'portal-B', userId: '2' })
+  })
+
+  it('exports the underlying AsyncLocalStorage instance so middleware + helpers share the same store', () => {
+    // Exposed deliberately — kept as part of the public API so a test or
+    // a future middleware can drive `tenantContext.run(...)` directly if
+    // the `runWithTenant` wrapper is ever wrapped further (e.g. metrics
+    // span). Production tool code should still go through `getTenantContext`.
+    expect(typeof tenantContext.getStore).toBe('function')
+    expect(typeof tenantContext.run).toBe('function')
+  })
+})

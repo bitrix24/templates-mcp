@@ -27,6 +27,18 @@ export default defineNuxtConfig({
     // the Nitro app context exists), so setting this field programmatically does
     // not change the log level — set the env var instead.
     logLevel: 'info',
+    // OAuth 2.0 / multi-tenant scaffolding (`docs/OAUTH-DESIGN.md`). All
+    // empty/false by default — webhook flow stays the canonical path until
+    // an operator explicitly opts in. The full surface (token store, install
+    // / callback routes, refresh logic) lands in PR-2b/c; the flag and
+    // dispatcher are wired now so existing tools migrate via a mechanical
+    // `useBitrix24()` → `useBitrix24Tenant()` swap later.
+    bitrix24OauthEnabled: false,
+    bitrix24OauthClientId: '',
+    bitrix24OauthClientSecret: '',
+    bitrix24OauthRedirectUrl: '',
+    bitrix24OauthScope: 'user,task',
+    bitrix24OauthDbPath: '/data/oauth.sqlite',
   },
 
   nitro: {

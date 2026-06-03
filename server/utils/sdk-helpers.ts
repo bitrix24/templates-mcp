@@ -1,8 +1,8 @@
 import type {
   AjaxResult,
-  B24Hook,
   BatchCommandsArrayUniversal,
   CallBatchResult,
+  TypeB24,
   TypeCallParams,
 } from '@bitrix24/b24jssdk'
 import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
@@ -69,7 +69,7 @@ import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
  * @throws {Bitrix24ToolError} on `!isSuccess` or transport failure.
  */
 export async function callV3<T>(
-  b24: B24Hook,
+  b24: TypeB24,
   method: string,
   params: TypeCallParams,
   errorContext: string,
@@ -99,7 +99,7 @@ export async function callV3<T>(
  * cast-free.
  */
 export async function callV2<T>(
-  b24: B24Hook,
+  b24: TypeB24,
   method: string,
   params: TypeCallParams | unknown[],
   errorContext: string,
@@ -162,7 +162,7 @@ export type BatchCall = [method: string, params: TypeCallParams | unknown[]]
  *   failures do NOT throw — they land in the returned array.
  */
 export async function batchV3<T>(
-  b24: B24Hook,
+  b24: TypeB24,
   calls: BatchCall[],
   errorContext: string,
 ): Promise<Array<AjaxResult<T>>> {
@@ -190,7 +190,7 @@ export async function batchV3<T>(
  * "@warning The maximum number of commands in one batch request is 50.").
  */
 export async function batchV2<T>(
-  b24: B24Hook,
+  b24: TypeB24,
   calls: BatchCall[],
   errorContext: string,
 ): Promise<Array<AjaxResult<T>>> {
