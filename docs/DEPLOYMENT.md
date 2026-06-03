@@ -91,6 +91,7 @@ Use an annotated (`-a`) `vMAJOR.MINOR.PATCH` (or `-alpha.N` / `-beta.N`) tag mat
 Set the host up **once**:
 
 - [ ] **Docker Engine ≥ 24 + Compose v2**; the operator's account can run `docker` (in the `docker` group).
+- [ ] **`git`** — used once at bootstrap to sparse-clone the deploy files (see [`scripts/bootstrap.sh`](../scripts/bootstrap.sh)). Not needed afterwards; `make redeploy` pulls images, not source. Install: `sudo apt install -y git`.
 - [ ] **`jq`** — required for the JSON-RPC assertion in the smoke test (`make verify-local`). Without it the last two checks are skipped. Install once: `sudo apt install -y jq` (Debian/Ubuntu) or `brew install jq` (macOS).
 - [ ] **A reverse proxy + TLS** — either the `nginx-proxy` + `acme-companion` stack on the shared `proxy-net` network (matches the default [`docker-compose.yml`](../docker-compose.yml)), or an alternative from [`REVERSE-PROXY.md`](./REVERSE-PROXY.md). nginx-proxy owns ports 80/443, watches for containers that declare `VIRTUAL_HOST`, and `acme-companion` issues/renews Let's Encrypt certs for any container that sets `LETSENCRYPT_HOST`.
 - [ ] **An external Docker network `proxy-net`**, joined by both the proxy stack and this service (`docker network create proxy-net`).
@@ -110,6 +111,7 @@ The repo ships a `Makefile` that wraps the most common operations so you don't h
 | Local dev server | `make dev` |
 | Unit tests / lint / typecheck | `make test` / `make lint` / `make typecheck` |
 | Build DXT bundle for Claude Desktop | `make build-dxt` |
+| First-time host bootstrap (fetch deploy files) | `scripts/bootstrap.sh` |
 | Verify bootstrap files are present | `make bootstrap-check` |
 | Create `proxy-net` network (once) | `make init-network` |
 | Start nginx-proxy + acme-companion (once, skip if already running) | `make server-up` |
@@ -144,37 +146,33 @@ The reverse-proxy stack is defined in [`docker-compose.server.yml`](../docker-co
 
 Use whichever suits your host. Substitute it everywhere below.
 
+The bootstrap is driven by [`scripts/bootstrap.sh`](../scripts/bootstrap.sh), which sparse-clones **only** the deploy files (no source, tests, or CI) for the release tag you pick. The file list lives in that one script, so it can never drift out of sync with the repo — that's the fix for the old hand-maintained `curl` list.
+
 ```bash
-# 0. Install jq — needed for the JSON-RPC assertions in the smoke test.
-sudo apt install -y jq     # Debian / Ubuntu
+# 0. Install git + jq — git fetches the deploy files; jq backs the smoke test's
+#    JSON-RPC assertions. (Docker Engine ≥ 24 + Compose v2 are assumed — see
+#    Prerequisites above.)
+sudo apt install -y git jq     # Debian / Ubuntu
 
-# 1. Clone only the deploy files — sparse-checkout pulls a single tagged snapshot
-#    without downloading source code, test fixtures, or CI pipelines.
+# 1. Pick the tag and the deploy directory.
 #    Check the latest tag at: https://github.com/bitrix24/templates-mcp/releases
-TAG=v0.1.1          # ← update to the tag you are deploying before each release
-DEPLOY_DIR=/opt/bx24-template-mcp   # ← change to your preferred path
-# Note: for /opt/ on a shared host you may need sudo for the mkdir below.
-git clone --depth 1 --filter=blob:none --sparse \
-  --branch "$TAG" \
-  https://github.com/bitrix24/templates-mcp.git "$DEPLOY_DIR"
-cd "$DEPLOY_DIR" || exit 1
-git sparse-checkout set \
-  docker-compose.yml docker-compose.server.yml \
-  docker-compose.watchtower.yml Makefile \
-  scripts/verify-deployment.sh .env.example
-chmod +x scripts/verify-deployment.sh
+export TAG=v0.1.1                          # ← update to the tag you are deploying
+export DEPLOY_DIR=/opt/bx24-template-mcp   # ← change to your preferred path
+# Note: for /opt/ on a shared host you may need to pre-create it with sudo:
+#   sudo mkdir -p "$DEPLOY_DIR" && sudo chown "$USER":"$USER" "$DEPLOY_DIR"
 
-# 2. Verify the bootstrap is complete.
-make bootstrap-check
+# 2. Fetch and review the bootstrap script BEFORE running it (it runs git on
+#    your host and creates files). Then run it — it sparse-clones the deploy
+#    files, scaffolds .env (mode 0600), and runs `make bootstrap-check`.
+curl -fsSL "https://raw.githubusercontent.com/bitrix24/templates-mcp/${TAG}/scripts/bootstrap.sh" -o /tmp/bx24-bootstrap.sh
+less /tmp/bx24-bootstrap.sh      # ← read it first
+bash /tmp/bx24-bootstrap.sh
 
-# 3. Create .env from the template, then fill in the values (see Environment below).
-# Skip if .env already exists (re-running bootstrap on an existing deploy).
-[ -f .env ] || { cp .env.example .env && chmod 600 .env; }
+# 3. Fill in the real secrets (see Environment below), then add NODE_ENV.
+#    NODE_ENV goes in the HOST .env only (not the repo root .env) — see .env.example.
+#    The grep guard keeps re-runs idempotent.
+cd "$DEPLOY_DIR"
 ${EDITOR:-vi} .env
-
-# Add NODE_ENV for production — docker compose needs it, see .env.example for why
-# this goes in the HOST .env only (not the repo root .env).
-# grep guard prevents duplicate lines on re-runs.
 grep -qxF 'NODE_ENV=production' .env || echo 'NODE_ENV=production' >> .env
 
 # 4. Ensure the shared proxy-net network exists (safe to run if it already does).
@@ -183,6 +181,10 @@ docker network create proxy-net 2>/dev/null || true
 # Authenticate to GHCR only if the image is private — public images need no login.
 # echo "$GHCR_PAT" | docker login ghcr.io -u <your-github-user> --password-stdin
 ```
+
+> **Re-deploying / moving to a new tag?** Don't re-clone — that's what `make redeploy` is for (it pulls the new image). Only re-run `bootstrap.sh` if you need updated *deploy files* (a new compose key, a Makefile target): it detects the existing clone in `$DEPLOY_DIR` and updates it in place to the new `$TAG` without touching your `.env`.
+
+> **Prefer to do it by hand?** The script is just `git clone --depth 1 --filter=blob:none --sparse --branch "$TAG"` followed by `git sparse-checkout set <files>` and a `cp .env.example .env`. Read [`scripts/bootstrap.sh`](../scripts/bootstrap.sh) — the `FILES` array is the canonical list.
 
 The `.env` lives only on the host (mode `0600`, owned by the deploy user) and is never read or written by CI.
 

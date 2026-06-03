@@ -124,10 +124,9 @@ watchtower-start:
 # Run after first-time bootstrap (or git sparse-checkout) to confirm the setup
 # is complete before proceeding to `make redeploy`.
 bootstrap-check:
-	@test -f docker-compose.yml          || (echo "ERROR: docker-compose.yml not found" && exit 1)
-	@test -f Makefile                    || (echo "ERROR: Makefile not found" && exit 1)
-	@test -x scripts/verify-deployment.sh || (echo "ERROR: scripts/verify-deployment.sh not found or not executable — run: chmod +x scripts/verify-deployment.sh" && exit 1)
-	@test -f .env                        || (echo "ERROR: .env not found — copy from .env.example and fill in values" && exit 1)
+	@test -f docker-compose.yml || { echo "ERROR: docker-compose.yml not found — run scripts/bootstrap.sh (see docs/DEPLOYMENT.md)"; exit 1; }
+	@test -n "$(VERIFY_SCRIPT)" && test -x "$(VERIFY_SCRIPT)" || { echo "ERROR: verify-deployment.sh not found or not executable in scripts/ (or src/scripts/) — run: chmod +x scripts/verify-deployment.sh"; exit 1; }
+	@test -f .env || { echo "ERROR: .env not found — copy from .env.example and fill in values"; exit 1; }
 	@echo "Bootstrap check passed."
 
 # ─── Smoke test ───────────────────────────────────────────────────────────────
