@@ -88,6 +88,13 @@ Optional, only if the run includes integration tests or evals (see `.env.example
 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` (eval LLM),
 `NUXT_AUDIT_DIR` (OAuth/Bearer audit log destination; default `/data/audit/`, webhook-only manual QA ignores it).
 
+OAuth scaffolding (Phase-3 opt-in, off by default — webhook-only manual QA leaves these unset/false):
+`NUXT_BITRIX24_OAUTH_ENABLED` (`false` for QA — turning it on with no other wiring deliberately fails loud per PR #209),
+`NUXT_BITRIX24_OAUTH_CLIENT_ID` / `NUXT_BITRIX24_OAUTH_CLIENT_SECRET` (from a registered Bitrix24 Marketplace application, needed only when ENABLED=true),
+`NUXT_BITRIX24_OAUTH_REDIRECT_URL` (must match what's registered on the Bitrix24 side; default `https://prod.example.com/api/oauth/callback`),
+`NUXT_BITRIX24_OAUTH_SCOPE` (default `user,task`),
+`NUXT_BITRIX24_OAUTH_DB_PATH` (SQLite token store; default `/data/oauth.sqlite`).
+
 ### 4. On the Bitrix24 portal — seed upfront
 
 Derive this list from the generated checks (Step 2): a check needs pre-existing data when it can't create that data itself (a record owned by *someone else*, an over-cap volume, a pre-known id). Example seeds from a whole-project run:
