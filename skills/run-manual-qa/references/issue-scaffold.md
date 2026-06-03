@@ -91,7 +91,7 @@ Optional, only if the run includes integration tests or evals (see `.env.example
 OAuth scaffolding (Phase-3 opt-in, off by default — webhook-only manual QA leaves these unset/false):
 `NUXT_BITRIX24_OAUTH_ENABLED` (`false` for QA — turning it on with no other wiring deliberately fails loud per PR #209),
 `NUXT_BITRIX24_OAUTH_CLIENT_ID` / `NUXT_BITRIX24_OAUTH_CLIENT_SECRET` (from a registered Bitrix24 Marketplace application, needed only when ENABLED=true),
-`NUXT_BITRIX24_OAUTH_REDIRECT_URL` (must match what's registered on the Bitrix24 side; default `https://prod.example.com/api/oauth/callback`),
+`NUXT_BITRIX24_OAUTH_REDIRECT_URL` (no default — must be set to the exact URL registered on the Bitrix24 side when `ENABLED=true`; `.env.example` shows `https://prod.example.com/api/oauth/callback` as a placeholder shape, not a value to copy verbatim),
 `NUXT_BITRIX24_OAUTH_SCOPE` (default `user,task`),
 `NUXT_BITRIX24_OAUTH_DB_PATH` (SQLite token store; default `/data/oauth.sqlite`).
 

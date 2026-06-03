@@ -46,12 +46,22 @@ describe('request-context — AsyncLocalStorage tenant binding (PR-2a scaffold)'
     expect(rb).toEqual({ memberId: 'portal-B', userId: '2' })
   })
 
-  it('exports the underlying AsyncLocalStorage instance so middleware + helpers share the same store', () => {
-    // Exposed deliberately — kept as part of the public API so a test or
-    // a future middleware can drive `tenantContext.run(...)` directly if
-    // the `runWithTenant` wrapper is ever wrapped further (e.g. metrics
-    // span). Production tool code should still go through `getTenantContext`.
-    expect(typeof tenantContext.getStore).toBe('function')
-    expect(typeof tenantContext.run).toBe('function')
+  it('the exported ALS instance is the SAME store getTenantContext / runWithTenant operate on', async () => {
+    // The `tenantContext` export is `@internal` — only middleware (PR-2c)
+    // imports it. To prove the contract without poking at the export the
+    // way production code shouldn't: write through `runWithTenant`, read
+    // through `getTenantContext`, AND read through the raw export — all
+    // three must agree. If a refactor accidentally created two ALS
+    // instances (e.g. dual-import via a circular path), `runWithTenant`
+    // would write to one and `tenantContext.getStore()` would see the
+    // OTHER store as undefined, surfacing here.
+    const ctx = { memberId: 'shared-store', userId: '7' }
+    const observed = await runWithTenant(ctx, async () => ({
+      viaHelper: getTenantContext(),
+      viaRawExport: tenantContext.getStore(),
+    }))
+    expect(observed.viaHelper).toEqual(ctx)
+    expect(observed.viaRawExport).toEqual(ctx)
+    expect(observed.viaHelper).toBe(observed.viaRawExport)
   })
 })

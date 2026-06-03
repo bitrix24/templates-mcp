@@ -25,8 +25,13 @@ import { getTenantContext } from '~/server/utils/request-context'
  * Return type is the SDK-exported {@link TypeB24} structural interface that
  * both `B24Hook` and `B24OAuth` implement (verified upstream in
  * `@bitrix24/b24jssdk` `dist/esm/index.d.ts` L2267-2361, L4533, L5314 —
- * `AbstractB24 implements TypeB24` is the shared base). No union, no local
- * alias, no upstream PR needed (closes #59 / partially #63).
+ * `AbstractB24 implements TypeB24` is the shared base). Why not a
+ * `B24Hook | B24OAuth` union or a local `B24Client` alias: `TypeB24`
+ * already exists upstream and exposes exactly the surface tool helpers
+ * touch (`actions.v2/v3.call/batch.make`, `auth`, `tools`, logger). A
+ * union would force every helper to narrow at the boundary; a local alias
+ * would drift from the SDK's own contract on the next bump. Closes #59 /
+ * completes #63 — no upstream PR needed.
  *
  * Callers MUST NOT do `instanceof B24Hook` / `instanceof B24OAuth` checks —
  * the type is the contract. Tool helpers in `server/utils/sdk-helpers.ts`

@@ -10,17 +10,27 @@ import { AsyncLocalStorage } from 'node:async_hooks'
  *   `async ({ input }) => …` — the h3 event is NOT passed through. The
  *   toolkit's `middleware` → `next()` → handler chain is plain `await`
  *   (verified in `@nuxtjs/mcp-toolkit@0.17 dist/runtime/server/mcp/utils.js`
- *   L191-209, and confirmed empirically by
- *   `tests/unit/als-propagation.test.ts` from #60/#64). Stashing tenant on
+ *   L191-209, and confirmed empirically by the ALS propagation regression
+ *   test that lands with PR #64 / closes issue #60 — the test file isn't
+ *   in `main` yet because PR #64 is gated on PR #58). Stashing tenant on
  *   `event.context` would require forking the toolkit; ALS doesn't.
  *
  * Why a module-level singleton AsyncLocalStorage:
  *   Node's contract is that an ALS instance is process-wide and binds via
  *   its own .run() call — multiple ALS instances cannot bleed into each
- *   other. The instance is exported only so the OAuth middleware (PR-2c)
- *   and `useBitrix24Tenant()` (here, via `getTenantContext`) read/write
- *   the SAME store. Production code MUST NOT poke at the export directly;
- *   tests may use it to assert the store at handler depth.
+ *   other. The instance is exported (marked `@internal`) only so the OAuth
+ *   middleware (PR-2c) and `useBitrix24Tenant()` (here, via
+ *   `getTenantContext`) read/write the SAME store. Production tool code
+ *   MUST go through {@link runWithTenant} / {@link getTenantContext} so a
+ *   future trace/metrics wrapper around `runWithTenant` is never bypassed.
+ *
+ * Dev-only caveat (HMR): in a Vite/Nitro dev server with hot-module
+ * reloading, this file may be re-evaluated independently of the middleware
+ * file (PR-2c). When that happens, two ALS instances exist briefly —
+ * middleware writes to one, dispatcher reads from the other, and
+ * `getTenantContext()` returns `undefined` until both files reload
+ * together. Workaround: full dev-server restart. Production (Nitro
+ * build → single process load) is not affected.
  *
  * Lifecycle:
  *   1. Middleware reads Bearer → looks up `(memberId, userId)` from token
@@ -46,9 +56,14 @@ export interface TenantContext {
 }
 
 /**
- * Process-wide ALS instance. Exported for the middleware + helpers in this
- * module and for tests; production tool code MUST use {@link getTenantContext}
- * / {@link runWithTenant} rather than poking at this directly.
+ * Process-wide ALS instance.
+ *
+ * @internal Exported only so the OAuth middleware (PR-2c) and this module's
+ *   own helpers share a single store. Production tool code MUST use
+ *   {@link runWithTenant} / {@link getTenantContext}, NOT call `.run` or
+ *   `.getStore` on this export directly — a future tracing/metrics wrapper
+ *   around `runWithTenant` would be silently bypassed otherwise. Tests
+ *   should drive the contract through `runWithTenant` for the same reason.
  */
 export const tenantContext = new AsyncLocalStorage<TenantContext>()
 

@@ -48,6 +48,16 @@ services:
     # on container recreate — silently breaking compliance/forensics and,
     # once OAuth is on, every installed tenant. Webhook-only forks gain
     # durable audit logs as a side-effect.
+    #
+    # UPGRADE WARNING: deployments that ran an earlier image without this
+    # volume kept audit JSONL files in the container's ephemeral layer at
+    # `/data/audit/`. After `docker compose pull && up -d`, the named
+    # volume mounts over `/data` and those files become invisible — for
+    # compliance you MUST copy them out first:
+    #     docker cp bx24-template-mcp:/data/audit ./audit-backup-$(date +%F)
+    # Then `docker compose pull && docker compose up -d`. If you have no
+    # earlier audit history (fresh install, or audit logger never ran
+    # because the only call site lands in PR-2b), no action needed.
     volumes:
       - bx24_data:/data
     healthcheck:

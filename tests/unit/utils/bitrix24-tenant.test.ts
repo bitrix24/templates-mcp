@@ -1,3 +1,18 @@
+/**
+ * Tests for the `useBitrix24Tenant()` flag-gated dispatcher (PR-2a scaffold,
+ * design in `docs/OAUTH-DESIGN.md §7`/§10 — lives on PR #58 until merged).
+ *
+ * The `loadFresh()` helper resets the module cache per test so the
+ * `AsyncLocalStorage` singleton from `request-context.ts` and the
+ * dispatcher's import of it land in the SAME cache iteration — without
+ * that, the dispatcher reads from one ALS instance while `runWithTenant`
+ * writes to another and the tenant always reads `undefined`.
+ *
+ * `webhookSingleton` is a `Symbol` cast to `B24Hook`: we only need identity
+ * comparison (`toBe`) to prove the dispatcher returns the singleton the
+ * mocked `useBitrix24` produced. A `Symbol` makes accidental property
+ * access on the stand-in throw loudly.
+ */
 import type { B24Hook } from '@bitrix24/b24jssdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as ContextModule from '../../../server/utils/request-context'
@@ -41,6 +56,20 @@ describe('useBitrix24Tenant — flag-gated dispatcher (PR-2a scaffold)', () => {
       expect(useBitrix24).toHaveBeenCalledTimes(1)
     })
 
+    it('returns the same client across N repeated calls (singleton contract)', async () => {
+      // PR-4d will swap useBitrix24() → useBitrix24Tenant() across 23
+      // tools that each call it many times per request. The webhook
+      // singleton lives in useBitrix24 itself; the dispatcher's
+      // responsibility is to never *swap* the returned identity under
+      // a fixed flag value. Pinning that here so a future "cache by
+      // tenant" refactor that breaks identity for the webhook-only path
+      // fails loud.
+      const { tenant: { useBitrix24Tenant } } = await loadFresh()
+      const results = Array.from({ length: 100 }, () => useBitrix24Tenant())
+      expect(new Set(results).size).toBe(1)
+      expect(results[0]).toBe(webhookSingleton)
+    })
+
     it('does NOT consult the tenant context (no ALS read when OAuth off)', async () => {
       // Even if a stray ALS scope somehow wrapped this call, the dispatcher
       // must ignore it under flag=false — otherwise a future bug that leaks
@@ -60,28 +89,56 @@ describe('useBitrix24Tenant — flag-gated dispatcher (PR-2a scaffold)', () => {
       runtimeConfig.bitrix24OauthEnabled = true
     })
 
-    it('throws clearly when no tenant context is bound (wiring bug)', async () => {
+    it('throws clearly when no tenant context is bound — and the error names the flag the operator must flip', async () => {
       const { tenant: { useBitrix24Tenant } } = await loadFresh()
+      // Pin both halves of the diagnostic: WHAT went wrong and HOW to
+      // recover. Reverting either half silently degrades the operator
+      // experience without breaking the test, hence two regex assertions.
       expect(() => useBitrix24Tenant()).toThrow(/outside a tenant scope/)
+      expect(() => useBitrix24Tenant()).toThrow(/NUXT_BITRIX24_OAUTH_ENABLED/)
       expect(useBitrix24).not.toHaveBeenCalled()
     })
 
-    it('throws "OAuth path not implemented" when a tenant IS bound (PR-2c stub)', async () => {
+    it('throws "OAuth path not implemented" when a tenant IS bound — and the message names the unwired PR', async () => {
       const { tenant: { useBitrix24Tenant }, ctx: { runWithTenant } } = await loadFresh()
       await expect(
         runWithTenant({ memberId: 'p', userId: '1' }, async () => useBitrix24Tenant()),
       ).rejects.toThrow(/not yet implemented \(lands in PR-2c\)/)
+      // The error includes the resolved tenant for forensics — pin that
+      // so a future refactor that drops it from the message breaks here
+      // instead of in the field.
+      await expect(
+        runWithTenant({ memberId: 'p', userId: '1' }, async () => useBitrix24Tenant()),
+      ).rejects.toThrow(/memberId=p/)
+    })
+
+    it('two concurrent OAuth-ON requests each surface their own tenant in the diagnostic', async () => {
+      // Concurrent stress on the dispatcher: each `runWithTenant` scope
+      // must reach the PR-2c stub with its OWN tenant intact, not the
+      // other scope's. Once PR-2c lands, the same shape will assert two
+      // concurrent calls get two distinct B24OAuth instances — for now
+      // the per-scope memberId in the error message is the cheapest
+      // proof of isolation.
+      const { tenant: { useBitrix24Tenant }, ctx: { runWithTenant } } = await loadFresh()
+      const results = await Promise.allSettled([
+        runWithTenant({ memberId: 'portal-A', userId: '1' }, async () => useBitrix24Tenant()),
+        runWithTenant({ memberId: 'portal-B', userId: '2' }, async () => useBitrix24Tenant()),
+      ])
+      const messageOf = (r: PromiseSettledResult<unknown>): string =>
+        r.status === 'rejected' && r.reason instanceof Error ? r.reason.message : ''
+      expect(messageOf(results[0]!)).toMatch(/memberId=portal-A/)
+      expect(messageOf(results[0]!)).not.toMatch(/portal-B/)
+      expect(messageOf(results[1]!)).toMatch(/memberId=portal-B/)
+      expect(messageOf(results[1]!)).not.toMatch(/portal-A/)
     })
 
     it('refuses to fall back to webhook when OAuth is on (no silent cross-tenant leak)', async () => {
       const { tenant: { useBitrix24Tenant } } = await loadFresh()
-      // The dispatcher MUST NOT call useBitrix24() under flag=true; the
-      // whole point of the flag is to keep the two transports separate.
-      try {
-        useBitrix24Tenant()
-      } catch {
-        // expected — see throw test above
-      }
+      // Replaces an earlier `try/catch {}` that would have swallowed an
+      // unrelated error (e.g. ReferenceError from a sloppy refactor) and
+      // still passed the `useBitrix24 not called` assertion. The explicit
+      // regex pins it to the expected branch.
+      expect(() => useBitrix24Tenant()).toThrow(/outside a tenant scope/)
       expect(useBitrix24).not.toHaveBeenCalled()
     })
   })
