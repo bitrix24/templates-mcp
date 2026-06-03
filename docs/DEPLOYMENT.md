@@ -12,7 +12,7 @@ Already have the host set up? This is all you need:
 
 ```bash
 # 1. On your host — pull the new image and restart the container
-cd /opt/bx24-template-mcp
+cd "$DEPLOY_DIR"       # set DEPLOY_DIR in your shell first — see "First-time bootstrap" below
 # If Watchtower is running, stop it first so it doesn't race you:
 #   make watchtower-stop
 make redeploy          # = pull + up -d --wait (blocks until the container is healthy)
@@ -134,26 +134,53 @@ The reverse-proxy stack is defined in [`docker-compose.server.yml`](../docker-co
 
 ## First-time bootstrap on the host
 
+**Before you start — decide your deploy directory.** There is no requirement to use `/opt/`; any path the deploy user owns works. Common choices:
+
+| Setup | Path |
+|---|---|
+| System service, root-owned host | `/opt/bx24-template-mcp` |
+| Per-user install | `/home/<user>/bx24-template-mcp` (or any name) |
+
+Use whichever suits your host. Substitute it everywhere below.
+
 ```bash
-sudo mkdir -p /opt/bx24-template-mcp && sudo chown "$USER":"$USER" /opt/bx24-template-mcp
-cd /opt/bx24-template-mcp
+# 1. Create the deploy directory (adjust the path to your preference).
+DEPLOY_DIR=/opt/bx24-template-mcp   # ← change to your preferred path
+# Note: for /opt/ on a shared host you may need:
+#   sudo mkdir -p "$DEPLOY_DIR" && sudo chown "$USER":"$USER" "$DEPLOY_DIR"
+mkdir -p "$DEPLOY_DIR"
+cd "$DEPLOY_DIR" || exit 1
 
 # Install jq — needed for the JSON-RPC assertions in the smoke test.
 sudo apt install -y jq     # Debian / Ubuntu
 
-# Pull the shipped compose (it pulls the GHCR image; it does NOT build).
-curl -sSLO https://raw.githubusercontent.com/bitrix24/templates-mcp/main/docker-compose.yml
+# 2. Download all required files — pin to the release tag you are deploying.
+#    Check the latest tag at: https://github.com/bitrix24/templates-mcp/releases
+TAG=v0.1.1   # ← set to the tag you are deploying  # ← update on each release
+BASE="https://raw.githubusercontent.com/bitrix24/templates-mcp/${TAG}"
+curl -fsSLO "${BASE}/docker-compose.yml"
+curl -fsSLO "${BASE}/docker-compose.server.yml"
+curl -fsSLO "${BASE}/docker-compose.watchtower.yml"
+curl -fsSLO "${BASE}/Makefile"
 
-# Create .env from the template, then fill in the values (see Environment below).
-curl -sSLO https://raw.githubusercontent.com/bitrix24/templates-mcp/main/.env.example
-mv .env.example .env && chmod 600 .env
+# verify-deployment.sh must live in scripts/ — that is where Makefile expects it.
+# Review the script before executing: cat scripts/verify-deployment.sh
+mkdir -p scripts
+curl -fsSL "${BASE}/scripts/verify-deployment.sh" -o scripts/verify-deployment.sh
+chmod +x scripts/verify-deployment.sh
+
+# 3. Create .env from the template, then fill in the values (see Environment below).
+# Skip if .env already exists (re-running bootstrap on an existing deploy).
+curl -fsSLO "${BASE}/.env.example"
+[ -f .env ] || { mv .env.example .env && chmod 600 .env; }
 ${EDITOR:-vi} .env
 
 # Add NODE_ENV for production — docker compose needs it, see .env.example for why
 # this goes in the HOST .env only (not the repo root .env).
-echo "NODE_ENV=production" >> .env
+# grep guard prevents duplicate lines on re-runs.
+grep -qxF 'NODE_ENV=production' .env || echo 'NODE_ENV=production' >> .env
 
-# Default compose requires the shared proxy-net network.
+# 4. Ensure the shared proxy-net network exists (safe to run if it already does).
 docker network create proxy-net 2>/dev/null || true
 
 # Authenticate to GHCR only if the image is private — public images need no login.
@@ -161,6 +188,45 @@ docker network create proxy-net 2>/dev/null || true
 ```
 
 The `.env` lives only on the host (mode `0600`, owned by the deploy user) and is never read or written by CI.
+
+### nginx-proxy — start once or skip if already running
+
+The `make server-up` command starts `nginx-proxy` + `acme-companion`. **If your host already runs an nginx-proxy** (common when multiple services share a server), skip this step — running it twice causes a port 80/443 conflict.
+
+```bash
+# Check first (--filter is more reliable than grep):
+docker ps --filter name=nginx-proxy --format '{{.Names}}'
+
+# If nothing is printed → start the proxy stack:
+make server-up
+
+# If nginx-proxy is already running → skip make server-up entirely.
+# Just confirm it is on proxy-net (substitute the real container name):
+docker inspect <nginx-proxy-container-name> \
+  --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
+# Should print "proxy-net". If it prints a different network name,
+# connect it: docker network connect proxy-net <nginx-proxy-container-name>
+```
+
+### Start the application
+
+```bash
+make redeploy   # pulls the image from GHCR and waits until the container is healthy
+```
+
+After `redeploy` completes, connect the container to the proxy network if it is not already there. The `|| true` suppresses the "already exists" error — this is expected on every re-deploy:
+
+```bash
+docker network connect proxy-net bx24-template-mcp || true
+```
+
+### Smoke-test
+
+```bash
+make verify-local URL=https://<your-domain>
+```
+
+All seven checks green means the deployment is fully operational.
 
 ## GitHub configuration
 
