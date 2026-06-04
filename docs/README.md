@@ -10,7 +10,8 @@ Start here if you are about to change code.
 2. [`ARCHITECTURE.md`](./ARCHITECTURE.md) — 15-minute orientation: layers, decisions, hot spots.
 3. [`ADDING-TOOLS.md`](./ADDING-TOOLS.md) — human walkthrough for adding a new MCP tool: mental model, where files go, the two registrations, anatomy of a real tool. Links to the agent skill for the full template (`callV2` / `callV3` / `batchV2` / `batchV3` helpers, error funnel, unit-test skeleton, persona walk).
 4. [`EVALS.md`](./EVALS.md) — automated tool-selection eval (Evalite + DeepSeek); how to run, how to add cases.
-5. [`../PROJECT-BRIEF.md`](../PROJECT-BRIEF.md) — system design and roadmap, source of truth for everything that hasn't earned its own doc yet.
+5. [`OAUTH-DESIGN.md`](./OAUTH-DESIGN.md) — design doc (DRAFT) for the upcoming OAuth 2.0 + multi-tenant support. Contract first, code later.
+6. [`../PROJECT-BRIEF.md`](../PROJECT-BRIEF.md) — system design and roadmap, source of truth for everything that hasn't earned its own doc yet.
 
 > **Testing strategy** is not a separate doc — see `CONTRIBUTING.md` for the unit/integration split and CI gates, and `EVALS.md` for the LLM tool-selection layer.
 
@@ -34,6 +35,7 @@ Start here if you are an AI assistant working with this MCP.
 2. [`../skills/manage-bx24-template-mcp/SKILL.md`](../skills/manage-bx24-template-mcp/SKILL.md) — ground rules, persona walk, scope discipline.
 3. [`../skills/manage-bx24-template-mcp/adding-tools.md`](../skills/manage-bx24-template-mcp/adding-tools.md) — concrete template for writing new tools.
 4. [`../skills/manage-bx24-template-mcp/feedback.md`](../skills/manage-bx24-template-mcp/feedback.md) — when and how to call `bx24mcp_submit_feedback`.
+5. [`OAUTH-DESIGN.md`](./OAUTH-DESIGN.md) — read before changing tool dispatch or anything in `server/utils/bitrix24*.ts`.
 
 ## Not yet authored
 
