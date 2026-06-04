@@ -10,10 +10,9 @@ import { AsyncLocalStorage } from 'node:async_hooks'
  *   `async ({ input }) => …` — the h3 event is NOT passed through. The
  *   toolkit's `middleware` → `next()` → handler chain is plain `await`
  *   (verified in `@nuxtjs/mcp-toolkit@0.17 dist/runtime/server/mcp/utils.js`
- *   L191-209, and confirmed empirically by the ALS propagation regression
- *   test that lands with PR #64 / closes issue #60 — the test file isn't
- *   in `main` yet because PR #64 is gated on PR #58). Stashing tenant on
- *   `event.context` would require forking the toolkit; ALS doesn't.
+ *   L191-209, and confirmed empirically by `tests/unit/als-propagation.test.ts`
+ *   from issue #60 — landed via PR #64). Stashing tenant on `event.context`
+ *   would require forking the toolkit; ALS doesn't.
  *
  * Why a module-level singleton AsyncLocalStorage:
  *   Node's contract is that an ALS instance is process-wide and binds via
@@ -75,8 +74,12 @@ export const tenantContext = new AsyncLocalStorage<TenantContext>()
  * caller returns, so a wrapper that wants to pass sync work through (e.g.
  * `runWithTenant(ctx, () => next())` where the toolkit hasn't decided to
  * make `next` awaitable yet) shouldn't have to wrap with `async`. Native
- * `AsyncLocalStorage.run` accepts either shape; we just widen the type.
+ * `AsyncLocalStorage.run` accepts either shape; we expose proper overloads
+ * so a sync caller gets `T` back (not `T | Promise<T>`, which would force
+ * an `await` or a cast even on the sync path).
  */
+export function runWithTenant<T>(ctx: TenantContext, fn: () => Promise<T>): Promise<T>
+export function runWithTenant<T>(ctx: TenantContext, fn: () => T): T
 export function runWithTenant<T>(ctx: TenantContext, fn: () => T | Promise<T>): T | Promise<T> {
   return tenantContext.run(ctx, fn)
 }

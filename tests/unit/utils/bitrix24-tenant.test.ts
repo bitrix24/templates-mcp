@@ -1,6 +1,6 @@
 /**
  * Tests for the `useBitrix24Tenant()` flag-gated dispatcher (PR-2a scaffold,
- * design in `docs/OAUTH-DESIGN.md §7`/§10 — lives on PR #58 until merged).
+ * design in `docs/OAUTH-DESIGN.md` §7 / §10).
  *
  * **Depends on `server/utils/request-context.ts`** — the dispatcher reads
  * its tenant from the ALS singleton exported there. The `loadFresh()`
@@ -130,35 +130,72 @@ describe('useBitrix24Tenant — flag-gated dispatcher (PR-2a scaffold)', () => {
 
     it('throws "OAuth path not implemented" when a tenant IS bound — and the message names the unwired PR', async () => {
       const { tenant: { useBitrix24Tenant }, ctx: { runWithTenant } } = await loadFresh()
+      const tenant = { memberId: 'portal-value', userId: '1' }
       await expect(
-        runWithTenant({ memberId: 'p', userId: '1' }, async () => useBitrix24Tenant()),
+        runWithTenant(tenant, async () => useBitrix24Tenant()),
       ).rejects.toThrow(/not yet implemented \(lands in PR-2c\)/)
-      // The error includes the resolved tenant for forensics — pin that
-      // so a future refactor that drops it from the message breaks here
-      // instead of in the field.
-      await expect(
-        runWithTenant({ memberId: 'p', userId: '1' }, async () => useBitrix24Tenant()),
-      ).rejects.toThrow(/memberId=p/)
+      // The error includes the resolved tenant for forensics — assert the
+      // VALUE appears (not the literal `memberId=` key) so a future schema
+      // rename (e.g. `member_id` from the OAuth payload) doesn't fail the
+      // test on a cosmetic change.
+      try {
+        await runWithTenant(tenant, async () => useBitrix24Tenant())
+      }
+      catch (err) {
+        expect((err as Error).message).toContain(tenant.memberId)
+        expect((err as Error).message).toContain(tenant.userId)
+      }
     })
 
-    it('two concurrent OAuth-ON requests each surface their own tenant in the diagnostic', async () => {
-      // Concurrent stress on the dispatcher: each `runWithTenant` scope
-      // must reach the PR-2c stub with its OWN tenant intact, not the
-      // other scope's. Once PR-2c lands, the same shape will assert two
-      // concurrent calls get two distinct B24OAuth instances — for now
-      // the per-scope memberId in the error message is the cheapest
-      // proof of isolation.
+    it('N=10 concurrent OAuth-ON requests each surface their own tenant in the diagnostic', async () => {
+      // Concurrent stress on the dispatcher: each `runWithTenant` scope must
+      // reach the PR-2c stub with its OWN tenant intact, not someone else's.
+      // N=10 is the local floor — parity with the PR-67 audit-log (N=100)
+      // and the PR-64 ALS spike (N=20) where the SDK transport was the
+      // unknown. Here the only thing under test is the dispatcher's read
+      // of `getTenantContext()`, so a smaller-but-still-parallel N=10 is
+      // sufficient signal without bloating run time.
       const { tenant: { useBitrix24Tenant }, ctx: { runWithTenant } } = await loadFresh()
-      const results = await Promise.allSettled([
-        runWithTenant({ memberId: 'portal-A', userId: '1' }, async () => useBitrix24Tenant()),
-        runWithTenant({ memberId: 'portal-B', userId: '2' }, async () => useBitrix24Tenant()),
-      ])
-      const messageOf = (r: PromiseSettledResult<unknown>): string =>
-        r.status === 'rejected' && r.reason instanceof Error ? r.reason.message : ''
-      expect(messageOf(results[0]!)).toMatch(/memberId=portal-A/)
-      expect(messageOf(results[0]!)).not.toMatch(/portal-B/)
-      expect(messageOf(results[1]!)).toMatch(/memberId=portal-B/)
-      expect(messageOf(results[1]!)).not.toMatch(/portal-A/)
+      const tenants = Array.from({ length: 10 }, (_, i) => ({
+        memberId: `portal-${i}`,
+        userId: String(i),
+      }))
+      const results = await Promise.allSettled(
+        tenants.map(t => runWithTenant(t, async () => useBitrix24Tenant())),
+      )
+      results.forEach((r, i) => {
+        expect(r.status, `tenant index ${i}`).toBe('rejected')
+        const msg = r.status === 'rejected' && r.reason instanceof Error ? r.reason.message : ''
+        expect(msg, `tenant index ${i}`).toContain(tenants[i]!.memberId)
+        // Verify no neighbour-tenant leak: this scope's diagnostic must not
+        // mention any OTHER tenant's memberId.
+        tenants.forEach((other, j) => {
+          if (j === i) return
+          expect(msg, `tenant ${i} should not leak ${other.memberId}`).not.toContain(other.memberId)
+        })
+      })
+    })
+
+    it('nested runWithTenant — inner scope wins, restored to outer on resolve (PR-2c middleware-order guard)', async () => {
+      // Native ALS semantics: an inner `tenantContext.run(...)` creates a
+      // child scope that shadows the outer one for its duration, and the
+      // outer scope is restored when the inner resolves. PR-2c's middleware
+      // must NEVER call `runWithTenant` inside another active scope (that
+      // would silently swap the tenant for the rest of the request), but
+      // until the lint/runtime guard for that lands the semantics need to
+      // be pinned so a future bug surfaces here, not in production.
+      const { ctx: { runWithTenant, getTenantContext } } = await loadFresh()
+      const observed = await runWithTenant({ memberId: 'outer', userId: '1' }, async () => {
+        const beforeInner = getTenantContext()
+        const fromInner = await runWithTenant({ memberId: 'inner', userId: '2' }, async () =>
+          getTenantContext(),
+        )
+        const afterInner = getTenantContext()
+        return { beforeInner, fromInner, afterInner }
+      })
+      expect(observed.beforeInner?.memberId).toBe('outer')
+      expect(observed.fromInner?.memberId).toBe('inner')
+      expect(observed.afterInner?.memberId).toBe('outer')
     })
 
     it('refuses to fall back to webhook when OAuth is on (no silent cross-tenant leak)', async () => {

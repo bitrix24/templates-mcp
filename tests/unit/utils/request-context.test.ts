@@ -83,12 +83,29 @@ describe('request-context — AsyncLocalStorage tenant binding (PR-2a scaffold)'
 
   it('accepts a sync fn — type-level compat for PR-2c middleware wiring', async () => {
     // The toolkit's `next()` is async today, but PR-2c may want to wrap a
-    // sync helper before awaiting. `runWithTenant` widens `fn` to
-    // `() => T | Promise<T>` so a sync wrapper compiles without forcing
-    // `async`. Returns the raw `T` here (not a Promise) — the await on the
-    // outside is a no-op.
+    // sync helper before awaiting. `runWithTenant` is overloaded so a sync
+    // `fn` returns the raw `T` (not `T | Promise<T>`, which would force
+    // every call site to add `await` or a cast).
     const result = runWithTenant({ memberId: 'sync', userId: '0' }, () => 'sync-result' as const)
     expect(result).toBe('sync-result')
     expect(getTenantContext()).toBeUndefined()
+  })
+
+  it('multiple getTenantContext() reads inside one scope return the same identity', async () => {
+    // The tenant object is captured once by `tenantContext.run`; every
+    // `getStore()` call returns the SAME reference. If a future wrapper
+    // started cloning / freezing / wrapping the store on read, this test
+    // catches it before downstream code that compares tenants by identity
+    // (e.g. PR-2c's per-tenant `B24OAuth` LRU keyed on the store object)
+    // silently breaks.
+    const ctx = { memberId: 'identity', userId: '1' }
+    const [first, second, third] = await runWithTenant(ctx, async () => [
+      getTenantContext(),
+      getTenantContext(),
+      getTenantContext(),
+    ])
+    expect(first).toBe(second)
+    expect(second).toBe(third)
+    expect(first).toBe(ctx) // same ref as the one passed to runWithTenant
   })
 })

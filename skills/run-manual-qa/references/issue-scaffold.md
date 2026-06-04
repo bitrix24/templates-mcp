@@ -1,5 +1,7 @@
 # Issue scaffold
 
+`Last reviewed: 2026-06-04`
+
 Canonical English source for the non-block parts of the tracking issue: preamble, the "how to work" section (GitHub Convert-to-issue flow), the preparation/access section, and the placeholder data table. Render these into the test repo at issue-creation time. Operator-facing phrasing may be translated into the chosen language; structure and labels stay English.
 
 > **Keep this file honest.** The prep section mirrors live project structure — `.env.example`, `nuxt.config.ts` (`runtimeConfig`, `NITRO_PORT`), the `/mcp` auth middleware, and the webhook-scope requirements in `README`. **Whenever any of those change, update this file in the same PR.** Triggers: a new/renamed/removed `NUXT_*` or `NITRO_*` variable, a changed default port or endpoint path, a new required webhook scope, a changed connector header, or a new upfront-seed requirement (a new tool that needs pre-existing portal data to test). The data table and parts of the prep are otherwise **generated/trimmed per run** (see below) — only the structural facts are hard-coded here, and those are what must stay in sync.
@@ -89,7 +91,7 @@ Optional, only if the run includes integration tests or evals (see `.env.example
 `NUXT_AUDIT_DIR` (OAuth/Bearer audit log destination; default `/data/audit/`, webhook-only manual QA ignores it).
 
 OAuth scaffolding (Phase-3 opt-in, off by default — webhook-only manual QA leaves these unset/false):
-`NUXT_BITRIX24_OAUTH_ENABLED` (`false` for QA — turning it on with no other wiring deliberately fails loud per PR #209),
+`NUXT_BITRIX24_OAUTH_ENABLED` (default `false`; flip to `true` only after the OAuth wiring (`server/mcp/index.ts` middleware + token store) lands — without it the dispatcher fails loud on every tool call),
 `NUXT_BITRIX24_OAUTH_CLIENT_ID` / `NUXT_BITRIX24_OAUTH_CLIENT_SECRET` (from a registered Bitrix24 Marketplace application, needed only when ENABLED=true),
 `NUXT_BITRIX24_OAUTH_REDIRECT_URL` (no default — must be set to the exact URL registered on the Bitrix24 side when `ENABLED=true`; `.env.example` shows `https://prod.example.com/api/oauth/callback` as a placeholder shape, not a value to copy verbatim),
 `NUXT_BITRIX24_OAUTH_SCOPE` (default `user,task`),
