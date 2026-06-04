@@ -39,7 +39,7 @@ services:
       NUXT_BITRIX24_OAUTH_CLIENT_SECRET: ${NUXT_BITRIX24_OAUTH_CLIENT_SECRET:-}
       NUXT_BITRIX24_OAUTH_REDIRECT_URL: ${NUXT_BITRIX24_OAUTH_REDIRECT_URL:-}
       NUXT_BITRIX24_OAUTH_SCOPE: ${NUXT_BITRIX24_OAUTH_SCOPE:-user,task}
-      NUXT_BITRIX24_OAUTH_DB_PATH: ${NUXT_BITRIX24_OAUTH_DB_PATH:-/data/oauth.sqlite}
+      NUXT_BITRIX24_OAUTH_DB_DIR: ${NUXT_BITRIX24_OAUTH_DB_DIR:-/data}
     networks:
       - proxy-net
     # Persistent storage for the audit log (`/data/audit/*.jsonl`, written

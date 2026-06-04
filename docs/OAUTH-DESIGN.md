@@ -107,7 +107,7 @@ NUXT_BITRIX24_OAUTH_CLIENT_ID=
 NUXT_BITRIX24_OAUTH_CLIENT_SECRET=
 NUXT_BITRIX24_OAUTH_REDIRECT_URL=https://prod.example.com/api/oauth/callback
 NUXT_BITRIX24_OAUTH_SCOPE=user,task                  # see §2.6 — update when tools grow
-NUXT_BITRIX24_OAUTH_DB_PATH=/data/oauth.sqlite       # mounted volume; see §10 + docker-compose
+NUXT_BITRIX24_OAUTH_DB_DIR=/data                      # mounted volume; see §10 + docker-compose. Filename `oauth.sqlite` is fixed in code (decided 2026-06-04 — operator picks the dir, not the file name; the dir conventionally holds future OAuth artefacts too)
 ```
 
 `NUXT_BITRIX24_OAUTH_CLIENT_ID` / `_CLIENT_SECRET` come from the Bitrix24 marketplace application registration. `_REDIRECT_URL` must exactly match what is registered on the Bitrix24 side. `_DB_PATH` points at a named docker volume — `docker-compose.yml` and `docker-compose.example.yml` get a `volumes:` section in PR-2 binding `oauth_data:/data`.
@@ -301,7 +301,7 @@ This sequence is **strictly ordered**. Every step except the last is reversible 
 **Upgrade runbook for existing webhook deployments** (operator-facing, lands in PR-5 in long form, summarised here):
 
 1. Register a marketplace application on your Bitrix24 portal; record `CLIENT_ID` and `CLIENT_SECRET`.
-2. Mount a persistent volume at `/data` (or wherever `NUXT_BITRIX24_OAUTH_DB_PATH` points). Confirm it is on local SSD, not NFS.
+2. Mount a persistent volume at `/data` (or wherever `NUXT_BITRIX24_OAUTH_DB_DIR` points). Confirm it is on local SSD, not NFS.
 3. Set the OAuth env vars in `.env` (or your secrets manager).
 4. Restart with `NUXT_BITRIX24_OAUTH_ENABLED=true`.
 5. Each end user visits `https://<your-mcp>/api/oauth/install?portal=<theirportal>`, completes authorize, copies the Bearer into their Claude / Cursor / Windsurf connector.
@@ -326,11 +326,11 @@ All PR-2-blocking questions are resolved (moved to the list below). Remaining it
 1. **Install URL discovery.** Lands on the existing landing at `/` (`app.vue`) as a "Connect your Bitrix24" CTA that picks `?portal=<host>` via a small form. The landing already imports `@bitrix24/b24ui-nuxt`, so the CTA is one `<B24Button>`. Tracked in the install/landing PR.
 2. **`bitrix24_current_user` semantics under OAuth.** Under webhook it returns the webhook owner; under OAuth it returns the Bearer-owning user — same name, sharper semantics. One-line tool-description update in PR-4c.
 3. **Sunsetting the webhook path.** Recommendation: keep it indefinitely as the dev / single-tenant / stdio fallback. README is restructured in PR-5 to lead with OAuth and present webhook as the alternate.
-4. 🟡 **DXT/OOB tenant-binding shape — blocks the DXT-OAuth track (PR after #207), NOT the HTTP PR-2 series.** The HTTP path feeds the tenant into `useBitrix24Tenant()` via `AsyncLocalStorage` set by the MCP middleware (§6, §7). The stdio/DXT path has no per-request h3 scope — the tenant is fixed for the life of the process (the one user who completed the OOB paste). Two candidate shapes, **decision required before the DXT-OAuth PR opens** so the dispatcher API doesn't churn after it ships: **(a)** widen `useBitrix24Tenant(ctx?: TenantContext)` so DXT passes the stored tenant explicitly while HTTP keeps reading ALS; **(b)** a parallel `useBitrix24OAuthDxt()` dispatcher, aliased in the stdio shim so tool code stays identical. Leaning **(b)** (explicit > implicit, no "forgot the arg → silent ALS-miss" trap). Tracked in **issue #207**; this question does not gate PR-2a/2b/2c/2d (all HTTP).
-
 **Resolved (moved from open questions):**
 
 - ~~App type — local vs marketplace.~~ Marketplace (§2.5). Local-app supported for dev/test.
 - ~~Scope set.~~ `user,task` to start (§2.6, §4). Updated when tools grow.
+- ~~DXT/OOB tenant-binding shape.~~ **Decision (2026-06-04): option (b) — a parallel `useBitrix24OAuthDxt()` dispatcher in `mcp-stdio/`, aliased in the stdio shim so tool handlers stay identical between HTTP and DXT.** Rejected (a) `useBitrix24Tenant(ctx?: TenantContext)` because a sync caller that forgets to pass `ctx` on the DXT path falls through to ALS, reads `undefined`, and crashes far from the cause — a silent-error-class no static analysis catches. The HTTP dispatcher `useBitrix24Tenant()` (in `server/utils/bitrix24-tenant.ts`) keeps its current ALS-only contract; the DXT-OAuth PR (after issue #207 ships) adds its own dispatcher that reads tenant from `user_config`. **Does not gate PR-2b/2c/2d** (all HTTP).
+- ~~OAuth-database env-var shape — `_PATH` (file) vs `_DIR` (folder).~~ **Decision (2026-06-04): `NUXT_BITRIX24_OAUTH_DB_DIR` — operator picks the directory, the filename `oauth.sqlite` is fixed in code.** Cleaner when future OAuth artefacts (key files, encrypted exports, migration backups) land in the same directory; also matches how `NUXT_AUDIT_DIR` already works.
 - ~~SDK typing — `B24Hook | B24OAuth` structural fit for `callV3` / `callV2` / `batchV3`.~~ Both classes extend `AbstractB24` and implement the SDK-exported `TypeB24` interface (`@bitrix24/b24jssdk@1.1.2`, `dist/esm/index.d.ts` L2267-2361, L4533, L5314). The full surface tool handlers touch — `auth`, `actions.v3.*`, `actions.v2.*`, `tools` — is on `TypeB24`. Migration is `s/B24Hook/TypeB24/` in `server/utils/sdk-helpers.ts` (4 signatures); no local alias, no upstream PR. See §7 "Typing — resolved by upstream `TypeB24`". Issue #59 closed as resolved.
 - ~~`AsyncLocalStorage` propagation through `@nuxtjs/mcp-toolkit`.~~ Confirmed by `tests/unit/als-propagation.test.ts` (5 cases — single call, N=20 concurrent calls with cross-tenant leak guard, MISS-outside-scope sanity, setImmediate-deep-async survival, throw-path survival). The toolkit exposes a first-class `middleware` hook on `defineMcpHandler` (`McpMiddleware` in `dist/runtime/server/mcp/definitions/handlers.d.ts` L46, dispatched at `dist/runtime/server/mcp/utils.js` L191-209) — `als.run(ctx, () => next())` is the canonical seam. No toolkit fork, no explicit event-threading. See §7 "Event reachability in tool handlers — resolved by `mcp-toolkit` middleware". Issue #60 closed as resolved.

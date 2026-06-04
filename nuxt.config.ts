@@ -38,7 +38,7 @@ export default defineNuxtConfig({
     bitrix24OauthClientSecret: '',
     bitrix24OauthRedirectUrl: '',
     bitrix24OauthScope: 'user,task',
-    bitrix24OauthDbPath: '/data/oauth.sqlite',
+    bitrix24OauthDbDir: '/data',
   },
 
   nitro: {
