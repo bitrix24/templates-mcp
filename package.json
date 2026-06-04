@@ -41,6 +41,7 @@
     "@bitrix24/b24ui-nuxt": "^2.8.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nuxtjs/mcp-toolkit": "^0.17.2",
+    "better-sqlite3": "11.10.0",
     "nuxt": "^4.4.6",
     "tailwindcss": "^4.3.0",
     "zod": "^4.4.3"
