@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import {
   type ActionToolInput,
   assertConfirmedDelete,
@@ -89,7 +89,7 @@ function describeTarget(taskIdTo: number, taskIdFrom: number | number[]): string
 
 async function runOne(taskIdTo: number, taskIdFrom: number, confirmDelete: boolean) {
   assertConfirmedDelete('b24_task_dependency_remove', describeTarget(taskIdTo, taskIdFrom), confirmDelete)
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
   await callV2<unknown>(
     b24,
     'task.dependence.delete',
@@ -117,7 +117,7 @@ async function runBatch(
   confirmDelete: boolean,
 ): Promise<RemoveTaskDependencyBatchRow[]> {
   assertConfirmedDelete('b24_task_dependency_remove', describeTarget(taskIdTo, taskIdFroms), confirmDelete)
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
   const rows = await batchV2<unknown>(
     b24,
     taskIdFroms.map((from) => ['task.dependence.delete', { taskIdFrom: from, taskIdTo }]),

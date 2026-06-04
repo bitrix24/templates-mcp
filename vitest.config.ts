@@ -32,6 +32,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Nuxt auto-imports (`useRuntimeConfig`, `defineNitroPlugin`) become
+    // globals at runtime but are undefined under Vitest. The shared setup
+    // stubs them with safe defaults so every tool that goes through the
+    // OAuth-aware dispatcher (`useBitrix24Tenant`) can load in tests
+    // without each file repeating the boilerplate. See `tests/_setup.ts`.
+    setupFiles: ['tests/_setup.ts'],
     // Unit + integration tests live in *.test.ts. Evals live in *.eval.ts
     // and are picked up by the `evalite` CLI separately (see evalite.config.ts).
     include: ['tests/**/*.test.ts'],

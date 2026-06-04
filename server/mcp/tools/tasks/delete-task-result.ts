@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { assertConfirmedDelete, confirmDeleteSchema } from '~/server/utils/define-action-tool'
 import { callV3 } from '~/server/utils/sdk-helpers'
 
@@ -36,7 +36,7 @@ export default defineMcpTool({
   },
   handler: async ({ resultId, confirmDelete }) => {
     assertConfirmedDelete('b24_task_result_delete', `task result ${resultId}`, confirmDelete)
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
     // The endpoint's success envelope is `{ result: true }` — we don't need
     // the body, only that `callV3` didn't throw.
     await callV3<{ result?: boolean }>(

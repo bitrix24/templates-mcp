@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import type { TaskListEnvelope } from '~/server/types/bitrix24'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV2 } from '~/server/utils/sdk-helpers'
 import {
   normalizeBitrix24Filter,
@@ -63,7 +63,7 @@ export default defineMcpTool({
       .describe('Pagination offset (0 = first page, 50 = second, …). Omit for first page.'),
   },
   handler: async ({ filter, order, select, start }) => {
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
     const data = await callV2<TaskListEnvelope>(
       b24,
       'tasks.task.list',

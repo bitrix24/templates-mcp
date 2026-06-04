@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { Bitrix24ErrorCode, Bitrix24ToolError } from '~/server/utils/errors'
 import { callV2 } from '~/server/utils/sdk-helpers'
 
@@ -71,7 +71,7 @@ export default defineMcpTool({
     if (comment !== undefined) arFields.COMMENT_TEXT = comment
     if (userId !== undefined) arFields.USER_ID = userId
 
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
     await callV2<null>(
       b24,
       'task.elapseditem.update',

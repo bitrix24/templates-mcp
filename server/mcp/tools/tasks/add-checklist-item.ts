@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV2 } from '~/server/utils/sdk-helpers'
 
 /**
@@ -63,7 +63,7 @@ export default defineMcpTool({
     // `callV2` unwraps the envelope; we receive the bare id (number or string
     // depending on portal).
     const rawId = await callV2<number | string>(
-      useBitrix24(),
+      useBitrix24Tenant(),
       'task.checklistitem.add',
       { TASKID: taskId, FIELDS: fields },
       `Failed to add checklist item to Bitrix24 task ${taskId}`,

@@ -58,7 +58,8 @@ import { Bitrix24ToolError, toToolError } from '~/server/utils/errors'
 /**
  * Call a v3 REST method and return its `result` payload.
  *
- * @param b24 — client from `useBitrix24()`.
+ * @param b24 — client from `useBitrix24Tenant()` (the tenant-aware dispatcher;
+ *   falls back to the webhook singleton when OAuth is disabled).
  * @param method — REST method name (e.g. `tasks.task.get`).
  * @param params — params object (passed straight to `actions.v3.call.make`).
  * @param errorContext — fallback error message when the SDK gives nothing

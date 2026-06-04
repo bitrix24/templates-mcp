@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import type { TaskResultItemEnvelope } from '~/server/types/bitrix24'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV3 } from '~/server/utils/sdk-helpers'
 import { toTaskResultShort } from '~/server/utils/task-results'
 
@@ -31,7 +31,7 @@ export default defineMcpTool({
       ),
   },
   handler: async ({ taskId, text }) => {
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
     const result = await callV3<TaskResultItemEnvelope>(
       b24,
       'tasks.task.result.add',

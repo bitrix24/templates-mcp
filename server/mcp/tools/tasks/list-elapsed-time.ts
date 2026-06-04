@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { toElapsedTimeShort, type ElapsedTimeShort } from '~/server/utils/elapsed-time'
 import { callV2 } from '~/server/utils/sdk-helpers'
 import {
@@ -84,7 +84,7 @@ export default defineMcpTool({
       ),
   },
   handler: async ({ taskId, filter, order, select, start }) => {
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
 
     // Merge `taskId` convenience field into the filter unless the operator
     // already supplied any TASK_ID-shaped key — including operator-prefix

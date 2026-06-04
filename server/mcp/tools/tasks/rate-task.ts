@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { Bitrix24ErrorCode, Bitrix24ToolError } from '~/server/utils/errors'
 import { batchV2, callV2 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
@@ -76,7 +76,7 @@ export default defineMcpTool({
 })
 
 async function runOne(taskId: number, rating: Rating, mark: Mark) {
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
   const result = await callV2<SingleTaskEnvelope>(
     b24,
     'tasks.task.update',
@@ -120,7 +120,7 @@ async function runBatch(taskIds: number[], rating: Rating, mark: Mark, force: bo
     )
   }
 
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
   const rows = await batchV2<SingleTaskEnvelope>(
     b24,
     taskIds.map((id) => ['tasks.task.update', { taskId: id, fields: { MARK: mark } }]),

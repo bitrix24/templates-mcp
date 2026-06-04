@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV2 } from '~/server/utils/sdk-helpers'
 
 /**
@@ -36,7 +36,7 @@ export default defineMcpTool({
     const fields: Record<string, unknown> = { POST_MESSAGE: text }
     if (authorId !== undefined) fields.AUTHOR_ID = authorId
 
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
     // task.commentitem.add is a v2 method (the v3 replacement
     // tasks.task.chat.message.send is queued for a separate migration PR).
     // The result payload is a bare commentId — number or string per portal.

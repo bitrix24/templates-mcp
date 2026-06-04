@@ -1,5 +1,5 @@
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV2 } from '~/server/utils/sdk-helpers'
 
 /**
@@ -21,7 +21,7 @@ export default defineMcpTool({
     'Get the Bitrix24 user that owns the configured incoming webhook. Use this as a connectivity check or when you need the operator id/name before any subsequent Bitrix24 calls.',
   inputSchema: {},
   handler: async () => {
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
     const user = await callV2<CurrentUserResponse>(
       b24,
       'user.current',

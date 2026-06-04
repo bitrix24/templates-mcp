@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import {
   type ActionToolInput,
   defineActionTool,
@@ -130,7 +130,7 @@ function assertNoSelfLoop(taskIdTo: number, taskIdFrom: number | number[]): void
 
 async function runOne(taskIdTo: number, taskIdFrom: number, linkType: number) {
   assertNoSelfLoop(taskIdTo, taskIdFrom)
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
   await callV2<unknown>(
     b24,
     'task.dependence.add',
@@ -159,7 +159,7 @@ async function runBatch(
   linkType: number,
 ): Promise<AddTaskDependencyBatchRow[]> {
   assertNoSelfLoop(taskIdTo, taskIdFroms)
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
   const rows = await batchV2<unknown>(
     b24,
     taskIdFroms.map((from) => ['task.dependence.add', { taskIdFrom: from, taskIdTo, linkType }]),

@@ -1,7 +1,7 @@
 import type { TypeCallParams } from '@bitrix24/b24jssdk'
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV2 } from '~/server/utils/sdk-helpers'
 
 /** Subset of the `user.search` row shape we surface back to the agent. */
@@ -112,7 +112,7 @@ export default defineMcpTool({
       }
     }
 
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
     // user.search is v2 and uses a non-standard params shape: `order` is a
     // scalar 'ASC' / 'DESC' (not the `Record<string, 'ASC' | 'DESC'>`
     // documented by `TypeCallParams.order`). The SDK type is wrong for this

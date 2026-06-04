@@ -45,6 +45,13 @@ const TASKS_ACTION_NOT_AVAILABLE_CODE = '1048582'
  * helpers from `server/utils/sdk-helpers.ts` instead of calling `actions.*`
  * directly — they own the `isSuccess` / `getErrorMessages` boilerplate.
  *
+ * Direct callers should use `useBitrix24Tenant()` (in
+ * `~/server/utils/bitrix24-tenant`) instead — it returns this same
+ * singleton when OAuth is disabled and routes to per-tenant `B24OAuth`
+ * instances when OAuth is enabled (PR-2c). Calling `useBitrix24()`
+ * directly bypasses the OAuth dispatcher and is appropriate only for
+ * pure-webhook code paths (e.g. the dispatcher's own fallback branch).
+ *
  * Phase 1 uses the webhook flow only. Phase 3 will introduce useBitrix24OAuth()
  * alongside this helper without changing its signature.
  *

@@ -1,4 +1,4 @@
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import {
   type ActionToolInput,
   defineActionTool,
@@ -116,7 +116,7 @@ export function defineTaskLifecycleTool(spec: LifecycleToolSpec) {
 }
 
 async function runOne(spec: LifecycleToolSpec, taskId: number) {
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
   // Lifecycle methods always return a single `{ task: {...} }`. We use
   // `extractTasks` (which also handles list-shaped responses) and take
   // the first element so there's one shared parser across all task
@@ -157,7 +157,7 @@ async function runOne(spec: LifecycleToolSpec, taskId: number) {
 }
 
 async function runBatch(spec: LifecycleToolSpec, taskIds: number[]): Promise<LifecycleBatchRow[]> {
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
   const rows = await batchV2<SingleTaskEnvelope>(
     b24,
     taskIds.map((id) => [spec.method, { taskId: id }]),

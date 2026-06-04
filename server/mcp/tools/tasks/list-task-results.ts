@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import type { TaskResultListEnvelope } from '~/server/types/bitrix24'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV3 } from '~/server/utils/sdk-helpers'
 import { toTaskResultShort, type TaskResultShort } from '~/server/utils/task-results'
 import { toV3Filter } from '~/server/utils/v3-filter'
@@ -40,7 +40,7 @@ export default defineMcpTool({
   },
   handler: async ({ taskId, order, limit, offset }) => {
     const sort = order ?? { field: 'createdAt' as const, direction: 'desc' as const }
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
     const result = await callV3<TaskResultListEnvelope>(
       b24,
       'tasks.task.result.list',

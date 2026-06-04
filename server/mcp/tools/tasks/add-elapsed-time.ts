@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV2 } from '~/server/utils/sdk-helpers'
 
 /**
@@ -50,7 +50,7 @@ export default defineMcpTool({
       ),
   },
   handler: async ({ taskId, seconds, comment, userId }) => {
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
     // task.elapseditem.add returns the new id as a bare integer in `result`.
     // No envelope, no body — Bitrix24 v2 contract for write-only methods.
     const result = await callV2<number | string>(

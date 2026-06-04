@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import {
   type ActionToolInput,
   assertConfirmedDelete,
@@ -86,7 +86,7 @@ function describeTarget(taskId: number, itemId: number | number[]): string {
 
 async function runOne(taskId: number, itemId: number, confirmDelete: boolean) {
   assertConfirmedDelete('b24_task_elapsed_time_delete', describeTarget(taskId, itemId), confirmDelete)
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
   await callV2<null>(
     b24,
     'task.elapseditem.delete',
@@ -114,7 +114,7 @@ async function runBatch(
   confirmDelete: boolean,
 ): Promise<DeleteElapsedTimeBatchRow[]> {
   assertConfirmedDelete('b24_task_elapsed_time_delete', describeTarget(taskId, itemIds), confirmDelete)
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
   const rows = await batchV2<null>(
     b24,
     itemIds.map((id) => ['task.elapseditem.delete', { TASKID: taskId, ITEMID: id }]),

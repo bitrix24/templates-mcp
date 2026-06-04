@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV2 } from '~/server/utils/sdk-helpers'
 import { toChecklistItemShort, type ChecklistItemShort } from '~/server/utils/checklist'
 import type { BitrixChecklistItemRaw } from '~/server/types/bitrix24'
@@ -68,7 +68,7 @@ export default defineMcpTool({
     // `task.checklistitem.getlist` returns `{ result: [...] }` — a bare array
     // of items (confirmed against the apidocs.bitrix24.ru response example).
     const raw = await callV2<BitrixChecklistItemRaw[]>(
-      useBitrix24(),
+      useBitrix24Tenant(),
       'task.checklistitem.getlist',
       params,
       `Failed to list Bitrix24 checklist items for task ${taskId}`,

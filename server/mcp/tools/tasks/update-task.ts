@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import type { SingleTaskEnvelope } from '~/server/types/bitrix24'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV2 } from '~/server/utils/sdk-helpers'
 import { extractTasks } from '~/server/utils/tasks'
 
@@ -37,7 +37,7 @@ export default defineMcpTool({
       ),
   },
   handler: async ({ taskId, fields }) => {
-    const b24 = useBitrix24()
+    const b24 = useBitrix24Tenant()
     const result = await callV2<SingleTaskEnvelope>(
       b24,
       'tasks.task.update',

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import {
   type ActionToolInput,
   assertConfirmedDelete,
@@ -181,7 +181,7 @@ async function runOne(
   confirmDelete: boolean,
   confirmDeleteHeading: boolean,
 ) {
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
 
   if (spec.method === 'task.checklistitem.delete') {
     // Universal gate (Rule #9) first — refuses every delete that wasn't
@@ -222,7 +222,7 @@ async function runBatch(
   confirmDelete: boolean,
   confirmDeleteHeading: boolean,
 ): Promise<ChecklistBatchRow[]> {
-  const b24 = useBitrix24()
+  const b24 = useBitrix24Tenant()
 
   if (spec.method === 'task.checklistitem.delete') {
     // Universal gate first (Rule #9). Then cascade gate (Rule #10) — one
