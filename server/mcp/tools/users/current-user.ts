@@ -15,6 +15,9 @@ interface CurrentUserResponse {
   LAST_NAME?: string
 }
 
+// TODO(PR-2c follow-up): when OAuth is enabled this tool returns the
+// Bearer-owning user, NOT the webhook owner. Update the description to
+// reflect both modes once PR-2c lands — tracked in OAUTH-DESIGN.md §13 Q2.
 export default defineMcpTool({
   name: 'b24_user_me',
   description:

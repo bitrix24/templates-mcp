@@ -426,15 +426,19 @@ describe('token-store — OAuth + Bearer + state CRUD (PR-2b, docs/OAUTH-DESIGN.
   })
 })
 
-describe('useTokenStore (production singleton)', () => {
-  // Separate `describe` so the runtimeConfig + fs setup doesn't bleed
-  // into the on-`:memory:` factory suite above.
-  const runtimeConfig = {
-    bitrix24OauthEnabled: false as boolean,
-    bitrix24OauthDbDir: '',
-  }
-  vi.stubGlobal('useRuntimeConfig', () => runtimeConfig)
+// Per the `tests/_setup.ts` contract, per-file `vi.stubGlobal` MUST be at
+// module level (not inside a `describe` body) so its precedence over the
+// global setup default is deterministic across the collection phase.
+// Tests below flip `runtimeConfig.bitrix24OauthEnabled` per `it`; the stub
+// reads the same mutable object so the override propagates without
+// re-stubbing.
+const runtimeConfig = {
+  bitrix24OauthEnabled: false as boolean,
+  bitrix24OauthDbDir: '',
+}
+vi.stubGlobal('useRuntimeConfig', () => runtimeConfig)
 
+describe('useTokenStore (production singleton)', () => {
   let tmpDir: string
   beforeEach(async () => {
     const { mkdtemp } = await import('node:fs/promises')

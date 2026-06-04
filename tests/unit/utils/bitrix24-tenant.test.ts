@@ -30,6 +30,16 @@ const webhookSingleton = Symbol('webhook-client') as unknown as B24Hook
 const useBitrix24 = vi.fn(() => webhookSingleton)
 vi.mock('~/server/utils/bitrix24', () => ({ useBitrix24 }))
 
+// Logger mock — the dispatcher uses the structured logger to surface the
+// tenant identifiers operator-side without leaking them into the thrown
+// Error message (which the MCP toolkit forwards to the agent). Tests
+// assert against `loggerError.mock.calls` to verify the tenant landed on
+// the operator-visible channel.
+const loggerError = vi.fn()
+vi.mock('~/server/utils/logger', () => ({
+  useLogger: () => ({ error: loggerError, info: vi.fn(), debug: vi.fn(), warning: vi.fn() }),
+}))
+
 const runtimeConfig: { bitrix24OauthEnabled: boolean } = { bitrix24OauthEnabled: false }
 vi.stubGlobal('useRuntimeConfig', () => runtimeConfig)
 
@@ -50,6 +60,7 @@ async function loadFresh(): Promise<{
 describe('useBitrix24Tenant — flag-gated dispatcher (PR-2a scaffold)', () => {
   beforeEach(() => {
     useBitrix24.mockClear()
+    loggerError.mockClear()
     runtimeConfig.bitrix24OauthEnabled = false
   })
 
@@ -128,26 +139,33 @@ describe('useBitrix24Tenant — flag-gated dispatcher (PR-2a scaffold)', () => {
       expect(useBitrix24).not.toHaveBeenCalled()
     })
 
-    it('throws "OAuth path not implemented" when a tenant IS bound — and the message names the unwired PR', async () => {
+    it('throws "OAuth path not implemented" when a tenant IS bound — and logs the tenant id operator-side, not in the error message', async () => {
+      // Information-disclosure invariant: the `@nuxtjs/mcp-toolkit` wraps
+      // an unhandled tool-handler throw into an MCP `error` response whose
+      // `.message` is forwarded to the agent (Claude / Cursor / Windsurf).
+      // The thrown message MUST stay generic; the tenant identifiers
+      // belong on the structured logger (operator-visible only).
       const { tenant: { useBitrix24Tenant }, ctx: { runWithTenant } } = await loadFresh()
       const tenant = { memberId: 'portal-value', userId: '1' }
       await expect(
         runWithTenant(tenant, async () => useBitrix24Tenant()),
       ).rejects.toThrow(/not yet implemented \(lands in PR-2c\)/)
-      // The error includes the resolved tenant for forensics — assert the
-      // VALUE appears (not the literal `memberId=` key) so a future schema
-      // rename (e.g. `member_id` from the OAuth payload) doesn't fail the
-      // test on a cosmetic change.
+      // Error message stays generic — no tenant leakage to the agent.
       try {
         await runWithTenant(tenant, async () => useBitrix24Tenant())
       }
       catch (err) {
-        expect((err as Error).message).toContain(tenant.memberId)
-        expect((err as Error).message).toContain(tenant.userId)
+        expect((err as Error).message).not.toContain(tenant.memberId)
+        expect((err as Error).message).not.toContain(tenant.userId)
       }
+      // Logger DID see the tenant for the operator's forensic timeline.
+      expect(loggerError).toHaveBeenCalledWith(
+        'oauth.tenant.dispatch.unwired',
+        expect.objectContaining({ memberId: tenant.memberId, userId: tenant.userId }),
+      )
     })
 
-    it('N=10 concurrent OAuth-ON requests each surface their own tenant in the diagnostic', async () => {
+    it('N=10 concurrent OAuth-ON requests each log their OWN tenant — no cross-tenant leak through the logger payload', async () => {
       // Concurrent stress on the dispatcher: each `runWithTenant` scope must
       // reach the PR-2c stub with its OWN tenant intact, not someone else's.
       // N=10 is the local floor — parity with the PR-67 audit-log (N=100)
@@ -155,6 +173,12 @@ describe('useBitrix24Tenant — flag-gated dispatcher (PR-2a scaffold)', () => {
       // unknown. Here the only thing under test is the dispatcher's read
       // of `getTenantContext()`, so a smaller-but-still-parallel N=10 is
       // sufficient signal without bloating run time.
+      //
+      // After the round-2 fix that moved tenant ids off the thrown Error
+      // and onto `useLogger().error(...)`, the cross-tenant invariant is
+      // re-pinned on the logger payload instead of the error message:
+      // each `loggerError.mock.calls[i][1]` must contain ONLY tenant `i`'s
+      // identifiers.
       const { tenant: { useBitrix24Tenant }, ctx: { runWithTenant } } = await loadFresh()
       const tenants = Array.from({ length: 10 }, (_, i) => ({
         memberId: `portal-${i}`,
@@ -165,14 +189,15 @@ describe('useBitrix24Tenant — flag-gated dispatcher (PR-2a scaffold)', () => {
       )
       results.forEach((r, i) => {
         expect(r.status, `tenant index ${i}`).toBe('rejected')
-        const msg = r.status === 'rejected' && r.reason instanceof Error ? r.reason.message : ''
-        expect(msg, `tenant index ${i}`).toContain(tenants[i]!.memberId)
-        // Verify no neighbour-tenant leak: this scope's diagnostic must not
-        // mention any OTHER tenant's memberId.
-        tenants.forEach((other, j) => {
-          if (j === i) return
-          expect(msg, `tenant ${i} should not leak ${other.memberId}`).not.toContain(other.memberId)
-        })
+      })
+      expect(loggerError).toHaveBeenCalledTimes(10)
+      // Cross-tenant leak guard: every payload carries exactly one tenant.
+      // The set of all member ids across all calls must equal the input set.
+      const seen = loggerError.mock.calls.map(c => c[1] as { memberId: string; userId: string })
+      tenants.forEach((t) => {
+        const match = seen.find(p => p.memberId === t.memberId)
+        expect(match, `payload for ${t.memberId} must exist`).toBeDefined()
+        expect(match!.userId, `payload for ${t.memberId} carries its own userId`).toBe(t.userId)
       })
     })
 

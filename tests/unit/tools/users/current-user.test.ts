@@ -66,4 +66,24 @@ describe('b24_user_me', () => {
       message: 'Unauthorized',
     })
   })
+
+  it('throws loud (no silent webhook fallback) when NUXT_BITRIX24_OAUTH_ENABLED=true', async () => {
+    // Cross-tenant leak guard at the catalogue level (PR-2d round-2 review):
+    // PR-2c hasn't landed yet, but operators CAN flip the flag today. The
+    // tool MUST surface the dispatcher's "OAuth path not yet implemented"
+    // throw instead of silently routing through the webhook singleton —
+    // otherwise a flag-on production deploy would serve EVERY user's MCP
+    // call through one webhook identity, the exact failure class the OAuth
+    // rollout exists to prevent. This test pins the loud-fail contract
+    // through the tool's call site, not just at the dispatcher unit.
+    vi.stubGlobal('useRuntimeConfig', () => ({ bitrix24OauthEnabled: true }))
+    try {
+      await expect(tool.handler({})).rejects.toThrow(
+        /not yet implemented|outside a tenant scope/,
+      )
+    }
+    finally {
+      vi.stubGlobal('useRuntimeConfig', () => ({ bitrix24OauthEnabled: false }))
+    }
+  })
 })

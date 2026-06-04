@@ -1,6 +1,6 @@
 # Adding a new MCP tool
 
-`Last reviewed: 2026-05-30`
+`Last reviewed: 2026-06-04`
 
 Practical template for an AI agent (or human) adding a Bitrix24 MCP tool to this project. Read [`SKILL.md`](./SKILL.md) first — this doc fills in the concrete shape that the ground rules and persona walk describe.
 
@@ -41,7 +41,7 @@ This is what a single-call tool looks like end-to-end. Two key invariants:
 // server/mcp/tools/tasks/get-task.ts
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV3 } from '~/server/utils/sdk-helpers'
 
 /**
@@ -64,7 +64,15 @@ export default defineMcpTool({
     taskId: z.number().int().positive().describe('Task id from `b24_task_list` or `b24_task_create`.'),
   },
   handler: async ({ taskId }) => {
-    const b24 = useBitrix24()
+    // `useBitrix24Tenant()` is the OAuth-aware dispatcher (see
+    // `docs/OAUTH-DESIGN.md §6`). When `NUXT_BITRIX24_OAUTH_ENABLED=false`
+    // (the production default) it returns the webhook singleton — same
+    // identity as a direct `useBitrix24()` call. When the flag flips on
+    // (PR-2c), it resolves to a per-tenant `B24OAuth` instance from the
+    // request-scoped ALS. Never call `useBitrix24()` directly from a tool
+    // handler — it bypasses the dispatcher and pins the tool to webhook
+    // forever.
+    const b24 = useBitrix24Tenant()
     // ✅ callV3 wraps the SDK boundary:
     //    - transport throws → Bitrix24ToolError via toToolError
     //    - !isSuccess → Bitrix24ToolError with joined SDK error messages
@@ -241,7 +249,7 @@ Reference implementations: `server/utils/task-lifecycle.ts` (factory-style, uses
     2. Reference it at the throw site: `new Bitrix24ToolError(msg, Bitrix24ErrorCode.KEY)`.
     3. Reference it in test assertions: `expect(...).rejects.toMatchObject({ code: Bitrix24ErrorCode.KEY })`.
     4. Update the registry-completeness test in `tests/unit/errors.test.ts` — its failure is the deliberate "you added a code" signal, not noise.
-- **Logging**: don't import `console` directly. The shared logger is `useLogger()` from `~/server/utils/logger`. The SDK's internal events (retry, rate-limit) already flow through it because `useBitrix24()` calls `client.setLogger(useLogger())` on construction.
+- **Logging**: don't import `console` directly. The shared logger is `useLogger()` from `~/server/utils/logger`. The SDK's internal events (retry, rate-limit) already flow through it because the webhook singleton (`useBitrix24()`, which the dispatcher returns for the flag-off case) calls `client.setLogger(useLogger())` on construction.
 
 ```ts
 import { useLogger } from '~/server/utils/logger'
@@ -265,8 +273,13 @@ vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
 
 const fake = makeFakeBitrix24()
 
-vi.mock('~/server/utils/bitrix24', () => ({
-  useBitrix24: () => fake.b24,
+// Mock the dispatcher (preferred — matches the actual import in the tool).
+// The legacy `vi.mock('~/server/utils/bitrix24', () => ({ useBitrix24: … }))`
+// pattern still works because the dispatcher imports the webhook singleton
+// from that module — but mocking the dispatcher directly matches the tool's
+// import line and survives a future refactor of the dispatcher's internals.
+vi.mock('~/server/utils/bitrix24-tenant', () => ({
+  useBitrix24Tenant: () => fake.b24,
 }))
 
 const tool = (await import('../../../../server/mcp/tools/tasks/get-task')).default as unknown as {

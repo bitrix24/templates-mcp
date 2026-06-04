@@ -52,6 +52,18 @@ export interface TenantContext {
   readonly memberId: string
   /** Bitrix24 user id (`access_token` owner). */
   readonly userId: string
+  /**
+   * Per-request correlation id (16-byte hex) — populated by the MCP
+   * middleware in PR-2c so every OAuth log line in one request shares a
+   * `requestId` (see `docs/OAUTH-DESIGN.md §11`). Optional in this
+   * interface so PR-2a callers that pass only `{memberId, userId}` stay
+   * valid; PR-2c will set the field unconditionally inside the middleware
+   * wrap, and `useBitrix24Tenant()` reads it through `getTenantContext()`
+   * without needing a separate ALS payload. Marking it optional up front
+   * means PR-2c doesn't have to touch every test that constructs a
+   * `TenantContext` object literal.
+   */
+  readonly requestId?: string
 }
 
 /**

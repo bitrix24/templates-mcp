@@ -1,5 +1,6 @@
 import type { TypeB24 } from '@bitrix24/b24jssdk'
 import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useLogger } from '~/server/utils/logger'
 import { getTenantContext } from '~/server/utils/request-context'
 
 /**
@@ -59,10 +60,22 @@ export function useBitrix24Tenant(): TypeB24 {
   }
 
   // PR-2c replaces this with: return useBitrix24OAuth(tenant.memberId, tenant.userId)
+  //
+  // Information-disclosure caveat: the `@nuxtjs/mcp-toolkit` wraps an
+  // unhandled tool-handler throw into an MCP `error` response whose
+  // `message` is forwarded to the agent (Claude / Cursor / Windsurf).
+  // Putting `memberId` / `userId` directly in the thrown Error would leak
+  // those identifiers to whoever is on the other side of the MCP stream.
+  // Log them through the structured logger (operator-visible) and throw a
+  // generic message (agent-visible) — same posture the `mcp.auth.deny.*`
+  // events in §11 will use for 401s.
+  useLogger().error('oauth.tenant.dispatch.unwired', {
+    memberId: tenant.memberId,
+    userId: tenant.userId,
+  })
   throw new Error(
     'useBitrix24Tenant() OAuth path is not yet implemented (lands in PR-2c). '
-    + `Tenant context resolved to memberId=${tenant.memberId}, userId=${tenant.userId}, `
-    + 'but no B24OAuth factory is wired. Keep NUXT_BITRIX24_OAUTH_ENABLED=false '
-    + 'until PR-2c merges.',
+    + 'Keep NUXT_BITRIX24_OAUTH_ENABLED=false until PR-2c merges. '
+    + 'See server logs for the tenant identifiers.',
   )
 }

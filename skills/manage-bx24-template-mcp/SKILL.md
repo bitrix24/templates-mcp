@@ -1,6 +1,6 @@
 # bx24-template-mcp — Agent Skill
 
-`Last reviewed: 2026-06-03`
+`Last reviewed: 2026-06-04`
 
 You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. Read this before making changes.
 
@@ -18,7 +18,7 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
 ## Ground rules
 
 1. **One tool per file** in `server/mcp/tools/<group>/<name>.ts`. Discovery is automatic.
-2. **Never call Bitrix24 directly.** Always go through `useBitrix24()` (or `useBitrix24Tenant()` once OAuth lands — see [`../../docs/OAUTH-DESIGN.md`](../../docs/OAUTH-DESIGN.md); the dispatcher returns the same `TypeB24` shape, so the rule is unchanged in spirit), and from there through the typed helpers in `server/utils/sdk-helpers.ts`: `callV2<T>(b24, method, params, errorContext)` — the **default** for classic methods (`tasks.task.add/list/update/` + the seven lifecycle verbs, `user.*`, `task.commentitem.*`, …), `callV3<T>(…)` — **only** for methods that are v3-only (currently `tasks.task.get`, `tasks.task.result.*`), and `batchV2<T>` / `batchV3<T>(b24, calls, errorContext)` for bulk operations. See the **transport-convention block at the top of `sdk-helpers.ts`** for how to pick v2 vs v3. The helpers own the `isSuccess` / `getErrorMessages` / transport-error funnel — tool handlers stay short and uniform. Calling `b24.actions.*.{call,batch}.make` directly from a tool handler is forbidden (it duplicates that funnel and drifts over time); the deprecated `b24.callMethod` is doubly forbidden — it disappears in SDK 2.0. See [`adding-tools.md`](./adding-tools.md) for the canonical template.
+2. **Never call Bitrix24 directly.** Always go through `useBitrix24Tenant()` (the OAuth-aware dispatcher in `~/server/utils/bitrix24-tenant` — see [`../../docs/OAUTH-DESIGN.md`](../../docs/OAUTH-DESIGN.md) §6). With `NUXT_BITRIX24_OAUTH_ENABLED=false` (the production default) it falls back to the webhook singleton, so behaviour is byte-identical to a direct `useBitrix24()` call. When the flag flips on (PR-2c), the same call resolves to a per-tenant `B24OAuth` from the request-scoped ALS. **Never call `useBitrix24()` directly from a tool handler** — it bypasses the dispatcher and pins the tool to webhook forever. From the dispatcher result go through the typed helpers in `server/utils/sdk-helpers.ts`: `callV2<T>(b24, method, params, errorContext)` — the **default** for classic methods (`tasks.task.add/list/update/` + the seven lifecycle verbs, `user.*`, `task.commentitem.*`, …), `callV3<T>(…)` — **only** for methods that are v3-only (currently `tasks.task.get`, `tasks.task.result.*`), and `batchV2<T>` / `batchV3<T>(b24, calls, errorContext)` for bulk operations. See the **transport-convention block at the top of `sdk-helpers.ts`** for how to pick v2 vs v3. The helpers own the `isSuccess` / `getErrorMessages` / transport-error funnel — tool handlers stay short and uniform. Calling `b24.actions.*.{call,batch}.make` directly from a tool handler is forbidden (it duplicates that funnel and drifts over time); the deprecated `b24.callMethod` is doubly forbidden — it disappears in SDK 2.0. See [`adding-tools.md`](./adding-tools.md) for the canonical template.
 3. **Every tool must have a unit test** in `tests/unit/tools/<group>/<name>.test.ts` with the Bitrix24 client mocked.
 4. **Every Zod field must have `.describe()`** — the LLM reads it at runtime.
 5. **No secrets in code or tests.** Use `useRuntimeConfig()` and `.env`. When you add/rename/remove a `NUXT_*` / `NITRO_*` variable, change the default port or `/mcp` endpoint, change the connector auth header name/format, alter required webhook scopes, or add a tool needing upfront-seeded portal data, also update the manual-QA scaffold at [`../run-manual-qa/references/issue-scaffold.md`](../run-manual-qa/references/issue-scaffold.md) in the same PR — it mirrors these structural facts. A CI gate enforces the `.env.example` ↔ scaffold pairing.
@@ -118,8 +118,8 @@ The bar here is lower than for the SDK (no credential-leak surface to defend), b
 2. Create `server/mcp/tools/<group>/<kebab-name>.ts`.
 3. Use `defineMcpTool({ name, description, inputSchema, handler })`.
 4. Name pattern: `b24_<domain>(_<entity>)*_<action>` for Bitrix24 tools (e.g. `b24_task_create`, `b24_task_checklist_item_add`, `b24_task_list`); `bx24mcp_<verb>` for meta-tools (use `bx24mcp_` ONLY for tools that don't call the Bitrix24 REST API). **Action is always the trailing token; all tokens are singular** — including before `_list`. Identity-style `b24_<domain>_me` (currently only `b24_user_me`) is an allowed shape where `me` covers both entity and action. The pattern + the singular-everywhere rule + the prefix split are enforced by `tests/unit/mcp-stdio/tool-naming-convention.test.ts`.
-5. Handler uses `useBitrix24()` (or `useBitrix24Tenant()` when OAuth is enabled — see [`../../docs/OAUTH-DESIGN.md`](../../docs/OAUTH-DESIGN.md)) and returns a string or rich content.
-6. Add a unit test mocking `useBitrix24`.
+5. Handler uses `useBitrix24Tenant()` (the OAuth-aware dispatcher — falls back to the webhook singleton when OAuth is disabled, see [`../../docs/OAUTH-DESIGN.md`](../../docs/OAUTH-DESIGN.md) §6). Never call `useBitrix24()` directly from a tool handler. Return a string or rich content.
+6. Add a unit test mocking `useBitrix24Tenant` (see `adding-tools.md` "Tests" for the canonical pattern).
 7. Optionally add an eval case in `tests/evals/tool-selection.eval.ts`.
 8. Run `pnpm lint && pnpm typecheck && pnpm test`.
 9. Commit: `feat(tools): add b24_<name>`.
@@ -157,7 +157,7 @@ Use the typed helpers from `server/utils/sdk-helpers.ts`: `callV2<T>(b24, method
 
 ## Things you must NOT do without asking
 
-- Bypass `useBitrix24()` and call HTTP directly.
+- Bypass `useBitrix24Tenant()` and call HTTP directly (or call `useBitrix24()` directly from a tool handler — also forbidden, it pins the tool to webhook).
 - Bind the container to a host port (`ports:` in production compose).
 - Change the MCP transport.
 - Replace the Bitrix24 SDK with a custom HTTP client.
