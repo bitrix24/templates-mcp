@@ -220,10 +220,11 @@ export interface TokenStore {
    * happens (or a replay is attempted), the in-flight `/install` flow
    * hard-fails rather than silently overwriting a live CSRF binding.
    *
-   * DoS note: `/install` is rate-limit-territory of PR-2c. Until that
-   * lands, a public deployment can be spammed to grow this table by
-   * ~200 bytes per request; rows expire in 5 min and `pruneExpiredStates`
-   * removes them, but the scheduler is not wired by this PR (see below).
+   * DoS note: `/install` is rate-limit-territory of PR-2c (tracked in
+   * issue #211). Until that lands, a public deployment can be spammed
+   * to grow this table by ~200 bytes per request; rows expire in 5 min
+   * and `pruneExpiredStates` removes them, but the scheduler is not
+   * wired by this PR (see below).
    */
   createState: (state: OAuthState) => void
   /**
@@ -238,13 +239,13 @@ export interface TokenStore {
    * PR-2c is responsible for wiring a periodic call (`setInterval` on
    * a 5-minute cadence is sufficient given the 5-minute TTL) so the
    * table doesn't accumulate state from spammed `/install` requests.
-   * Tracked as part of PR-2c's middleware extension.
+   * Tracked in issue #211.
    */
   pruneExpiredStates: () => number
   // listMcpTokens — deferred to the follow-up "list my Bearers" operator
-  // tool. The prepared statement exists internally (used by the bulk-revoke
-  // paths) but is intentionally absent from the public interface until the
-  // UI surface lands. See §7 "Code surface — deferred" and PR #210 body.
+  // tool (issue #212). The prepared statement exists internally (used by
+  // the bulk-revoke paths) but is intentionally absent from the public
+  // interface until the UI surface lands.
 }
 
 /**
