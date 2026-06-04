@@ -202,6 +202,16 @@ describe('token-store — OAuth + Bearer + state CRUD (PR-2b, docs/OAUTH-DESIGN.
       await store.upsertTokens(sampleTokens, 'install')
     })
 
+    it('with zero active Bearers, emits zero audits and does not throw', async () => {
+      // Edge case: a tenant whose Bearers were all already revoked (e.g.
+      // by a prior `markRefreshFailed` followed by a re-authorise that
+      // hasn't yet minted a fresh Bearer). The function should be a
+      // silent no-op — no audits, no SQL error.
+      recordAuditEvent.mockClear()
+      await store.markRefreshFailed(sampleTokens.memberId, sampleTokens.userId)
+      expect(recordAuditEvent).not.toHaveBeenCalled()
+    })
+
     it('revokes mcp_tokens for THIS (member_id, user_id) only — same portal other user untouched', async () => {
       // Two users on the same portal, each with their own Bearer.
       await store.upsertTokens({ ...sampleTokens, userId: 1 }, 'install')
@@ -238,6 +248,19 @@ describe('token-store — OAuth + Bearer + state CRUD (PR-2b, docs/OAUTH-DESIGN.
   })
 
   describe('deleteTenant — CASCADE + audit', () => {
+    it('with zero Bearers, emits a single oauth.delete and removes the row', async () => {
+      // Edge case: an OAuth row that has no Bearers attached (e.g. a
+      // tenant that completed `/install` but never finished `/callback`
+      // → the OAuth row exists, no `mcp_tokens` to revoke). One audit
+      // (`oauth.delete`), one DB row gone.
+      await store.upsertTokens(sampleTokens, 'install')
+      recordAuditEvent.mockClear()
+      await store.deleteTenant(sampleTokens.memberId, sampleTokens.userId, 'system')
+      expect(recordAuditEvent).toHaveBeenCalledTimes(1)
+      expect(recordAuditEvent.mock.calls[0]![0].event).toBe('oauth.delete')
+      expect(store.getTokens(sampleTokens.memberId, sampleTokens.userId)).toBeUndefined()
+    })
+
     it('removes oauth_tokens AND its mcp_tokens (FK CASCADE)', async () => {
       await store.upsertTokens(sampleTokens, 'install')
       const { bearerHash } = await store.createMcpToken(
@@ -267,6 +290,17 @@ describe('token-store — OAuth + Bearer + state CRUD (PR-2b, docs/OAUTH-DESIGN.
       csrfCookie: 'csrf-b'.repeat(8),
       expiresAt: Math.floor(Date.now() / 1000) + 300,
     }
+
+    it('createState with a duplicate `state` throws (UNIQUE PK violation)', () => {
+      // The state nonce is 32 bytes of crypto.randomBytes — a collision
+      // in practice is astronomically improbable. If one ever lands, the
+      // UNIQUE PK refuses the insert; this is preferable to silently
+      // overwriting a live `oauth_state` row (which would replace one
+      // user's in-flight CSRF binding with another's). The OAuth callback
+      // (PR-2c) treats this as a hard error and refuses the request.
+      store.createState(sampleState)
+      expect(() => store.createState(sampleState)).toThrow(/UNIQUE/i)
+    })
 
     it('consumeState returns the row exactly once', () => {
       store.createState(sampleState)
@@ -326,5 +360,112 @@ describe('token-store — OAuth + Bearer + state CRUD (PR-2b, docs/OAUTH-DESIGN.
       // OAuth row still present — the delete never executed.
       expect(store.getTokens(sampleTokens.memberId, sampleTokens.userId)).toBeDefined()
     })
+
+    it('deleteTenant aborts cleanly when the FINAL oauth.delete audit rejects (DB untouched, mcp.revoke audits may be on disk)', async () => {
+      // The compliance trap caught by round-1 review: gather all audits
+      // first via `Promise.all`, then run the DB write. If the trailing
+      // `oauth.delete` audit rejects after the N `mcp.revoke` audits
+      // resolved, the DB write is correctly skipped. (Residual: the
+      // resolved `mcp.revoke` audits are already on disk — that's a
+      // documented "intent record" risk of the audit log's FIFO
+      // writeChain, mitigated by caller-side retry idempotency.)
+      await store.upsertTokens(sampleTokens, 'install')
+      await store.createMcpToken(sampleTokens.memberId, sampleTokens.userId, 'a', 'install')
+      await store.createMcpToken(sampleTokens.memberId, sampleTokens.userId, 'b', 'install')
+      recordAuditEvent.mockReset()
+      // Two revoke audits succeed; the trailing oauth.delete rejects.
+      recordAuditEvent.mockResolvedValueOnce(undefined)
+      recordAuditEvent.mockResolvedValueOnce(undefined)
+      recordAuditEvent.mockRejectedValueOnce(new Error('audit disk full'))
+      await expect(
+        store.deleteTenant(sampleTokens.memberId, sampleTokens.userId, 'user'),
+      ).rejects.toThrow('audit disk full')
+      // DB is intact — both Bearers and the OAuth row remain.
+      expect(store.getTokens(sampleTokens.memberId, sampleTokens.userId)).toBeDefined()
+    })
+
+    it('markRefreshFailed aborts cleanly if any audit rejects (DB untouched, Bearers stay active)', async () => {
+      await store.upsertTokens(sampleTokens, 'install')
+      const { bearerHash } = await store.createMcpToken(
+        sampleTokens.memberId, sampleTokens.userId, 'a', 'install',
+      )
+      recordAuditEvent.mockReset()
+      recordAuditEvent.mockRejectedValueOnce(new Error('audit disk full'))
+      await expect(
+        store.markRefreshFailed(sampleTokens.memberId, sampleTokens.userId),
+      ).rejects.toThrow('audit disk full')
+      // Bearer still active — the UPDATE never ran.
+      expect(store.findByBearerHash(bearerHash)).toBeDefined()
+    })
+  })
+})
+
+describe('useTokenStore (production singleton)', () => {
+  // Separate `describe` so the runtimeConfig + fs setup doesn't bleed
+  // into the on-`:memory:` factory suite above.
+  const runtimeConfig = {
+    bitrix24OauthEnabled: false as boolean,
+    bitrix24OauthDbDir: '',
+  }
+  vi.stubGlobal('useRuntimeConfig', () => runtimeConfig)
+
+  let tmpDir: string
+  beforeEach(async () => {
+    const { mkdtemp } = await import('node:fs/promises')
+    const os = await import('node:os')
+    const pathMod = await import('node:path')
+    tmpDir = await mkdtemp(pathMod.join(os.tmpdir(), 'token-store-test-'))
+    runtimeConfig.bitrix24OauthEnabled = false
+    runtimeConfig.bitrix24OauthDbDir = tmpDir
+    vi.resetModules() // drop the cached singleton between tests
+  })
+  afterEach(async () => {
+    const { rm } = await import('node:fs/promises')
+    await rm(tmpDir, { recursive: true, force: true })
+  })
+
+  it('throws when NUXT_BITRIX24_OAUTH_ENABLED=false (fail-loud)', async () => {
+    const { useTokenStore } = await import('../../../server/utils/token-store')
+    expect(() => useTokenStore()).toThrow(/NUXT_BITRIX24_OAUTH_ENABLED=false/)
+  })
+
+  it('rejects a relative NUXT_BITRIX24_OAUTH_DB_DIR (cwd footgun)', async () => {
+    runtimeConfig.bitrix24OauthEnabled = true
+    runtimeConfig.bitrix24OauthDbDir = 'relative/path'
+    const { useTokenStore } = await import('../../../server/utils/token-store')
+    expect(() => useTokenStore()).toThrow(/absolute path/)
+  })
+
+  it('rejects a NUXT_BITRIX24_OAUTH_DB_DIR with `..` segments', async () => {
+    runtimeConfig.bitrix24OauthEnabled = true
+    runtimeConfig.bitrix24OauthDbDir = '/srv/data/../../etc'
+    const { useTokenStore } = await import('../../../server/utils/token-store')
+    expect(() => useTokenStore()).toThrow(/path-traversal/)
+  })
+
+  it('opens oauth.sqlite under the configured dir and narrows perms to 0o600', async () => {
+    const pathMod = await import('node:path')
+    const { statSync, existsSync } = await import('node:fs')
+    runtimeConfig.bitrix24OauthEnabled = true
+    runtimeConfig.bitrix24OauthDbDir = tmpDir
+    const { useTokenStore } = await import('../../../server/utils/token-store')
+    useTokenStore()
+    const dbFile = pathMod.join(tmpDir, 'oauth.sqlite')
+    expect(existsSync(dbFile)).toBe(true)
+    // umask on the test host may strip group/world bits — accept either
+    // 0o600 (tight umask) or 0o640; never world-readable. Same posture
+    // the audit-log file-mode test uses.
+    const mode = statSync(dbFile).mode & 0o777
+    expect(mode & 0o007).toBe(0) // no world access
+    expect(mode & 0o600).toBe(0o600) // owner rw
+  })
+
+  it('caches the store across repeated calls (lazy singleton)', async () => {
+    runtimeConfig.bitrix24OauthEnabled = true
+    runtimeConfig.bitrix24OauthDbDir = tmpDir
+    const { useTokenStore } = await import('../../../server/utils/token-store')
+    const first = useTokenStore()
+    const second = useTokenStore()
+    expect(first).toBe(second)
   })
 })

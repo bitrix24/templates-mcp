@@ -151,8 +151,16 @@ function nowSec(): number {
 }
 
 /**
- * Configures a freshly-opened (or :memory:) Database for the OAuth store.
- * Exported so tests can replay the same configuration on their in-memory DB.
+ * Configures a freshly-opened (or `:memory:`) Database for the OAuth store
+ * — WAL journal mode (no-op on `:memory:`, SQLite silently falls back), the
+ * `synchronous = NORMAL` setting WAL needs, foreign-key enforcement for the
+ * `mcp_tokens → oauth_tokens` CASCADE, and the three `CREATE TABLE IF NOT
+ * EXISTS` statements.
+ *
+ * @internal Exported only so test files can replay the same configuration
+ * on their `:memory:` Database without going through {@link useTokenStore}.
+ * Production code MUST go through `useTokenStore()` (which calls this for
+ * you) or `createTokenStore(db)` (which inlines it).
  */
 export function bootstrapSchema(db: Database.Database): void {
   db.pragma('journal_mode = WAL')
@@ -208,7 +216,14 @@ export interface TokenStore {
    * Deletes the row in both cases (expired states cannot be replayed).
    */
   consumeState: (state: string) => OAuthState | undefined
-  /** Test/operations only — count + expire eviction. */
+  /**
+   * Removes every `oauth_state` row whose `expires_at` is in the past;
+   * returns the number of rows pruned. **Not scheduled by this PR** —
+   * PR-2c is responsible for wiring a periodic call (`setInterval` on
+   * a 5-minute cadence is sufficient given the 5-minute TTL) so the
+   * table doesn't accumulate state from spammed `/install` requests.
+   * Tracked as part of PR-2c's middleware extension.
+   */
   pruneExpiredStates: () => number
 }
 
@@ -310,41 +325,56 @@ export function createTokenStore(db: Database.Database): TokenStore {
       // entry per affected Bearer so the forensic timeline shows exactly
       // which credentials died; the `system` actor distinguishes this
       // from a user-initiated revoke.
+      //
+      // Compliance posture for bulk operations: audits are gathered via
+      // `Promise.all` (fail-fast) BEFORE the DB write so that ANY audit
+      // rejection skips the DB write entirely — same "no audit, no
+      // action" invariant as the single-row mutations above. Residual
+      // risk: the audit log's `writeChain` is FIFO single-writer; if the
+      // disk fills mid-batch, the audits that already resolved are on
+      // disk while the rejecting one is not — the DB write is correctly
+      // skipped, but the audit log carries "intent" records for the
+      // resolved ones. Callers MUST treat the rejection as a retryable
+      // failure of the WHOLE operation; on retry, idempotent re-runs are
+      // safe (each `mcp.revoke` event repeats but the DB UPDATE remains
+      // a no-op against rows already stamped with `revoked_at`).
       const active = stmts.listMcpTokens.all(memberId, userId) as Array<{ bearerHash: string }>
-      const now = nowSec()
-      for (const { bearerHash } of active) {
-        await recordAuditEvent({
-          event: 'mcp.revoke',
-          portal: memberId,
-          userId: String(userId),
-          mcpTokenId: bearerHash,
-          actor: 'system',
-        })
-      }
-      stmts.markRefreshFailed.run(now, memberId, userId)
+      await Promise.all(active.map(({ bearerHash }) => recordAuditEvent({
+        event: 'mcp.revoke',
+        portal: memberId,
+        userId: String(userId),
+        mcpTokenId: bearerHash,
+        actor: 'system',
+      })))
+      stmts.markRefreshFailed.run(nowSec(), memberId, userId)
     },
 
     deleteTenant: async (memberId, userId, actor) => {
-      // Emit a `mcp.revoke` audit per active Bearer first (the CASCADE
-      // delete that follows wipes them silently), then one `oauth.delete`
-      // for the OAuth row itself.
+      // Same bulk-audit-first contract as markRefreshFailed: emit ALL
+      // audits via `Promise.all` (N `mcp.revoke` + 1 `oauth.delete`); on
+      // ANY rejection nothing in the DB changes. The DB DELETE itself
+      // runs inside `db.transaction(...)` so the CASCADE wipe of
+      // `mcp_tokens` rows is atomic with the `oauth_tokens` row removal
+      // — a crash between the two would otherwise leave stranded Bearer
+      // rows without their parent tenant.
       const active = stmts.listMcpTokens.all(memberId, userId) as Array<{ bearerHash: string }>
-      for (const { bearerHash } of active) {
-        await recordAuditEvent({
-          event: 'mcp.revoke',
-          portal: memberId,
-          userId: String(userId),
-          mcpTokenId: bearerHash,
-          actor,
-        })
-      }
-      await recordAuditEvent({
+      const revokeAudits = active.map(({ bearerHash }) => recordAuditEvent({
+        event: 'mcp.revoke',
+        portal: memberId,
+        userId: String(userId),
+        mcpTokenId: bearerHash,
+        actor,
+      }))
+      const deleteAudit = recordAuditEvent({
         event: 'oauth.delete',
         portal: memberId,
         userId: String(userId),
         actor,
       })
-      stmts.deleteTokens.run(memberId, userId) // CASCADE wipes mcp_tokens rows
+      await Promise.all([...revokeAudits, deleteAudit])
+      db.transaction(() => {
+        stmts.deleteTokens.run(memberId, userId) // CASCADE wipes mcp_tokens rows
+      })()
     },
 
     createMcpToken: async (memberId, userId, label, actor) => {
@@ -406,6 +436,25 @@ export function createTokenStore(db: Database.Database): TokenStore {
 }
 
 /**
+ * Validates a directory path coming from operator env. Mirrors the audit
+ * log's `resolveAuditDir` posture (`docs/SECURITY-AUDIT.md` follow-up
+ * #66): no `..` segments, absolute path required. Without these checks an
+ * env-var typo could land `oauth.sqlite` in a surprise directory under
+ * `process.cwd()` (which is unpredictable under Docker/systemd).
+ */
+function resolveDbDir(): string {
+  const fromEnv = useRuntimeConfig().bitrix24OauthDbDir?.trim()
+  if (!fromEnv) return '/data'
+  if (fromEnv.split(path.sep).includes('..')) {
+    throw new Error(`NUXT_BITRIX24_OAUTH_DB_DIR rejected: path-traversal segment "..": ${fromEnv}`)
+  }
+  if (!path.isAbsolute(fromEnv)) {
+    throw new Error(`NUXT_BITRIX24_OAUTH_DB_DIR rejected: must be an absolute path, got: ${fromEnv}`)
+  }
+  return path.resolve(fromEnv)
+}
+
+/**
  * Production singleton. Opens `${NUXT_BITRIX24_OAUTH_DB_DIR}/oauth.sqlite`
  * lazily on first call, sets WAL mode + the schema, narrows the file
  * permissions to `0o600`, and caches the resulting store for the life of
@@ -413,15 +462,25 @@ export function createTokenStore(db: Database.Database): TokenStore {
  * `:memory:` Database instead — that path doesn't touch the host fs and
  * doesn't share state with other test files.
  *
+ * File-permission caveat: `new Database(file)` creates `oauth.sqlite` with
+ * the process umask (typically `0o644`), and `chmodSync` narrows it to
+ * `0o600` immediately after. A microsecond race window exists between the
+ * two — but the parent directory is `0o700`, so non-owner uids in the same
+ * container can't traverse into it regardless of what `oauth.sqlite`'s
+ * mode is during that window. The race is mitigated by the parent dir's
+ * permissions, not by the chmod alone.
+ *
  * @throws when `NUXT_BITRIX24_OAUTH_ENABLED` is `false` (callers shouldn't
  *   be touching the OAuth surface in that case — failing loud catches the
  *   wiring bug instead of silently creating an empty DB).
+ * @throws when `NUXT_BITRIX24_OAUTH_DB_DIR` carries a `..` segment or is
+ *   not absolute (operator-config validation; see {@link resolveDbDir}).
  */
 let cachedStore: TokenStore | null = null
 export function useTokenStore(): TokenStore {
   if (cachedStore) return cachedStore
 
-  const { bitrix24OauthEnabled, bitrix24OauthDbDir } = useRuntimeConfig()
+  const { bitrix24OauthEnabled } = useRuntimeConfig()
   if (!bitrix24OauthEnabled) {
     throw new Error(
       'useTokenStore() called while NUXT_BITRIX24_OAUTH_ENABLED=false. '
@@ -431,13 +490,16 @@ export function useTokenStore(): TokenStore {
     )
   }
 
-  const dir = bitrix24OauthDbDir || '/data'
+  const dir = resolveDbDir()
+  // mkdirSync's `mode` is honoured only when the directory is created (it
+  // does NOT apply to an existing directory — Linux `mkdir(2)` returns
+  // EEXIST and ignores the flag). When the operator pre-mounted /data with
+  // whatever permissions Docker / their volume driver chose, an explicit
+  // `chmodSync` narrows it to the expected `0o700`.
   mkdirSync(dir, { recursive: true, mode: 0o700 })
+  chmodSync(dir, 0o700)
   const file = path.join(dir, OAUTH_DB_FILENAME)
   const db = new Database(file)
-  // Narrow file perms — `0o600` matches the §5 contract (owner read/write
-  // only). `chmod` happens after the file exists, which `new Database()`
-  // guarantees (it creates the file if missing).
   chmodSync(file, 0o600)
 
   cachedStore = createTokenStore(db)

@@ -110,7 +110,7 @@ NUXT_BITRIX24_OAUTH_SCOPE=user,task                  # see §2.6 — update when
 NUXT_BITRIX24_OAUTH_DB_DIR=/data                      # mounted volume; see §10 + docker-compose. Filename `oauth.sqlite` is fixed in code (decided 2026-06-04 — operator picks the dir, not the file name; the dir conventionally holds future OAuth artefacts too)
 ```
 
-`NUXT_BITRIX24_OAUTH_CLIENT_ID` / `_CLIENT_SECRET` come from the Bitrix24 marketplace application registration. `_REDIRECT_URL` must exactly match what is registered on the Bitrix24 side. `_DB_PATH` points at a named docker volume — `docker-compose.yml` and `docker-compose.example.yml` get a `volumes:` section in PR-2 binding `oauth_data:/data`.
+`NUXT_BITRIX24_OAUTH_CLIENT_ID` / `_CLIENT_SECRET` come from the Bitrix24 marketplace application registration. `_REDIRECT_URL` must exactly match what is registered on the Bitrix24 side. `_DB_DIR` points at the directory on a named docker volume that will hold `oauth.sqlite` — `docker-compose.yml` and `docker-compose.example.yml` declare `bx24_data:/data` for this (the audit log from #67 lives in the same volume under `audit/`).
 
 ## 5. Token store — SQLite
 
@@ -123,7 +123,7 @@ NUXT_BITRIX24_OAUTH_DB_DIR=/data                      # mounted volume; see §10
 
 **Build cost.** `better-sqlite3` is a native module (`node-gyp` compile at install). Dockerfile becomes multi-stage: build stage gets `build-base` / `python3` / `make`; runtime stage keeps only the compiled `.node` artefact. GH Actions runners (ubuntu-latest) already have these. Renovate patch bumps trigger a native rebuild — added ~20 s to CI Build job per bump, acceptable.
 
-**I/O latency.** `better-sqlite3` blocks the Node event loop for the duration of every query. Fast under normal load (WAL reads in microseconds on local SSD) but pathologically slow on NFS / throttled Docker volumes / network-mounted storage. Operators MUST mount `_DB_PATH` on local SSD or `tmpfs`-with-periodic-flush, not on a shared network volume. Documented in §10 upgrade runbook.
+**I/O latency.** `better-sqlite3` blocks the Node event loop for the duration of every query. Fast under normal load (WAL reads in microseconds on local SSD) but pathologically slow on NFS / throttled Docker volumes / network-mounted storage. Operators MUST mount `NUXT_BITRIX24_OAUTH_DB_DIR` on local SSD or `tmpfs`-with-periodic-flush, not on a shared network volume. Documented in §10 upgrade runbook.
 
 **Schema (initial):**
 
