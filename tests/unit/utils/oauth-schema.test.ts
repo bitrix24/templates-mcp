@@ -63,12 +63,18 @@ describe('oauth-schema Nitro plugin', () => {
   it('re-throws when useTokenStore() fails (so Nitro fails the container start)', async () => {
     runtimeConfig.bitrix24OauthEnabled = true
     useTokenStore.mockClear()
-    useTokenStore.mockImplementation(() => {
-      throw new Error('NUXT_BITRIX24_OAUTH_DB_DIR rejected: must be an absolute path')
-    })
+    const bootErr = new Error('NUXT_BITRIX24_OAUTH_DB_DIR rejected: must be an absolute path')
+    useTokenStore.mockImplementation(() => { throw bootErr })
     loggerError.mockClear()
     const plugin = await loadPlugin()
     expect(() => plugin({ hooks: { hook: vi.fn() } })).toThrow(/absolute path/)
-    expect(loggerError).toHaveBeenCalled()
+    // Operator MUST see the underlying error in container logs — assert
+    // the second arg carries the original Error, not an empty stub. A
+    // regression here (logging a bare string or `{}`) would leave the
+    // operator chasing a healthcheck failure with no message.
+    expect(loggerError).toHaveBeenCalledWith(
+      expect.stringContaining('bootstrap'),
+      expect.objectContaining({ err: bootErr }),
+    )
   })
 })

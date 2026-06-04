@@ -170,7 +170,12 @@ export function bootstrapSchema(db: Database.Database): void {
 }
 
 export interface TokenStore {
-  /** Returns the OAuth row for a tenant, or `undefined` if none. */
+  /**
+   * Synchronous lookup on `(member_id, user_id)` — safe to call on the MCP
+   * hot path (no `await`, no event-loop turn). Returns `undefined` for an
+   * unknown tenant; callers MUST treat that as 401, NOT as a retry signal
+   * or fall-through to webhook. Never throws on a missing row.
+   */
   getTokens: (memberId: string, userId: number) => OAuthTokensRow | undefined
   /**
    * Inserts or updates the OAuth row for a tenant. `actor` distinguishes
@@ -208,7 +213,18 @@ export interface TokenStore {
   findByBearerHash: (bearerHash: string) => BearerLookup | undefined
   /** Stamps `revoked_at` on a Bearer (idempotent — re-revoking a revoked row is a no-op). */
   revokeMcpToken: (bearerHash: string, actor: AuditActor) => Promise<void>
-  /** Persists an install-state nonce. */
+  /**
+   * Persists an install-state nonce. Throws a SQLite `UNIQUE` constraint
+   * error if `state` already exists — this is intentional: a collision on
+   * a 32-byte random nonce is astronomically improbable; if one ever
+   * happens (or a replay is attempted), the in-flight `/install` flow
+   * hard-fails rather than silently overwriting a live CSRF binding.
+   *
+   * DoS note: `/install` is rate-limit-territory of PR-2c. Until that
+   * lands, a public deployment can be spammed to grow this table by
+   * ~200 bytes per request; rows expire in 5 min and `pruneExpiredStates`
+   * removes them, but the scheduler is not wired by this PR (see below).
+   */
   createState: (state: OAuthState) => void
   /**
    * One-shot read-and-delete of a state nonce. Returns the persisted row
@@ -225,6 +241,10 @@ export interface TokenStore {
    * Tracked as part of PR-2c's middleware extension.
    */
   pruneExpiredStates: () => number
+  // listMcpTokens — deferred to the follow-up "list my Bearers" operator
+  // tool. The prepared statement exists internally (used by the bulk-revoke
+  // paths) but is intentionally absent from the public interface until the
+  // UI surface lands. See §7 "Code surface — deferred" and PR #210 body.
 }
 
 /**
@@ -286,11 +306,21 @@ export function createTokenStore(db: Database.Database): TokenStore {
       `INSERT INTO oauth_state (state, portal, client_id, csrf_cookie, expires_at)
        VALUES (?, ?, ?, ?, ?)`,
     ),
-    selectState: db.prepare<[string]>(
-      `SELECT state, portal, client_id AS clientId, csrf_cookie AS csrfCookie,
-              expires_at AS expiresAt FROM oauth_state WHERE state = ?`,
+    // `DELETE ... RETURNING` is a single atomic statement (SQLite ≥ 3.35,
+    // shipped with better-sqlite3 11.x). The earlier `SELECT` + `DELETE`
+    // pair was a TOCTOU window: two concurrent `/callback` requests for
+    // the same state could both read the row before either deleted it,
+    // letting the nonce be "consumed" twice. better-sqlite3 is sync, so
+    // intra-process concurrency is impossible — but a rolling Nitro
+    // restart can leave two processes briefly overlapping, and that's a
+    // documented production scenario (§8 — "state persisted so flows
+    // survive a Nitro restart"). The atomic single-statement closes that
+    // window for the cost of zero added complexity.
+    consumeState: db.prepare<[string]>(
+      `DELETE FROM oauth_state WHERE state = ?
+       RETURNING state, portal, client_id AS clientId,
+                 csrf_cookie AS csrfCookie, expires_at AS expiresAt`,
     ),
-    deleteState: db.prepare<[string]>(`DELETE FROM oauth_state WHERE state = ?`),
     pruneExpiredStates: db.prepare<[number]>(`DELETE FROM oauth_state WHERE expires_at < ?`),
   }
 
@@ -350,31 +380,36 @@ export function createTokenStore(db: Database.Database): TokenStore {
     },
 
     deleteTenant: async (memberId, userId, actor) => {
-      // Same bulk-audit-first contract as markRefreshFailed: emit ALL
-      // audits via `Promise.all` (N `mcp.revoke` + 1 `oauth.delete`); on
-      // ANY rejection nothing in the DB changes. The DB DELETE itself
-      // runs inside `db.transaction(...)` so the CASCADE wipe of
-      // `mcp_tokens` rows is atomic with the `oauth_tokens` row removal
-      // — a crash between the two would otherwise leave stranded Bearer
-      // rows without their parent tenant.
+      // Same bulk-audit-first contract as markRefreshFailed: N `mcp.revoke`
+      // audits, then a final `oauth.delete`; on ANY rejection nothing in
+      // the DB changes. Forensic posture: the `mcp.revoke` batch runs via
+      // `Promise.all` (fail-fast — any single revoke audit failing skips
+      // the delete), and the `oauth.delete` audit is awaited AFTER the
+      // batch so a missing `oauth.delete` next to N `mcp.revoke` records
+      // unambiguously marks a partial-failure tenant. With the alternative
+      // (all N+1 in one Promise.all) the failure mode would still be
+      // skip-the-write, but `mcp.revoke` and `oauth.delete` would race —
+      // a GDPR-style data-subject request reading the log out-of-order
+      // would have to disambiguate. The DB DELETE relies on SQLite's
+      // built-in per-statement atomicity for the FK CASCADE: `DELETE FROM
+      // oauth_tokens` and the CASCADE-driven `mcp_tokens` wipe land in
+      // the same implicit transaction. No outer `db.transaction(...)`
+      // needed.
       const active = stmts.listMcpTokens.all(memberId, userId) as Array<{ bearerHash: string }>
-      const revokeAudits = active.map(({ bearerHash }) => recordAuditEvent({
+      await Promise.all(active.map(({ bearerHash }) => recordAuditEvent({
         event: 'mcp.revoke',
         portal: memberId,
         userId: String(userId),
         mcpTokenId: bearerHash,
         actor,
-      }))
-      const deleteAudit = recordAuditEvent({
+      })))
+      await recordAuditEvent({
         event: 'oauth.delete',
         portal: memberId,
         userId: String(userId),
         actor,
       })
-      await Promise.all([...revokeAudits, deleteAudit])
-      db.transaction(() => {
-        stmts.deleteTokens.run(memberId, userId) // CASCADE wipes mcp_tokens rows
-      })()
+      stmts.deleteTokens.run(memberId, userId) // CASCADE wipes mcp_tokens
     },
 
     createMcpToken: async (memberId, userId, label, actor) => {
@@ -421,11 +456,11 @@ export function createTokenStore(db: Database.Database): TokenStore {
     },
 
     consumeState: state => {
-      const row = stmts.selectState.get(state) as OAuthState | undefined
-      // Whether expired or not, the nonce is single-use — remove it before
-      // returning. Callers see a fresh state on retry; an expired nonce
-      // never doubles as a valid one.
-      stmts.deleteState.run(state)
+      // Atomic single-statement read-and-delete (see `stmts.consumeState`
+      // for the TOCTOU rationale). Whether expired or not, the nonce is
+      // removed — an expired row cannot be replayed by a later create-with-
+      // same-state, and a fresh `/install` always lands a new random state.
+      const row = stmts.consumeState.get(state) as OAuthState | undefined
       if (!row) return undefined
       if (row.expiresAt < nowSec()) return undefined
       return row

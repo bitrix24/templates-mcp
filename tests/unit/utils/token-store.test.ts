@@ -184,13 +184,31 @@ describe('token-store — OAuth + Bearer + state CRUD (PR-2b, docs/OAUTH-DESIGN.
       expect(recordAuditEvent).toHaveBeenCalledTimes(1)
     })
 
-    it('label is stored verbatim and round-trips via the audit signal but not back via lookup', async () => {
+    it('findByBearerHash result does not include the label (auth middleware does not need it)', async () => {
       const { bearerHash } = await store.createMcpToken(
         sampleTokens.memberId, sampleTokens.userId, 'Laptop', 'install',
       )
-      // findByBearerHash does NOT return the label by design — middleware
-      // doesn't need it. A future operator-facing "list my tokens" tool
-      // would read it directly from the DB.
+      // findByBearerHash returns ONLY the tenant id pair — labels live in
+      // the row but are intentionally not surfaced via the auth lookup
+      // (the middleware doesn't need them; a future operator "list my
+      // Bearers" tool would read them directly).
+      expect(store.findByBearerHash(bearerHash)).toEqual({
+        memberId: sampleTokens.memberId, userId: sampleTokens.userId,
+      })
+    })
+
+    it('revokeMcpToken does NOT stamp revoked_at if audit rejects', async () => {
+      // The audit-first invariant must hold on revoke too — round-1 added
+      // this for upsert/createMcpToken/markRefreshFailed/deleteTenant but
+      // left revokeMcpToken uncovered. If someone ever reorders `run` to
+      // before `await recordAuditEvent`, this test catches it.
+      const { bearerHash } = await store.createMcpToken(
+        sampleTokens.memberId, sampleTokens.userId, undefined, 'install',
+      )
+      recordAuditEvent.mockReset()
+      recordAuditEvent.mockRejectedValueOnce(new Error('audit disk full'))
+      await expect(store.revokeMcpToken(bearerHash, 'user')).rejects.toThrow('audit disk full')
+      // Bearer is still active — the UPDATE never ran.
       expect(store.findByBearerHash(bearerHash)).toEqual({
         memberId: sampleTokens.memberId, userId: sampleTokens.userId,
       })
@@ -308,6 +326,14 @@ describe('token-store — OAuth + Bearer + state CRUD (PR-2b, docs/OAUTH-DESIGN.
         portal: sampleState.portal, clientId: sampleState.clientId,
       })
       expect(store.consumeState(sampleState.state)).toBeUndefined()
+    })
+
+    it('consumeState returns undefined for a state that was never created', () => {
+      // The `DELETE ... RETURNING` statement returns no row for a missing
+      // PK — caller sees `undefined`, exactly like an expired/already-
+      // consumed state. Defends against accidental reordering of the
+      // null-check in `consumeState`.
+      expect(store.consumeState('0'.repeat(64))).toBeUndefined()
     })
 
     it('consumeState refuses an expired state AND deletes it (no replay)', () => {
@@ -467,5 +493,19 @@ describe('useTokenStore (production singleton)', () => {
     const first = useTokenStore()
     const second = useTokenStore()
     expect(first).toBe(second)
+  })
+
+  it('_resetTokenStoreSingletonForTests forces the next call to re-open the DB', async () => {
+    // The exported reset hook exists for tests that want to swap the
+    // singleton without `vi.resetModules()` (e.g. inside a single describe
+    // block that pivots from one tmpdir to another). Confirms the export
+    // is not dead code and locks in its contract.
+    runtimeConfig.bitrix24OauthEnabled = true
+    runtimeConfig.bitrix24OauthDbDir = tmpDir
+    const mod = await import('../../../server/utils/token-store')
+    const first = mod.useTokenStore()
+    mod._resetTokenStoreSingletonForTests()
+    const second = mod.useTokenStore()
+    expect(first).not.toBe(second)
   })
 })
