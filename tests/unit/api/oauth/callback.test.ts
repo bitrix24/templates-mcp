@@ -24,8 +24,24 @@ import { Socket } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { createApp, eventHandler, toNodeListener } from 'h3'
+import type * as AuditLogModule from '~/server/utils/audit-log'
 import type * as TokenStoreModule from '~/server/utils/token-store'
 import { createTokenStore, type TokenStore } from '~/server/utils/token-store'
+
+// Mock the audit log to a no-op — `upsertTokens` and `createMcpToken`
+// trigger `recordAuditEvent` (audit-first invariant from PR-2b). The
+// real audit-log lazily creates `${NUXT_AUDIT_DIR ?? /data/audit}/` on
+// first write, which fails with EACCES on CI runners. The audit-first
+// invariant itself is exhaustively tested in `token-store.test.ts`;
+// here we only need the callback handler to reach its DB-side effects.
+type AuditEvent = Parameters<typeof AuditLogModule.recordAuditEvent>[0]
+const { recordAuditEvent } = vi.hoisted(() => ({
+  recordAuditEvent: vi.fn<(event: AuditEvent) => Promise<void>>(async () => undefined),
+}))
+vi.mock('~/server/utils/audit-log', async () => {
+  const real = await vi.importActual<typeof AuditLogModule>('~/server/utils/audit-log')
+  return { ...real, recordAuditEvent }
+})
 
 const runtimeConfig: Record<string, unknown> = {
   bitrix24OauthEnabled: true,

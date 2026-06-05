@@ -18,8 +18,21 @@ import { Socket } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Database from 'better-sqlite3'
 import { createApp, eventHandler, toNodeListener } from 'h3'
+import type * as AuditLogModule from '~/server/utils/audit-log'
 import type * as TokenStoreModule from '~/server/utils/token-store'
 import { createTokenStore, type TokenStore } from '~/server/utils/token-store'
+
+// Mock the audit log — same rationale as callback.test.ts. The "counts"
+// test calls `upsertTokens` / `createMcpToken` / `revokeMcpToken`, each
+// of which audits; on CI the real audit-log can't `mkdir /data/audit`.
+type AuditEvent = Parameters<typeof AuditLogModule.recordAuditEvent>[0]
+const { recordAuditEvent } = vi.hoisted(() => ({
+  recordAuditEvent: vi.fn<(event: AuditEvent) => Promise<void>>(async () => undefined),
+}))
+vi.mock('~/server/utils/audit-log', async () => {
+  const real = await vi.importActual<typeof AuditLogModule>('~/server/utils/audit-log')
+  return { ...real, recordAuditEvent }
+})
 
 const runtimeConfig: Record<string, unknown> = {
   bitrix24OauthEnabled: true,
