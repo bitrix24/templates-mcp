@@ -21,6 +21,19 @@ vi.mock('~/server/utils/logger', () => ({
   useLogger: () => ({ error: vi.fn(), info: vi.fn(), debug: vi.fn(), warning: vi.fn() }),
 }))
 
+// PR-2c step 8: the OAuth-on path now routes through `useBitrix24OAuth`
+// which calls `useTokenStore()` and (on a fresh process) tries to
+// `mkdir /data` for the SQLite DB. CI runners don't have /data write
+// permission, so the test must mock the factory to keep the flag-on
+// path off the real filesystem. The factory's behaviour is exhaustively
+// covered by `tests/unit/utils/bitrix24-oauth.test.ts`; here we only
+// need to assert that the catalogue surfaces the factory's error loud.
+vi.mock('~/server/utils/bitrix24-oauth', () => ({
+  useBitrix24OAuth: vi.fn(() => {
+    throw new Error('oauth_tokens row missing for memberId=portal userId=1')
+  }),
+}))
+
 const tool = (await import('../../../../server/mcp/tools/users/current-user')).default as {
   handler: (input: Record<string, never>) => Promise<unknown>
 }
