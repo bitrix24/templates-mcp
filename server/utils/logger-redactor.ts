@@ -51,15 +51,76 @@ import type { LoggerInterface, LogLevel } from '@bitrix24/b24jssdk'
 const WEBHOOK_URL_RE = /(https?:\/\/[^/\s"'<>]+\/rest\/(?:api\/)?\d+\/)([A-Za-z0-9_-]+)/g
 
 /**
+ * OAuth-flow secrets in URL query-string position. Catches the four
+ * parameters that carry credential material across the install/callback/
+ * refresh surface (`docs/OAUTH-DESIGN.md §11`):
+ *
+ *   - `?code=…`           — install-time authorization code
+ *   - `?refresh_token=…`  — long-lived refresh token (rotation surface)
+ *   - `?access_token=…`   — short-lived bearer (defence-in-depth)
+ *   - `?client_secret=…`  — should never appear in URLs but matched for
+ *                            the case where a misconfigured SDK puts it
+ *                            in a body that gets stringified into a URL
+ *
+ * Capture groups:
+ *   1. The `?key=` or `&key=` separator + parameter name (preserved).
+ *   2. The parameter value up to the next `&`, whitespace, or quote.
+ *      Replaced with `<REDACTED>` so an operator reading the log can
+ *      still see WHICH parameter was present, just not its value.
+ *
+ * This regex covers fixture shapes 1, 2, and 3 from §11 (object field
+ * `{url}`, object field `{redirectUrl}`, template-literal carrying an
+ * URL via `err.message`) — anywhere the URL ends up as a string, the
+ * redactor walks it. Fixture shape 4 (JSON-stringified response body)
+ * is covered by {@link OAUTH_JSON_RE} below.
+ */
+const OAUTH_URL_RE = /([?&](?:code|refresh_token|access_token|client_secret)=)([^&\s"'<>]+)/g
+
+/**
+ * OAuth secrets in JSON-literal position. Catches the case where a
+ * response body or request payload is serialised via `JSON.stringify(...)`
+ * and the resulting string lands in a log context (fixture shape 4 in
+ * §11). Without this regex, `logger.error('exchange failed', { body:
+ * JSON.stringify(res) })` would leak the raw `access_token` / `refresh_token`
+ * values verbatim because the SENSITIVE_KEYS walker only fires on direct
+ * object keys, not on substrings inside an already-serialised payload.
+ *
+ *   `"access_token":"abc123"` → `"access_token":"<REDACTED>"`
+ *   `"refresh_token":"def456"` → `"refresh_token":"<REDACTED>"`
+ *   `"client_secret":"…"` → `"client_secret":"<REDACTED>"`
+ *
+ * The `code` parameter is intentionally OMITTED from this regex —
+ * `"code"` is a common JSON key name (HTTP status codes, error codes,
+ * etc.) and matching it here would over-redact. The URL-shaped `?code=`
+ * is the only realistic leak surface for an authorization code.
+ *
+ * Capture groups:
+ *   1. The opening `"key":"` (preserved so the key name stays visible).
+ *   2. The value up to the next unescaped `"` — replaced with `<REDACTED>`.
+ *
+ * Backslash-escaped quotes inside values (`\"`) are tolerated: the
+ * regex stops at the FIRST unescaped quote, which is safe because OAuth
+ * tokens are opaque hex/base64 and don't contain quotes.
+ */
+const OAUTH_JSON_RE = /("(?:access_token|refresh_token|client_secret)"\s*:\s*")([^"\\]+)/g
+
+/**
  * Credential-bearing key names whose values should be masked regardless of
  * content. Mirrors the SDK's own `redactSensitiveParams` list so that any
  * response-body fields the SDK does not yet cover are still caught here.
+ *
+ * `client_secret` is added on top of the SDK's list — the SDK has no
+ * concept of OAuth client secrets, but our install/callback surface
+ * (PR-2c) can pass them through a structured logger context.
  */
-const SENSITIVE_KEYS = new Set(['auth', 'password', 'token', 'secret', 'access_token', 'refresh_token'])
+const SENSITIVE_KEYS = new Set(['auth', 'password', 'token', 'secret', 'access_token', 'refresh_token', 'client_secret'])
 
-/** Redact webhook secrets out of any string. Non-URL strings pass through. */
+/** Redact webhook secrets AND OAuth secrets out of any string. Non-matching strings pass through. */
 export function redactString(input: string): string {
-  return input.replace(WEBHOOK_URL_RE, '$1<REDACTED>')
+  return input
+    .replace(WEBHOOK_URL_RE, '$1<REDACTED>')
+    .replace(OAUTH_URL_RE, '$1<REDACTED>')
+    .replace(OAUTH_JSON_RE, '$1<REDACTED>')
 }
 
 /**
