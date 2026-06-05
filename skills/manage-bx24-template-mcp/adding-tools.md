@@ -67,8 +67,8 @@ export default defineMcpTool({
     // `useBitrix24Tenant()` is the OAuth-aware dispatcher (see
     // `docs/OAUTH-DESIGN.md §6`). When `NUXT_BITRIX24_OAUTH_ENABLED=false`
     // (the production default) it returns the webhook singleton — same
-    // identity as a direct `useBitrix24()` call. When the flag flips on
-    // (PR-2c), it resolves to a per-tenant `B24OAuth` instance from the
+    // identity as a direct `useBitrix24()` call. When the flag is on,
+    // it resolves to a per-tenant `B24OAuth` instance from the
     // request-scoped ALS. Never call `useBitrix24()` directly from a tool
     // handler — it bypasses the dispatcher and pins the tool to webhook
     // forever.

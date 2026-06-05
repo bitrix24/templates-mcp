@@ -96,7 +96,7 @@ OAuth multi-tenant (opt-in, landed and off by default — webhook-only manual QA
 `NUXT_BITRIX24_OAUTH_REDIRECT_URL` (no default — must be set to the exact URL registered on the Bitrix24 side when `ENABLED=true`; `.env.example` shows `https://prod.example.com/api/oauth/callback` as a placeholder shape, not a value to copy verbatim),
 `NUXT_BITRIX24_OAUTH_SCOPE` (default `user,task`),
 `NUXT_BITRIX24_OAUTH_DB_DIR` (directory that holds the SQLite token store; default `/data`, filename `oauth.sqlite` is fixed in code),
-`NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` (operator-only token gating `GET /api/oauth/_health`; deliberately separate from `NUXT_MCP_AUTH_TOKEN`. Leave empty for localhost-only access via nginx allow/deny; the route fails closed (`503 NOT-CONFIGURED`) for a non-localhost request when unset).
+`NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` (operator-only token gating `GET /api/oauth/_health`; deliberately separate from `NUXT_MCP_AUTH_TOKEN`. Leave empty for localhost-only access via nginx allow/deny; the route fails closed (`503 NOT-CONFIGURED`) for a non-localhost request when unset. Once set, the Bearer is required uniformly — even a localhost request needs it).
 
 ### 4. On the Bitrix24 portal — seed upfront
 

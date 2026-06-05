@@ -15,14 +15,15 @@ While the project is pre-release, only the latest tag receives fixes. Once a `v0
 ## Threat model — what's in scope
 
 - **Webhook URL secret leak.** The webhook URL contains a per-user secret. Logger redaction is the primary control — see `server/utils/logger-redactor.ts` and the audit pass in [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md). Any dependency bump that touches the SDK or its logger surface MUST re-run the audit. Redaction is **URL-shaped only**: if a Bitrix24 REST endpoint ever returns a credential as a JSON value (e.g. `{ token: "…" }`) and that body lands in `getLogger().info('post/response', …)`, the redactor will not catch it. No known REST method does this today; tracked as a known limitation in [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md).
-- **Bearer token leak (HTTP modes).** `NUXT_MCP_AUTH_TOKEN` is the only thing between a public `/mcp` and tool execution against your portal. It's compared with `crypto.timingSafeEqual`. Rotation procedure below.
+- **Bearer token leak (HTTP modes).** With `NUXT_BITRIX24_OAUTH_ENABLED=false` (the default), `NUXT_MCP_AUTH_TOKEN` is the only thing between a public `/mcp` and tool execution against your portal. It's compared with `crypto.timingSafeEqual`. Rotation procedure below.
+- **OAuth multi-tenant (opt-in).** When `NUXT_BITRIX24_OAUTH_ENABLED=true`, `/mcp` accepts per-user OAuth Bearers instead and `NUXT_MCP_AUTH_TOKEN` is **bypassed** there — each user acts under their own Bitrix24 identity. The controls: Bearers are stored as sha256 hashes (never plaintext) in a SQLite store on a persistent volume; revocation is immediate; every 401 carries a `WWW-Authenticate` errorCode; the operator `/api/oauth/_health` endpoint is gated by a *separate* `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` (privilege separation — the agent's token must never read fleet counts). The design, threat model, and event taxonomy live in [`OAUTH-DESIGN.md`](./OAUTH-DESIGN.md); the operator guide + migration warning in [`DEPLOYMENT.md` → OAuth 2.0 multi-tenant](./DEPLOYMENT.md#oauth-20-multi-tenant-opt-in). **Migration hazard:** flipping the flag on without first migrating clients to per-user Bearers 401s every connected client (no dual-accept window).
 - **Prompt injection via tool input.** Defensive hardening for LLM-controlled keys lives in `server/utils/v3-filter.ts` and `wire-coerce.ts`; commit history references it as "defensive hardening for toV3Filter / pick against LLM-controlled keys" (PR #41). Re-audit if a new tool builds Bitrix24 REST filters from agent input.
 - **Tool delete operations.** Every delete tool gates on `confirmDelete: true` (Ground Rule #9 in `skills/manage-bx24-template-mcp/SKILL.md`). Cascade-destructive deletes layer a second confirm (Rule #10).
 - **DXT bundle.** Webhook lives in OS keychain via Claude Desktop's `user_config` (`sensitive: true`). Unpacked bundle lives on disk as plain files — protect with full-disk encryption if the threat model includes physical access.
 
 ## Out of scope (today)
 
-- Multi-tenant deployment. The Bearer model is single-tenant; a multi-tenant variant needs per-tenant scoping and is not on the roadmap.
+- Horizontally-scaled (multi-replica) OAuth. The OAuth token cache + refresh state are process-local, so the multi-tenant flow is supported on a **single instance** only; a shared token store for 2+ replicas behind a load balancer is a known limitation (see [`OAUTH-DESIGN.md`](./OAUTH-DESIGN.md) §5 / §12). Single-instance multi-tenant OAuth itself **is** in scope and shipped — see the threat-model entry above.
 - DoS mitigation beyond Docker resource limits.
 - Audit log of tool invocations. *Planned (pre-GA): retention policy / log shipping when this lands.*
 
@@ -33,6 +34,8 @@ While the project is pre-release, only the latest tag receives fixes. Once a `v0
 | `NUXT_BITRIX24_WEBHOOK_URL` | Host `.env` (production); `.env` on laptop (local HTTP); OS keychain (DXT) | Revoke webhook in Bitrix24 portal → create new → update store → `docker compose up -d` (production) or restart client (DXT). The old URL fails closed (401/403). |
 | `NUXT_MCP_AUTH_TOKEN` | Host `.env` (production); `.env` on laptop (local HTTP); not used for DXT | Generate new (`openssl rand -hex 32`), update `.env`, `docker compose up -d`, update every connected client header. No revocation list — old token is dead the instant the new one is loaded. |
 | GitHub feedback PAT [^pat] | Host `.env` / laptop `.env` / DXT user_config | Revoke PAT on GitHub → create new → update store → restart service. |
+| `NUXT_BITRIX24_OAUTH_CLIENT_SECRET` (OAuth on) | Host `.env` | Rotate the secret on the Bitrix24 Marketplace application → update `.env` → `docker compose up -d`. Existing minted Bearers keep working (they don't carry the client secret); only the authorize/refresh exchange uses it. |
+| `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` (OAuth on) | Host `.env` | Generate new (`openssl rand -hex 32`), update `.env`, `docker compose up -d`. Gates `/api/oauth/_health` only — rotating it does not affect user Bearers or `/mcp`. |
 
 [^pat]: All transports use `NUXT_GITHUB_FEEDBACK_TOKEN` — HTTP modes read it via Nuxt runtime-config, and the DXT manifest injects that same name. `mcp-stdio/nuxt-shims.ts` resolves `NUXT_GITHUB_FEEDBACK_TOKEN ?? GITHUB_FEEDBACK_TOKEN`, keeping the un-prefixed `GITHUB_FEEDBACK_TOKEN` only as a back-compat fallback for older bundles.
 

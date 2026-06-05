@@ -40,8 +40,9 @@ services:
       # and point Node at it. Leave unset for cloud portals (the Mozilla CA
       # list bundled with Node 22 covers every `*.bitrix24.<tld>` certificate).
       NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
-      # Audit log + OAuth scaffolding (Phase-3, opt-in). The flag stays off
-      # by default — webhook flow is unchanged. See docs/OAUTH-DESIGN.md.
+      # Audit log + OAuth multi-tenant (opt-in). The flag stays off by
+      # default — webhook flow is unchanged. See docs/DEPLOYMENT.md →
+      # "OAuth 2.0 multi-tenant".
       NUXT_AUDIT_DIR: ${NUXT_AUDIT_DIR:-/data/audit}
       NUXT_BITRIX24_OAUTH_ENABLED: ${NUXT_BITRIX24_OAUTH_ENABLED:-false}
       NUXT_BITRIX24_OAUTH_CLIENT_ID: ${NUXT_BITRIX24_OAUTH_CLIENT_ID:-}
@@ -49,6 +50,7 @@ services:
       NUXT_BITRIX24_OAUTH_REDIRECT_URL: ${NUXT_BITRIX24_OAUTH_REDIRECT_URL:-}
       NUXT_BITRIX24_OAUTH_SCOPE: ${NUXT_BITRIX24_OAUTH_SCOPE:-user,task}
       NUXT_BITRIX24_OAUTH_DB_DIR: ${NUXT_BITRIX24_OAUTH_DB_DIR:-/data}
+      NUXT_BITRIX24_OAUTH_ADMIN_TOKEN: ${NUXT_BITRIX24_OAUTH_ADMIN_TOKEN:-}
     # Persistent storage for the audit log + OAuth token store. Required
     # whenever NUXT_BITRIX24_OAUTH_ENABLED=true; harmless (just empty) for
     # webhook-only forks. The named volume survives `docker compose down`
