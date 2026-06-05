@@ -70,9 +70,17 @@ function denyBearer(opts: DenyOptions): never {
  * `error="invalid_token"` keeps the standard-compliant slot; `errorCode`
  * is the §11 taxonomy suffix so the operator can grep the exact string
  * the user pasted into Slack.
+ *
+ * Both `code` and `description` are interpolated into a quoted-string
+ * production (`token = quoted-string` in RFC 7230 §3.2.6). We escape
+ * embedded `\` and `"` defensively — current call sites pass string
+ * literals (so escaping is a no-op today), but a future refactor that
+ * threads a Bitrix24-controlled value into `description` shouldn't be
+ * able to inject extra header attributes.
  */
 function wwwAuthHeader(code: string, description: string): string {
-  return `Bearer error="invalid_token", errorCode="${code}", error_description="${description}"`
+  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return `Bearer error="invalid_token", errorCode="${esc(code)}", error_description="${esc(description)}"`
 }
 
 export default defineMcpHandler({
@@ -89,13 +97,15 @@ export default defineMcpHandler({
       // No Bearer at all → 401 with the same taxonomy bucket as
       // `bearer-unknown` (an absent Bearer is indistinguishable from
       // one that's never been minted). The WWW-Authenticate header
-      // tells a well-behaved client to prompt for a token.
+      // tells a well-behaved client to prompt for a token. `return
+      // denyBearer(...)` narrows `token` to `string` below without a
+      // non-null assertion (denyBearer's return type is `never`).
       void logger.warning('mcp.auth.deny.bearer-unknown', { reason: 'no-bearer' })
       setResponseHeader(event, 'www-authenticate', wwwAuthHeader('BEARER-UNKNOWN', 'Bearer required'))
-      denyBearer({ errorCode: 'BEARER-UNKNOWN', statusMessage: 'Bearer required' })
+      return denyBearer({ errorCode: 'BEARER-UNKNOWN', statusMessage: 'Bearer required' })
     }
 
-    const bearerHash = `sha256-${createHash('sha256').update(token!).digest('hex')}`
+    const bearerHash = `sha256-${createHash('sha256').update(token).digest('hex')}`
     const bearerHashPrefix = bearerHash.slice(0, 15) // 'sha256-' + 8 hex
     const store = useTokenStore()
     const inspection = store.inspectBearer(bearerHash)
@@ -103,7 +113,7 @@ export default defineMcpHandler({
     if (!inspection) {
       void logger.warning('mcp.auth.deny.bearer-unknown', { bearerHashPrefix })
       setResponseHeader(event, 'www-authenticate', wwwAuthHeader('BEARER-UNKNOWN', 'Bearer not recognised'))
-      denyBearer({ errorCode: 'BEARER-UNKNOWN', statusMessage: 'Bearer not recognised' })
+      return denyBearer({ errorCode: 'BEARER-UNKNOWN', statusMessage: 'Bearer not recognised' })
     }
 
     if (inspection.revokedAt !== null) {
@@ -114,7 +124,7 @@ export default defineMcpHandler({
         revokedAt: inspection.revokedAt,
       })
       setResponseHeader(event, 'www-authenticate', wwwAuthHeader('BEARER-REVOKED', 'Bearer revoked'))
-      denyBearer({ errorCode: 'BEARER-REVOKED', statusMessage: 'Bearer revoked - re-authorise at /api/oauth/install' })
+      return denyBearer({ errorCode: 'BEARER-REVOKED', statusMessage: 'Bearer revoked - re-authorise at /api/oauth/install' })
     }
 
     // Orphan check — `mcp_tokens` row exists and is active, but the
@@ -129,7 +139,7 @@ export default defineMcpHandler({
         userId: inspection.userId,
       })
       setResponseHeader(event, 'www-authenticate', wwwAuthHeader('BEARER-ORPHAN', 'Bearer orphan - re-authorise at /api/oauth/install'))
-      denyBearer({ errorCode: 'BEARER-ORPHAN', statusMessage: 'Bearer orphan - tenant missing' })
+      return denyBearer({ errorCode: 'BEARER-ORPHAN', statusMessage: 'Bearer orphan - tenant missing' })
     }
 
     // Happy path: mint a per-request correlation id and wrap the rest
@@ -148,6 +158,10 @@ export default defineMcpHandler({
     return runWithTenant(
       {
         memberId: inspection.memberId,
+        // TenantContext.userId is typed as string (PR-2a — matches the
+        // audit-log shape that prefers stable string ids). The dispatcher
+        // (PR-2d) re-parses it to number for the factory; the round-trip
+        // costs one String() + one parseInt() per request.
         userId: String(inspection.userId),
         requestId,
       },

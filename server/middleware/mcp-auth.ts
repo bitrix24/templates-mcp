@@ -11,10 +11,20 @@ export default defineEventHandler((event) => {
 
   // When OAuth is on, the toolkit-level middleware in `server/mcp/index.ts`
   // owns Bearer-to-tenant resolution (it also needs to wrap `next()` in an
-  // ALS scope, which an h3-level middleware can't do). Yielding here is
-  // safe because the toolkit middleware fails closed: a request without a
-  // valid OAuth Bearer never reaches a tool.
-  if (useRuntimeConfig().bitrix24OauthEnabled) return
+  // ALS scope, which an h3-level middleware can't do). Defence-in-depth:
+  // we don't trust the toolkit middleware to register correctly under
+  // HMR or a failing module load — refuse the request HERE if there's
+  // no `Authorization: Bearer …` shape at all, then yield for the
+  // toolkit middleware to do the actual cryptographic validation. Worst
+  // case if the toolkit middleware is missing: requests still get 401,
+  // not an auth bypass.
+  if (useRuntimeConfig().bitrix24OauthEnabled) {
+    const header = getHeader(event, 'authorization')
+    if (!header || !/^Bearer\s+\S/i.test(header)) {
+      throw createError({ statusCode: 401, statusMessage: 'Bearer required' })
+    }
+    return
+  }
 
   const expected = useRuntimeConfig().mcpAuthToken
   // Treat the `.env.example` placeholder as "not configured": an operator who

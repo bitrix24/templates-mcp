@@ -46,16 +46,27 @@ describe('mcp-auth middleware', () => {
     runtimeConfig.bitrix24OauthEnabled = false
   })
 
-  it('yields when NUXT_BITRIX24_OAUTH_ENABLED=true (the toolkit-level middleware owns auth)', () => {
+  it('yields when NUXT_BITRIX24_OAUTH_ENABLED=true AND the request carries a Bearer header (toolkit middleware owns auth)', () => {
     // PR-2c-bearer (#217): when OAuth is on, this h3-level middleware
     // skips so the `server/mcp/index.ts` toolkit middleware can do the
     // Bearer-to-tenant resolution (it also wraps next() in an ALS scope,
-    // which h3 middleware can't). Yielding is safe — the toolkit
-    // middleware fails closed.
+    // which h3 middleware can't).
     runtimeConfig.bitrix24OauthEnabled = true
     runtimeConfig.mcpAuthToken = '' // even with no MCP_AUTH_TOKEN
-    expect(callMiddleware('/mcp')()).toBeUndefined()
-    expect(callMiddleware('/mcp/messages')()).toBeUndefined()
+    expect(callMiddleware('/mcp', { authorization: 'Bearer abc' })()).toBeUndefined()
+    expect(callMiddleware('/mcp/messages', { authorization: 'Bearer abc' })()).toBeUndefined()
+  })
+
+  it('flag=true defence-in-depth: refuses 401 here if no Bearer header (in case toolkit middleware fails to register)', () => {
+    // Security round-4 finding: yielding unconditionally when the flag
+    // is on means a missing/broken toolkit middleware leaves /mcp open.
+    // This h3 layer requires AT LEAST the `Authorization: Bearer …`
+    // shape before yielding — worst case a missing toolkit middleware
+    // still produces 401, not an auth bypass.
+    runtimeConfig.bitrix24OauthEnabled = true
+    expect(callMiddleware('/mcp')).toThrow(/Bearer required/)
+    expect(callMiddleware('/mcp', { authorization: 'Basic xyz' })).toThrow(/Bearer required/)
+    expect(callMiddleware('/mcp', { authorization: 'Bearer ' })).toThrow(/Bearer required/)
   })
 
   it('skips paths outside /mcp', () => {

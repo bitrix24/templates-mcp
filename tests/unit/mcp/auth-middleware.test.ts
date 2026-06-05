@@ -173,7 +173,13 @@ describe('MCP Bearer middleware — deny branches (§11 taxonomy)', () => {
       statusCode: 401,
       data: { errorCode: 'BEARER-REVOKED' },
     })
-    expect(event.node.res.getHeader('www-authenticate')).toMatch(/errorCode="BEARER-REVOKED"/)
+    // Pin the full RFC 6750 §3 header shape, not just the errorCode —
+    // a refactor that drops `Bearer error="invalid_token"` breaks every
+    // RFC-compliant OAuth client and must fail this test.
+    const wwwAuth = event.node.res.getHeader('www-authenticate') as string
+    expect(wwwAuth).toMatch(/^Bearer error="invalid_token"/)
+    expect(wwwAuth).toMatch(/errorCode="BEARER-REVOKED"/)
+    expect(wwwAuth).toMatch(/error_description=".*"/)
     const denial = loggerCalls.find(c => c.event === 'mcp.auth.deny.bearer-revoked')
     expect(denial).toBeDefined()
     expect(denial!.ctx).toMatchObject({
@@ -205,6 +211,30 @@ describe('MCP Bearer middleware — deny branches (§11 taxonomy)', () => {
     expect(denial).toBeDefined()
     expect(denial!.level).toBe('error') // §11: orphan is ERROR, not WARN
     expect(denial!.ctx).toMatchObject({ memberId: 'ghost-portal', userId: 99 })
+    // Header shape pinned (RFC 6750 §3).
+    const wwwAuth = event.node.res.getHeader('www-authenticate') as string
+    expect(wwwAuth).toMatch(/^Bearer error="invalid_token"/)
+    expect(wwwAuth).toMatch(/errorCode="BEARER-ORPHAN"/)
+  })
+
+  it('BEARER-REVOKED takes precedence over BEARER-ORPHAN when both conditions hold', async () => {
+    // Reordering the two `if`s inside the middleware would change which
+    // errorCode a row with BOTH `revoked_at` set AND a missing tenant
+    // resolves to. Pin the precedence: revoked is checked first.
+    const bearer = 'ee'.repeat(32)
+    const bearerHash = `sha256-${createHash('sha256').update(bearer).digest('hex')}`
+    const now = Math.floor(Date.now() / 1000)
+    db.pragma('foreign_keys = OFF')
+    db.prepare('INSERT INTO mcp_tokens (bearer_hash, member_id, user_id, label, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(bearerHash, 'ghost-portal', 99, null, now, now) // revoked AND orphan
+    db.pragma('foreign_keys = ON')
+
+    const middleware = await loadMiddleware()
+    const event = makeEvent({ authorization: `Bearer ${bearer}` })
+    await expect(middleware(event, async () => ({}))).rejects.toMatchObject({
+      statusCode: 401,
+      data: { errorCode: 'BEARER-REVOKED' },
+    })
   })
 })
 
@@ -244,6 +274,54 @@ describe('MCP Bearer middleware — happy path', () => {
     for (const call of loggerCalls) {
       expect(JSON.stringify(call.ctx ?? {})).not.toContain(bearer)
     }
+  })
+
+  it('ALS scope closes after next() resolves — getTenantContext() is undefined outside the wrap', async () => {
+    // Defends against a `enterWith`-style regression that would leak
+    // the tenant context to the global scope. The middleware MUST use
+    // `als.run(store, fn)`, NOT `als.enterWith(store)` — the former
+    // restores the previous scope when fn resolves, the latter doesn't.
+    await store.upsertTokens(SAMPLE_TENANT, 'install')
+    const { bearer } = await store.createMcpToken(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId, 'laptop', 'install')
+    const { getTenantContext } = await import('~/server/utils/request-context')
+
+    const middleware = await loadMiddleware()
+    const event = makeEvent({ authorization: `Bearer ${bearer}` })
+    await middleware(event, async () => 'done')
+    // Outside the wrap (after middleware resolves) the ALS scope MUST
+    // be empty. A persistent context would leak across requests on the
+    // same worker → cross-tenant data class.
+    expect(getTenantContext()).toBeUndefined()
+  })
+
+  it('N=2 concurrent requests with distinct Bearers each see THEIR OWN tenant inside next()', async () => {
+    // Cross-tenant ALS isolation at the middleware layer (the same
+    // guarantee PR-2a's #64 ALS spike pinned at the toolkit dispatch
+    // layer). If `runWithTenant` used a shared mutable store, the two
+    // concurrent middleware invocations would race and see each other's
+    // tenants — exactly the bug class OAuth multi-tenant exists to
+    // prevent.
+    await store.upsertTokens({ ...SAMPLE_TENANT, memberId: 'portal-a', userId: 1 }, 'install')
+    await store.upsertTokens({ ...SAMPLE_TENANT, memberId: 'portal-b', userId: 2 }, 'install')
+    const { bearer: bearerA } = await store.createMcpToken('portal-a', 1, 'a', 'install')
+    const { bearer: bearerB } = await store.createMcpToken('portal-b', 2, 'b', 'install')
+    const { getTenantContext } = await import('~/server/utils/request-context')
+
+    const middleware = await loadMiddleware()
+    const eventA = makeEvent({ authorization: `Bearer ${bearerA}` })
+    const eventB = makeEvent({ authorization: `Bearer ${bearerB}` })
+    const [observedA, observedB] = await Promise.all([
+      middleware(eventA, async () => {
+        await new Promise<void>(r => setImmediate(r)) // force interleave
+        return getTenantContext()?.memberId
+      }),
+      middleware(eventB, async () => {
+        await new Promise<void>(r => setImmediate(r))
+        return getTenantContext()?.memberId
+      }),
+    ])
+    expect(observedA).toBe('portal-a')
+    expect(observedB).toBe('portal-b')
   })
 
   it('each request gets a fresh requestId (no correlation-id reuse)', async () => {
