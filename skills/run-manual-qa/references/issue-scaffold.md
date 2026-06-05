@@ -1,6 +1,6 @@
 # Issue scaffold
 
-`Last reviewed: 2026-06-04`
+`Last reviewed: 2026-06-05`
 
 Canonical English source for the non-block parts of the tracking issue: preamble, the "how to work" section (GitHub Convert-to-issue flow), the preparation/access section, and the placeholder data table. Render these into the test repo at issue-creation time. Operator-facing phrasing may be translated into the chosen language; structure and labels stay English.
 
@@ -91,11 +91,12 @@ Optional, only if the run includes integration tests or evals (see `.env.example
 `NUXT_AUDIT_DIR` (OAuth/Bearer audit log destination; default `/data/audit/`, webhook-only manual QA ignores it).
 
 OAuth scaffolding (Phase-3 opt-in, off by default — webhook-only manual QA leaves these unset/false):
-`NUXT_BITRIX24_OAUTH_ENABLED` (default `false`; flip to `true` only after the OAuth wiring (`server/mcp/index.ts` middleware + token store) lands — without it the dispatcher fails loud on every tool call),
+`NUXT_BITRIX24_OAUTH_ENABLED` (default `false`; the install/callback routes + B24OAuth factory have landed, but the `/mcp` Bearer middleware that makes a minted Bearer actually authenticate is still pending — issue #217. With `=true` an operator can complete `/install → /callback` and get a Bearer, but `/mcp` keeps using `NUXT_MCP_AUTH_TOKEN` until #217 lands; the dispatcher fails loud on any tool call made without a tenant scope),
 `NUXT_BITRIX24_OAUTH_CLIENT_ID` / `NUXT_BITRIX24_OAUTH_CLIENT_SECRET` (from a registered Bitrix24 Marketplace application, needed only when ENABLED=true),
 `NUXT_BITRIX24_OAUTH_REDIRECT_URL` (no default — must be set to the exact URL registered on the Bitrix24 side when `ENABLED=true`; `.env.example` shows `https://prod.example.com/api/oauth/callback` as a placeholder shape, not a value to copy verbatim),
 `NUXT_BITRIX24_OAUTH_SCOPE` (default `user,task`),
-`NUXT_BITRIX24_OAUTH_DB_DIR` (directory that holds the SQLite token store; default `/data`, filename `oauth.sqlite` is fixed in code).
+`NUXT_BITRIX24_OAUTH_DB_DIR` (directory that holds the SQLite token store; default `/data`, filename `oauth.sqlite` is fixed in code),
+`NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` (operator-only token gating `GET /api/oauth/_health`; deliberately separate from `NUXT_MCP_AUTH_TOKEN`. Leave empty for localhost-only access via nginx allow/deny; the route fails closed (`503 NOT-CONFIGURED`) for a non-localhost request when unset).
 
 ### 4. On the Bitrix24 portal — seed upfront
 
