@@ -39,6 +39,13 @@ export default defineNuxtConfig({
     bitrix24OauthRedirectUrl: '',
     bitrix24OauthScope: 'user,task',
     bitrix24OauthDbDir: '/data',
+    // PR-2c: admin token guarding `/api/oauth/_health` (operator-tier
+    // observability endpoint per OAUTH-DESIGN.md §11). When empty, the
+    // route fails closed unless the request comes from localhost
+    // (e.g. an nginx `proxy_pass` inside the same network namespace).
+    // NEVER fall back to `bitrix24OauthEnabled` or `mcpAuthToken` here —
+    // the privilege levels differ (agent token vs operator token).
+    bitrix24OauthAdminToken: '',
   },
 
   nitro: {

@@ -242,10 +242,30 @@ export interface TokenStore {
    * Tracked in issue #211.
    */
   pruneExpiredStates: () => number
+  /**
+   * Aggregate counts for `/api/oauth/_health` (`docs/OAUTH-DESIGN.md §11`).
+   * All three queries run in one synchronous bundle (`better-sqlite3` is
+   * sync) so the endpoint is a single round-trip. **No PII, no tokens** —
+   * counts only. The endpoint is the readiness target for orchestrators
+   * (kubelet, docker-compose healthcheck), so cost matters: the underlying
+   * tables are small (one row per tenant / bearer / pending state) and
+   * each `COUNT(*)` is a constant-time index walk.
+   */
+  getHealthCounts: () => HealthCounts
   // listMcpTokens — deferred to the follow-up "list my Bearers" operator
   // tool (issue #212). The prepared statement exists internally (used by
   // the bulk-revoke paths) but is intentionally absent from the public
   // interface until the UI surface lands.
+}
+
+/** Shape returned by {@link TokenStore.getHealthCounts}. */
+export interface HealthCounts {
+  /** Number of `oauth_tokens` rows — distinct `(member_id, user_id)` tenants. */
+  readonly tenants: number
+  /** Number of active `mcp_tokens` rows (`revoked_at IS NULL`) — issued Bearers. */
+  readonly bearers: number
+  /** Number of `oauth_state` rows still inside the 5-min TTL. */
+  readonly pendingStates: number
 }
 
 /**
@@ -323,6 +343,9 @@ export function createTokenStore(db: Database.Database): TokenStore {
                  csrf_cookie AS csrfCookie, expires_at AS expiresAt`,
     ),
     pruneExpiredStates: db.prepare<[number]>(`DELETE FROM oauth_state WHERE expires_at < ?`),
+    countTenants: db.prepare(`SELECT COUNT(*) AS n FROM oauth_tokens`),
+    countActiveBearers: db.prepare(`SELECT COUNT(*) AS n FROM mcp_tokens WHERE revoked_at IS NULL`),
+    countPendingStates: db.prepare<[number]>(`SELECT COUNT(*) AS n FROM oauth_state WHERE expires_at > ?`),
   }
 
   return {
@@ -468,6 +491,15 @@ export function createTokenStore(db: Database.Database): TokenStore {
     },
 
     pruneExpiredStates: () => stmts.pruneExpiredStates.run(nowSec()).changes,
+
+    getHealthCounts: () => {
+      const now = nowSec()
+      return {
+        tenants: (stmts.countTenants.get() as { n: number }).n,
+        bearers: (stmts.countActiveBearers.get() as { n: number }).n,
+        pendingStates: (stmts.countPendingStates.get(now) as { n: number }).n,
+      }
+    },
   }
 }
 
