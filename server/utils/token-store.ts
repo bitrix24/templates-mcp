@@ -228,9 +228,18 @@ export interface TokenStore {
    */
   createState: (state: OAuthState) => void
   /**
-   * One-shot read-and-delete of a state nonce. Returns the persisted row
-   * if the state exists AND has not expired, `undefined` otherwise.
-   * Deletes the row in both cases (expired states cannot be replayed).
+   * One-shot atomic read-and-delete of a state nonce. Returns the
+   * persisted row if the state existed, `undefined` if it never did.
+   * The row is ALWAYS deleted (replay protection) — including expired
+   * rows, so a stale nonce can't be reused.
+   *
+   * **Expiry is the caller's policy decision, not the store's.** The row
+   * carries `expiresAt`; the caller (`/callback`) checks it and decides
+   * whether to surface `STATE-EXPIRED` (an expected, benign outcome for
+   * a slow user) vs `STATE-MISSING` (a never-seen nonce, possibly a
+   * probe). Folding both into a single `undefined` return — as an
+   * earlier revision did — erased that distinction in the logs and made
+   * `oauth.callback.deny.state-expired` unemittable.
    */
   consumeState: (state: string) => OAuthState | undefined
   /**
@@ -481,13 +490,13 @@ export function createTokenStore(db: Database.Database): TokenStore {
 
     consumeState: state => {
       // Atomic single-statement read-and-delete (see `stmts.consumeState`
-      // for the TOCTOU rationale). Whether expired or not, the nonce is
-      // removed — an expired row cannot be replayed by a later create-with-
-      // same-state, and a fresh `/install` always lands a new random state.
-      const row = stmts.consumeState.get(state) as OAuthState | undefined
-      if (!row) return undefined
-      if (row.expiresAt < nowSec()) return undefined
-      return row
+      // for the TOCTOU rationale). The nonce is removed whether expired
+      // or not — an expired row cannot be replayed by a later
+      // create-with-same-state, and a fresh `/install` always lands a new
+      // random state. Expiry is NOT filtered here: the row is returned
+      // with its `expiresAt` so the caller can distinguish expired from
+      // never-existed (see the interface JSDoc).
+      return stmts.consumeState.get(state) as OAuthState | undefined
     },
 
     pruneExpiredStates: () => stmts.pruneExpiredStates.run(nowSec()).changes,

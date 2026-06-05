@@ -89,7 +89,7 @@ interface Response {
  * IncomingMessage's underlying socket so `getRequestIP` resolves to the
  * value we want (e.g. `127.0.0.1` for the localhost-isolation path).
  */
-async function callHealth(opts: { authorization?: string; sourceIp?: string } = {}): Promise<Response> {
+async function callHealth(opts: { authorization?: string; sourceIp?: string; xff?: string } = {}): Promise<Response> {
   const handler = (await import('~/server/api/oauth/_health.get')).default
   const app = createApp({ onError: (err, event) => {
     const e = err as { statusCode?: number; statusMessage?: string; data?: { errorCode?: string } }
@@ -101,16 +101,18 @@ async function callHealth(opts: { authorization?: string; sourceIp?: string } = 
   const listener = toNodeListener(app)
 
   const socket = new Socket()
-  // h3's `getRequestIP` checks `event.node.req.socket.remoteAddress`
-  // first when `xForwardedFor` is not set on the header — we override
-  // the underlying socket attribute to drive the localhost-vs-not test
-  // matrix deterministically.
+  // The route reads the raw SOCKET IP (NOT X-Forwarded-For) — we override
+  // the underlying socket attribute to drive the localhost-vs-not matrix.
   Object.defineProperty(socket, 'remoteAddress', { value: opts.sourceIp ?? '203.0.113.10', configurable: true })
 
   const req = new IncomingMessage(socket)
   req.method = 'GET'
   req.url = '/api/oauth/_health'
-  req.headers = { host: 'mcp.example.com', ...(opts.authorization ? { authorization: opts.authorization } : {}) }
+  req.headers = {
+    host: 'mcp.example.com',
+    ...(opts.authorization ? { authorization: opts.authorization } : {}),
+    ...(opts.xff ? { 'x-forwarded-for': opts.xff } : {}),
+  }
 
   return await new Promise<Response>((resolve) => {
     const chunks: Buffer[] = []
@@ -172,6 +174,15 @@ describe('/api/oauth/_health — gating', () => {
     expect(res.statusCode).toBe(200)
   })
 
+  it('503 — X-Forwarded-For: 127.0.0.1 spoof from a remote socket does NOT pass the localhost gate', async () => {
+    // SECURITY (round-3): the route must read the raw socket IP, never a
+    // client-supplied X-Forwarded-For. A remote attacker setting
+    // `X-Forwarded-For: 127.0.0.1` would otherwise read fleet counts.
+    const res = await callHealth({ sourceIp: '203.0.113.10', xff: '127.0.0.1' })
+    expect(res.statusCode).toBe(503)
+    expect(res.errorCode).toBe('NOT-CONFIGURED')
+  })
+
   it('401 ADMIN-TOKEN-MISSING when token configured, request from outside localhost, no Bearer', async () => {
     runtimeConfig.bitrix24OauthAdminToken = 'a'.repeat(64)
     const res = await callHealth({ sourceIp: '203.0.113.10' })
@@ -205,6 +216,20 @@ describe('/api/oauth/_health — gating', () => {
     expect(res.errorCode).toBe('ADMIN-TOKEN-INVALID')
   })
 
+  it('gate is the admin-token FIELD, not a bare string match — same value in mcpAuthToken still rejected', async () => {
+    // Stronger privilege-separation pin (round-3): even if the operator
+    // happens to set mcpAuthToken to the SAME value as the admin token,
+    // the gate must check the admin-token field specifically. Here only
+    // mcpAuthToken holds the value; adminToken is empty → the admin gate
+    // isn't configured, so from a remote IP the route fails closed (503),
+    // NOT 200 via an accidental mcpAuthToken match.
+    runtimeConfig.bitrix24OauthAdminToken = ''
+    runtimeConfig.mcpAuthToken = 'shared-value'
+    const res = await callHealth({ sourceIp: '203.0.113.10', authorization: 'Bearer shared-value' })
+    expect(res.statusCode).toBe(503)
+    expect(res.errorCode).toBe('NOT-CONFIGURED')
+  })
+
   it('admin token wins over localhost — token configured means token-only auth even from 127.0.0.1', async () => {
     // Intentional design: once the operator opts in to token-based
     // auth, the route is uniformly gated by the token (no implicit
@@ -222,13 +247,17 @@ describe('/api/oauth/_health — counts shape', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json).toMatchObject({
       enabled: true,
-      dbPath: '/data/oauth.sqlite',
       tenants: 0,
       bearers: 0,
       pendingStates: 0,
       lastRefreshOk: null,
       lastRefreshFail: null,
     })
+    // processStartedAt is a unix-seconds timestamp set at module load.
+    expect(typeof res.json!.processStartedAt).toBe('number')
+    // SECURITY (round-3): dbPath MUST NOT be in the body — it's
+    // infrastructure topology that aids a post-auth attacker.
+    expect(res.json).not.toHaveProperty('dbPath')
   })
 
   it('counts tenants + bearers + pending states', async () => {
@@ -289,9 +318,10 @@ describe('/api/oauth/_health — counts shape', () => {
     expect(ok!.ctx).toMatchObject({ tenants: 0, bearers: 0, pendingStates: 0 })
   })
 
-  it('dbPath reflects NUXT_BITRIX24_OAUTH_DB_DIR', async () => {
+  it('never exposes dbPath regardless of NUXT_BITRIX24_OAUTH_DB_DIR', async () => {
     runtimeConfig.bitrix24OauthDbDir = '/srv/oauth'
     const res = await callHealth({ sourceIp: '127.0.0.1' })
-    expect(res.json!.dbPath).toBe('/srv/oauth/oauth.sqlite')
+    expect(res.json).not.toHaveProperty('dbPath')
+    expect(res.body).not.toContain('/srv/oauth')
   })
 })

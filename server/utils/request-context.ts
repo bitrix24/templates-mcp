@@ -119,6 +119,9 @@ export function getTenantContext(): TenantContext | undefined {
  * directly — a missing field then becomes a loud failure at the first
  * log line, not a silent gap downstream where a `jq` query returns
  * nothing for events that should have shared a correlation id.
+ *
+ * @throws {Error} When called outside a `runWithTenant` scope, or when
+ *   `runWithTenant` was called without a `requestId` in the context.
  */
 export function getRequestId(): string {
   const ctx = tenantContext.getStore()

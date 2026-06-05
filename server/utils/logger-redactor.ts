@@ -96,13 +96,16 @@ const OAUTH_URL_RE = /([?&](?:code|refresh_token|access_token|client_secret)=)([
  *
  * Capture groups:
  *   1. The opening `"key":"` (preserved so the key name stays visible).
- *   2. The value up to the next unescaped `"` — replaced with `<REDACTED>`.
+ *   2. The value up to the next `"` — replaced with `<REDACTED>`.
  *
- * Backslash-escaped quotes inside values (`\"`) are tolerated: the
- * regex stops at the FIRST unescaped quote, which is safe because OAuth
- * tokens are opaque hex/base64 and don't contain quotes.
+ * Value class is `[^"]+` (everything up to the closing quote), NOT
+ * `[^"\\]+`. OAuth tokens are opaque hex / base64url and never contain
+ * a literal `"`, so stopping at the first quote always captures the
+ * whole value. An earlier `[^"\\]+` would have stopped at a stray
+ * backslash mid-token and leaked the tail (`<REDACTED>abc` instead of
+ * `<REDACTED>`).
  */
-const OAUTH_JSON_RE = /("(?:access_token|refresh_token|client_secret)"\s*:\s*")([^"\\]+)/g
+const OAUTH_JSON_RE = /("(?:access_token|refresh_token|client_secret)"\s*:\s*")([^"]+)/g
 
 /**
  * Credential-bearing key names whose values should be masked regardless of

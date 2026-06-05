@@ -56,7 +56,11 @@ import { useTokenStore } from '~/server/utils/token-store'
  */
 
 const REFRESH_URL = 'https://oauth.bitrix24.tech/oauth/token/'
-const LRU_MAX = 100
+const DEFAULT_LRU_MAX = 100
+
+// Mutable so a test can shrink the cap and observe eviction in finite
+// time without seeding 101 real tenants. Production never changes it.
+let lruMax = DEFAULT_LRU_MAX
 
 const cache = new Map<string, B24OAuth>()
 
@@ -77,12 +81,23 @@ export function _readRefreshStatus(): RefreshStatus {
 }
 
 /**
- * @internal — test reset hook. Production has no use for this.
+ * @internal — test reset hook. Production has no use for this. Restores
+ * the default LRU cap so a prior test's `_setLruMaxForTests` doesn't
+ * bleed into the next.
  */
 export function _resetOAuthFactoryForTests(): void {
   cache.clear()
+  lruMax = DEFAULT_LRU_MAX
   refreshStatus.lastRefreshOk = null
   refreshStatus.lastRefreshFail = null
+}
+
+/**
+ * @internal — test-only. Shrinks the LRU cap so eviction is observable
+ * without constructing 101 real `B24OAuth` instances.
+ */
+export function _setLruMaxForTests(n: number): void {
+  lruMax = n
 }
 
 function lruGet(key: string): B24OAuth | undefined {
@@ -96,13 +111,16 @@ function lruGet(key: string): B24OAuth | undefined {
 }
 
 function lruSet(key: string, value: B24OAuth, logger: ReturnType<typeof useLogger>): void {
-  if (cache.has(key)) cache.delete(key)
+  // `Map.delete` on an absent key is a harmless no-op, but re-deleting a
+  // present key before re-setting moves it to MRU position (insertion
+  // order = LRU order).
+  cache.delete(key)
   cache.set(key, value)
-  while (cache.size > LRU_MAX) {
+  while (cache.size > lruMax) {
     const oldest = cache.keys().next().value
     if (oldest === undefined) break
     cache.delete(oldest)
-    void logger.debug('oauth.factory.lru.evicted', { key: oldest, max: LRU_MAX })
+    void logger.debug('oauth.factory.lru.evicted', { key: oldest, max: lruMax })
   }
 }
 

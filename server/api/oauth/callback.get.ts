@@ -1,6 +1,24 @@
+import { Buffer } from 'node:buffer'
+import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
 import { createError, defineEventHandler, deleteCookie, getCookie, getQuery, setResponseHeader } from 'h3'
 import { useLogger } from '~/server/utils/logger'
 import { useTokenStore } from '~/server/utils/token-store'
+
+/**
+ * Constant-time string compare for the CSRF cookie ↔ persisted-state
+ * binding. Both values are fixed-length 64-hex nonces, so the length
+ * check leaks nothing. Mirrors the pattern in `_health.get.ts` /
+ * `mcp-auth.ts` — secrets are never compared with `===`.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  return cryptoTimingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'))
+}
+
+/** Bitrix24 `member_id` is an opaque alnum token; reject anything that
+ * isn't, so a compromised upstream can't smuggle a path-traversal or an
+ * over-long string into a SQLite primary key + log field. */
+const MEMBER_ID_RE = /^[a-zA-Z0-9._:-]{1,128}$/
 
 /**
  * OAuth installation callback (`/api/oauth/callback`, design in
@@ -94,6 +112,7 @@ function bearerSuccessPage(bearer: string, portal: string): string {
 <p>Copy this token into your MCP client (Claude Desktop / Cursor / Windsurf) <strong>Authorization: Bearer</strong> setting:</p>
 <pre style="word-wrap:break-word;white-space:pre-wrap;padding:1em;background:#eee;border-radius:4px">${bearer}</pre>
 <p><strong>This page is shown once.</strong> The token is hashed in the database; the raw value above cannot be re-displayed. Lost it? Re-authorize from <code>/api/oauth/install?portal=${safePortal}</code> — your old Bearer keeps working until you revoke it.</p>
+<p style="padding:0.75em;background:#fff3cd;border:1px solid #ffe69c;border-radius:4px"><strong>⚠ Not active yet.</strong> The Bearer-recognising MCP middleware ships in the next release — until then the <code>/mcp</code> endpoint still authenticates with <code>NUXT_MCP_AUTH_TOKEN</code> and this token is stored but not yet accepted. Your operator will tell you when OAuth login is live.</p>
 </body></html>`
 }
 
@@ -144,18 +163,32 @@ export default defineEventHandler(async (event) => {
   }
 
   const store = useTokenStore()
+  // `consumeState` atomically deletes the row (replay protection) and
+  // returns it regardless of expiry, so we can tell "never existed"
+  // (STATE-MISSING — possibly a probe) from "expired" (STATE-EXPIRED —
+  // a benign slow user). Both are 400; the distinct errorCode + event
+  // lets the operator grep one from the other (§11).
   const stateRow = store.consumeState(state)
   if (!stateRow) {
     void logger.warning('oauth.callback.deny.state-missing', { statePrefix: state.slice(0, 8) })
     throw createError({
       statusCode: 400,
-      statusMessage: 'state not found or expired',
+      statusMessage: 'state not found',
       data: { errorCode: 'STATE-MISSING' },
     })
   }
 
+  if (stateRow.expiresAt < Math.floor(Date.now() / 1000)) {
+    void logger.info('oauth.callback.deny.state-expired', { statePrefix: state.slice(0, 8) })
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'state expired — restart from /api/oauth/install',
+      data: { errorCode: 'STATE-EXPIRED' },
+    })
+  }
+
   const cookieValue = getCookie(event, 'bx24_oauth_csrf') ?? ''
-  if (cookieValue !== stateRow.csrfCookie) {
+  if (!timingSafeEqual(cookieValue, stateRow.csrfCookie)) {
     void logger.warning('oauth.callback.deny.state-cookie-mismatch', { statePrefix: state.slice(0, 8) })
     throw createError({
       statusCode: 400,
@@ -164,7 +197,15 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (domain && stateRow.portal !== domain.toLowerCase()) {
+  if (!domain) {
+    // Bitrix24's marketplace callback usually carries `?domain=`, but not
+    // every flow version does. Without it the portal↔callback binding
+    // (one of the four §8 CSRF checks) can't be verified — the remaining
+    // three (state nonce, CSRF cookie, client_id) still hold. Log it so
+    // an operator can spot a flow that's missing the binding.
+    void logger.warning('oauth.callback.domain-absent', { statePrefix: state.slice(0, 8) })
+  }
+  else if (stateRow.portal !== domain.toLowerCase()) {
     void logger.warning('oauth.callback.deny.state-portal-mismatch', {
       expected: stateRow.portal,
       got: domain,
@@ -248,7 +289,10 @@ export default defineEventHandler(async (event) => {
     })
     setResponseHeader(event, 'cache-control', 'no-store, no-cache')
     setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
-    event.node.res.statusCode = 502
+    // A Bitrix24 5xx is an upstream outage → 503 (retryable); a 4xx /
+    // explicit `{error}` is the caller's fault (reused code, wrong
+    // client) → 502 (don't tell the client to retry blindly).
+    event.node.res.statusCode = exchangeRes.status >= 500 ? 503 : 502
     return callbackErrorPage('EXCHANGE-FAIL', `Bitrix24 refused the token exchange (${errCode}).`)
   }
 
@@ -260,6 +304,18 @@ export default defineEventHandler(async (event) => {
     setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
     event.node.res.statusCode = 502
     return callbackErrorPage('EXCHANGE-BAD-USER-ID', 'Bitrix24 returned an unexpected user_id.')
+  }
+
+  // Validate member_id before it becomes a SQLite primary key + log
+  // field. A compromised DNS / MITM on the token endpoint could return
+  // a crafted value; the regex caps length and charset to the real
+  // Bitrix24 member_id shape.
+  if (typeof ok.member_id !== 'string' || !MEMBER_ID_RE.test(ok.member_id)) {
+    void logger.error('oauth.callback.exchange.fail', { reason: 'bad-member-id', httpStatus: exchangeRes.status })
+    setResponseHeader(event, 'cache-control', 'no-store, no-cache')
+    setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+    event.node.res.statusCode = 502
+    return callbackErrorPage('EXCHANGE-BAD-MEMBER-ID', 'Bitrix24 returned an unexpected member_id.')
   }
 
   const accessExpiresAt = ok.expires

@@ -105,6 +105,17 @@ describe('redactString — OAuth JSON-literal tokens (fixture shape 4)', () => {
     expect(out).toContain('"scope":"user,task"')
   })
 
+  it('fully redacts a token value containing a backslash (no leaked tail)', () => {
+    // Round-3: the earlier `[^"\\]+` value class stopped at a stray `\`
+    // and leaked the tail (`<REDACTED>tail`). `[^"]+` captures the whole
+    // opaque value up to the closing quote.
+    const weird = 'abc\\def\\ghi'
+    const out = redactString(`{"access_token":"${weird}"}`)
+    expect(out).not.toContain('def')
+    expect(out).not.toContain('ghi')
+    expect(out).toBe('{"access_token":"<REDACTED>"}')
+  })
+
   it('redacts "client_secret":"…" in a JSON-stringified payload', () => {
     const body = JSON.stringify({ client_id: 'app.cid', client_secret: CLIENT_SECRET, grant_type: 'authorization_code' })
     const out = redactString(body)

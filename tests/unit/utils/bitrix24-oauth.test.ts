@@ -157,6 +157,40 @@ describe('useBitrix24OAuth — caching + mutex', () => {
     const { useBitrix24OAuth } = await loadFactory()
     expect(() => useBitrix24OAuth('portal-acme', 42)).toThrow(/CLIENT_ID/)
   })
+
+  it('evicts the oldest entry when the cache exceeds the LRU cap + logs oauth.factory.lru.evicted', async () => {
+    // Shrink the cap to 2 so eviction is observable without 101 tenants.
+    const mod = await loadFactory()
+    mod._setLruMaxForTests(2)
+    // Seed 3 distinct tenants.
+    for (const id of ['t1', 't2', 't3']) {
+      await store.upsertTokens({ ...SAMPLE_TENANT, memberId: id }, 'install')
+    }
+    loggerCalls.length = 0
+    const a = mod.useBitrix24OAuth('t1', 42) // cache: [t1]
+    mod.useBitrix24OAuth('t2', 42) //            cache: [t1, t2]
+    mod.useBitrix24OAuth('t3', 42) //            cache: [t2, t3]  — t1 evicted
+    // t1 was the oldest → evicted → a fresh instance on next call.
+    const aAgain = mod.useBitrix24OAuth('t1', 42)
+    expect(aAgain).not.toBe(a)
+    const evicted = loggerCalls.find(c => c.event === 'oauth.factory.lru.evicted')
+    expect(evicted).toBeDefined()
+    expect(evicted!.ctx).toMatchObject({ key: 't1:42', max: 2 })
+  })
+
+  it('promotes a cache hit to MRU so it survives the next eviction (true LRU order)', async () => {
+    const mod = await loadFactory()
+    mod._setLruMaxForTests(2)
+    for (const id of ['t1', 't2', 't3']) {
+      await store.upsertTokens({ ...SAMPLE_TENANT, memberId: id }, 'install')
+    }
+    const a = mod.useBitrix24OAuth('t1', 42) // [t1]
+    mod.useBitrix24OAuth('t2', 42) //           [t1, t2]
+    mod.useBitrix24OAuth('t1', 42) //           [t2, t1]  — t1 promoted to MRU
+    mod.useBitrix24OAuth('t3', 42) //           [t1, t3]  — t2 evicted (now oldest)
+    // t1 survived (promoted), so it's the SAME instance.
+    expect(mod.useBitrix24OAuth('t1', 42)).toBe(a)
+  })
 })
 
 describe('useBitrix24OAuth — refresh flow', () => {

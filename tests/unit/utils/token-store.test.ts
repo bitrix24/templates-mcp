@@ -330,17 +330,24 @@ describe('token-store — OAuth + Bearer + state CRUD (PR-2b, docs/OAUTH-DESIGN.
 
     it('consumeState returns undefined for a state that was never created', () => {
       // The `DELETE ... RETURNING` statement returns no row for a missing
-      // PK — caller sees `undefined`, exactly like an expired/already-
-      // consumed state. Defends against accidental reordering of the
+      // PK — caller sees `undefined` (distinct from an expired row, which
+      // is returned WITH its past `expiresAt` so the caller can tell the
+      // two apart). Defends against accidental reordering of the
       // null-check in `consumeState`.
       expect(store.consumeState('0'.repeat(64))).toBeUndefined()
     })
 
-    it('consumeState refuses an expired state AND deletes it (no replay)', () => {
-      store.createState({ ...sampleState, expiresAt: Math.floor(Date.now() / 1000) - 1 })
-      expect(store.consumeState(sampleState.state)).toBeUndefined()
-      // Second call also undefined — the expired row was wiped on first
-      // consume so a later create-with-same-state cannot inherit it.
+    it('consumeState RETURNS an expired row (with past expiresAt) AND deletes it — expiry is the caller policy', () => {
+      // The store no longer filters expired rows: it returns the row so
+      // the caller (/callback) can emit STATE-EXPIRED vs STATE-MISSING.
+      // The row is still deleted on read (replay protection).
+      const past = Math.floor(Date.now() / 1000) - 1
+      store.createState({ ...sampleState, expiresAt: past })
+      const row = store.consumeState(sampleState.state)
+      expect(row).toBeDefined()
+      expect(row!.expiresAt).toBe(past) // caller sees it's expired
+      // Second call undefined — the expired row was wiped on first consume
+      // so a later create-with-same-state cannot inherit it.
       expect(store.consumeState(sampleState.state)).toBeUndefined()
     })
 

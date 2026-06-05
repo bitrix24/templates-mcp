@@ -13,7 +13,8 @@ import { useTokenStore } from '~/server/utils/token-store'
  * healthcheck`) and the first place an operator looks when "Bearer
  * doesn't work" support tickets show up:
  *
- *   GET /api/oauth/_health   →  200 { enabled, tenants, bearers, pendingStates, lastRefreshOk, lastRefreshFail }
+ *   GET /api/oauth/_health   →  200 { enabled, tenants, bearers,
+ *     pendingStates, lastRefreshOk, lastRefreshFail, processStartedAt }
  *
  * The route is **fails-closed by default** — without one of the two
  * acceptable authentication patterns it returns 503, never 200:
@@ -37,20 +38,27 @@ import { useTokenStore } from '~/server/utils/token-store'
  * read fleet-level OAuth counts.
  *
  * Failure modes:
- *   - 503 NOT-CONFIGURED       — flag off, OR neither localhost nor a
- *                                non-empty admin token configured.
+ *   - 503 FLAG-OFF             — `NUXT_BITRIX24_OAUTH_ENABLED=false`.
+ *   - 503 NOT-CONFIGURED       — flag on, but neither localhost nor a
+ *                                non-empty admin token is configured.
  *   - 401 ADMIN-TOKEN-MISSING  — token configured, request from outside
  *                                localhost, no Bearer header.
  *   - 401 ADMIN-TOKEN-INVALID  — Bearer present but doesn't match.
  *
- * Operator note: `lastRefreshOk` and `lastRefreshFail` are stubbed as
- * `null` in this commit — populating them requires a counter / last-
- * write timestamp that PR-2c's B24OAuth factory will add (next commit).
- * Until then the JSON shape is stable so downstream monitoring scripts
- * can target it without churn.
+ * Operator note: `lastRefreshOk` / `lastRefreshFail` are `null` until a
+ * token refresh has run (populated by the B24OAuth factory's
+ * process-local tracker). `processStartedAt` (unix seconds, captured at
+ * module load) lets a dashboard distinguish "null because the process
+ * just restarted" from "null because no refresh ever ran".
  */
 
 const LOCALHOST_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+
+// Captured once at module load. Exposed in the health payload so a
+// monitoring dashboard can tell "lastRefreshOk is null because the
+// process just restarted" from "null because no refresh ever ran" —
+// both would otherwise be indistinguishable nulls.
+const PROCESS_STARTED_AT = Math.floor(Date.now() / 1000)
 
 function timingSafeEqual(a: string, b: string): boolean {
   // Same pattern as mcp-auth.ts: length leak is acceptable for
@@ -61,7 +69,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 
 export default defineEventHandler((event) => {
   const logger = useLogger()
-  const { bitrix24OauthEnabled, bitrix24OauthAdminToken, bitrix24OauthDbDir } = useRuntimeConfig()
+  const { bitrix24OauthEnabled, bitrix24OauthAdminToken } = useRuntimeConfig()
 
   // Flag-off: refuse even to surface counts. The DB might not exist
   // (webhook-only deploy) so any query would crash; refusing here keeps
@@ -77,11 +85,13 @@ export default defineEventHandler((event) => {
   }
 
   const adminToken = String(bitrix24OauthAdminToken ?? '').trim()
-  // `getRequestIP` returns the source IP after h3's standard
-  // forwarded-header parsing. For an nginx `proxy_pass` setup, this is
-  // the upstream nginx (which we trust). The localhost check is the
-  // "no admin token needed when reached via nginx allow/deny" path.
-  const clientIp = getRequestIP(event, { xForwardedFor: true }) ?? ''
+  // Use the raw SOCKET IP only — NEVER `{ xForwardedFor: true }`. A
+  // client-supplied `X-Forwarded-For: 127.0.0.1` header would otherwise
+  // spoof the localhost check and read fleet counts without a token.
+  // The "reached via nginx allow/deny" pattern relies on the network
+  // namespace (the request genuinely arrives from 127.0.0.1 inside the
+  // container), not on a forwarded header.
+  const clientIp = getRequestIP(event) ?? ''
   const fromLocalhost = LOCALHOST_IPS.has(clientIp)
 
   // Fails closed: if neither auth mode is configured, 503. The route is
@@ -131,13 +141,17 @@ export default defineEventHandler((event) => {
   const refresh = _readRefreshStatus()
   void logger.info('oauth.health.ok', { ...counts, ...refresh })
 
+  // No `dbPath` in the body — a filesystem path is infrastructure
+  // topology that aids an attacker who's already past the auth gate
+  // (or reaches the route through a misconfigured nginx). Counts +
+  // refresh timestamps are all a readiness probe / dashboard needs.
   return {
     enabled: true,
-    dbPath: `${String(bitrix24OauthDbDir ?? '/data')}/oauth.sqlite`,
     tenants: counts.tenants,
     bearers: counts.bearers,
     pendingStates: counts.pendingStates,
     lastRefreshOk: refresh.lastRefreshOk,
     lastRefreshFail: refresh.lastRefreshFail,
+    processStartedAt: PROCESS_STARTED_AT,
   }
 })

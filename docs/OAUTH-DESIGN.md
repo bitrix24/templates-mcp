@@ -296,15 +296,16 @@ The actual landed order **inverts** the original PR-2/PR-3/PR-4 plan after PR-2a
 | PR-1 | merged | design doc (this file) |
 | PR-2 | PR-2a (#209) | scaffolding (dispatcher, ALS, env, deps) |
 | —    | PR-2b (#210) | token store (SQLite, audit-first) |
-| PR-4 | **PR-2d** (this PR, #213) | tool-catalogue swap to `useBitrix24Tenant()` |
-| PR-3 | PR-2c (planned) | install/callback routes + middleware + B24OAuth factory + refresh + logger-redactor extension + `/api/oauth/_health` (§11) |
+| PR-4 | PR-2d (#213) | tool-catalogue swap to `useBitrix24Tenant()` |
+| PR-3 | **PR-2c** (#216) | install/callback routes + B24OAuth factory + refresh + logger-redactor extension + `pruneExpiredStates` scheduler + `/api/oauth/_health` (§11). **Bearer middleware → split out** (see below). |
+| —    | PR-2c-bearer (#217) | Bearer middleware: `Bearer → findByBearerHash → runWithTenant({memberId, userId, requestId})` on `/mcp`. The last wire that makes a minted Bearer actually authenticate. Split from #216 to keep its review focused. |
 | PR-5 | PR-5 | operator docs |
 
 1. **PR-1 (this PR):** design doc only. See frontmatter.
 2. **PR-2a (#209):** scaffolding behind `NUXT_BITRIX24_OAUTH_ENABLED=false`. New files compile, new env vars in `.env.example` (rebased on top of #49's `.env.example` changes — PR-2a ships only OAuth-specific lines, no overlap with stdio config), dispatcher in `bitrix24-tenant.ts`, `AsyncLocalStorage` plumbing in `request-context.ts`, `B24Client` type alias and `sdk-helpers.ts` reparameterisation. Tools still hit the webhook path because the flag is off. Zero behaviour change for existing deployments. `docker-compose.yml` and `docker-compose.example.yml` get a `volumes:` section for `oauth_data:/data`.
 3. **PR-2b (#210):** SQLite token store + Nitro schema-bootstrap plugin behind the same flag. Three tables (`oauth_tokens`, `mcp_tokens`, `oauth_state`), audit-first invariant on every mutation, `consumeState` atomic via `DELETE … RETURNING`. Builder stage adds `python3 make g++` for `better-sqlite3`. Zero runtime impact when the flag is off.
 4. **PR-2d (#213, this PR):** swap `useBitrix24()` → `useBitrix24Tenant()` across the whole tool catalogue (`server/mcp/tools/**` + `server/utils/{task-lifecycle,checklist}.ts`). Behaviourally a no-op while the flag is off — the dispatcher returns the same webhook singleton. Ships before PR-2c so PR-2c's review focuses purely on the install/callback diff. Originally numbered PR-4a/4b/4c (per-domain split); the split is collapsed because flag-off ⇒ zero blast radius. Adds `tests/_setup.ts` (Nuxt-autoimport stubs) and a new `§11 Observability/debugging` design section anchoring PR-2c's logging contract.
-5. **PR-2c (planned):** install + callback routes, `useBitrix24OAuth(memberId, userId)` factory with per-tenant mutex + LRU cache, Bearer middleware extension (Bearer → tenant lookup via `findByBearerHash`, ALS wrap), logger-redactor OAuth extension (the `OAUTH_URL_RE`), `/api/oauth/_health` endpoint per §11, `pruneExpiredStates` `setInterval` scheduler (issue #211), `requestId` field populated on the ALS `TenantContext`. Adds `msw` for test mocking. Still flag-gated. Manual end-to-end smoke against a test portal in the test plan.
+5. **PR-2c (#216):** install + callback routes, `useBitrix24OAuth(memberId, userId)` factory with a process-local LRU cache + refresh-on-expiry, logger-redactor OAuth extension (`OAUTH_URL_RE` + `OAUTH_JSON_RE`), `/api/oauth/_health` endpoint per §11, `pruneExpiredStates` `setInterval` scheduler (closes #211), `getRequestId()` strict accessor (closes #214). Fetch is mocked in tests via `vi.stubGlobal('fetch', …)` (no `msw` dependency added — one fetch site didn't justify it). Still flag-gated. **Deferred to the PR-2c-bearer follow-up:** the Bearer middleware (`/mcp` accepting OAuth Bearers) and the ~30 tool-test mock migration (#215). After #216 an operator can complete `/install → /callback` and receive a Bearer, but `/mcp` still authenticates with `NUXT_MCP_AUTH_TOKEN` until the middleware lands — the callback HTML page warns the user about this explicitly.
 6. **PR-4 split (deferred / cherry-pick on demand):** if PR-2d's review surfaces a real domain-specific concern, the swap can be cherry-picked into:
    - **PR-4a** — tasks domain (`bitrix24_create_task`, `*_list_tasks`, `*_update_task`, lifecycle, results, comments). Swap `useBitrix24()` → `useBitrix24Tenant()`.
    - **PR-4b** — checklists domain.
@@ -333,22 +334,45 @@ OAuth failure modes are operator-debuggable only if every reject/throw lands a *
   ```sh
   jq -r 'select(.requestId == "a1b2…") | "\(.ts) \(.level) \(.event) \(.subject // "")"' nuxt.log
   ```
-- Every OAuth event uses a stable `event: '<area>.<action>.<outcome>'` field — not free-text. The taxonomy:
+- Every OAuth event uses a stable `event: '<area>.<action>.<outcome>'` field — not free-text. The taxonomy below is kept in lockstep with the handlers; an entry without a "(deferred)" note is emitted by code that's already merged.
+
+  Install (`/api/oauth/install`):
   - `oauth.install.start` (INFO, on entry — logs `portal`, `clientId`)
-  - `oauth.install.deny.portal-format` (WARN — `portal` failed the allow-list regex)
-  - `oauth.install.deny.portal-host` (WARN — portal not on the allow-list TLD set)
-  - `oauth.install.ok` (INFO — state minted, redirect issued)
+  - `oauth.install.deny.flag-off` (WARN — `NUXT_BITRIX24_OAUTH_ENABLED=false`)
+  - `oauth.install.deny.not-configured` (ERROR — flag on but `CLIENT_ID`/`REDIRECT_URL` missing)
+  - `oauth.install.deny.portal-format` (WARN — `portal` failed the allow-list regex, which covers BOTH a malformed hostname and an unlisted TLD; there is no separate `portal-host` event — the single regex is the one gate)
+  - `oauth.install.ok` (INFO — state minted, redirect issued; logs only `statePrefix`, the first 8 hex chars)
+
+  Callback (`/api/oauth/callback`):
   - `oauth.callback.start` (INFO)
-  - `oauth.callback.deny.state-missing` (WARN)
+  - `oauth.callback.deny.flag-off` (WARN)
+  - `oauth.callback.deny.not-configured` (ERROR)
+  - `oauth.callback.deny.params-missing` (WARN — `code` or `state` absent)
+  - `oauth.callback.deny.state-missing` (WARN — nonce never existed; possibly a probe)
+  - `oauth.callback.deny.state-expired` (INFO — TTL expiry, expected when a user abandons mid-flow; distinct from `state-missing` so the operator can tell a slow user from a probe)
   - `oauth.callback.deny.state-cookie-mismatch` (WARN)
+  - `oauth.callback.domain-absent` (WARN — Bitrix24 omitted `?domain=`; the portal↔callback binding can't be checked, the other three §8 bindings still hold)
   - `oauth.callback.deny.state-portal-mismatch` (WARN)
   - `oauth.callback.deny.state-client-mismatch` (WARN)
-  - `oauth.callback.deny.state-expired` (INFO — TTL expiry is expected when users abandon mid-flow)
-  - `oauth.callback.exchange.fail` (ERROR — Bitrix24 `oauth/token` returned non-2xx; logs `httpStatus`, the response error code from Bitrix24, NEVER the raw URL or body)
-  - `oauth.callback.exchange.ok` (INFO — tokens persisted, Bearer minted)
-  - `oauth.refresh.start` / `oauth.refresh.ok` / `oauth.refresh.fail.invalid-grant` / `oauth.refresh.fail.transient` (the `transient` bucket is for network errors and 5xx; `invalid-grant` triggers `markRefreshFailed`)
-  - `mcp.auth.deny.bearer-unknown` / `mcp.auth.deny.bearer-revoked` / `mcp.auth.deny.bearer-orphan` (orphan = `mcp_tokens` row whose `oauth_tokens` parent was deleted — should be impossible under the CASCADE, but log defensively)
-- Each `*.deny.*` and `*.fail.*` log line carries an `errorCode` ≤ 32 chars (the suffix after the last dot, uppercased: `STATE-COOKIE-MISMATCH`, `BEARER-REVOKED`). The same code is surfaced to the user in the rendered HTML on `/callback` failure and in the WWW-Authenticate header for the MCP 401, so the operator can grep logs for the exact string the user pasted into Slack.
+  - `oauth.callback.exchange.fail` (ERROR — `reason` is one of `network` / `non-json` / `bitrix24-error` / `bad-user-id` / `bad-member-id`; logs `httpStatus` + the Bitrix24 error code, NEVER the raw URL or body)
+  - `oauth.callback.exchange.ok` (INFO — tokens persisted, Bearer minted; logs `bearerHashPrefix`, never the raw Bearer)
+
+  Refresh (`useBitrix24OAuth` factory):
+  - `oauth.refresh.start` / `oauth.refresh.ok` / `oauth.refresh.fail.invalid-grant` / `oauth.refresh.fail.transient` (the `transient` bucket is network errors / 5xx / non-JSON; `invalid-grant` triggers `markRefreshFailed`)
+  - `oauth.factory.lru.evicted` (DEBUG — LRU eviction signal so the operator can size the cache)
+
+  Health (`/api/oauth/_health`):
+  - `oauth.health.deny.flag-off` (WARN)
+  - `oauth.health.deny.not-configured` (WARN — neither localhost nor admin token)
+  - `oauth.health.deny.admin-token-missing` / `oauth.health.deny.admin-token-invalid` (WARN)
+  - `oauth.health.ok` (INFO — counts + refresh status)
+
+  Dispatch (`useBitrix24Tenant`, from PR-2d):
+  - `oauth.tenant.dispatch.no-tenant-scope` / `oauth.tenant.dispatch.bad-user-id` (ERROR — wiring bugs)
+
+  MCP auth middleware (**deferred** — lands with the Bearer middleware follow-up):
+  - `mcp.auth.deny.bearer-unknown` / `mcp.auth.deny.bearer-revoked` / `mcp.auth.deny.bearer-orphan` (orphan = `mcp_tokens` row whose `oauth_tokens` parent was deleted — impossible under the CASCADE, but log defensively)
+- Each `*.deny.*` and `*.fail.*` log line carries an `errorCode` ≤ 32 chars (the suffix after the last dot, uppercased: `STATE-COOKIE-MISMATCH`, `STATE-EXPIRED`, `BEARER-REVOKED`). The same code is surfaced to the user in the rendered HTML on `/callback` failure and (once the Bearer middleware lands) in the WWW-Authenticate header for the MCP 401, so the operator can grep logs for the exact string the user pasted into Slack.
 
 **Logger redactor (PR-2c extends).**
 

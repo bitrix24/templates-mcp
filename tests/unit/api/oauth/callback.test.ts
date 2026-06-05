@@ -205,10 +205,19 @@ describe('/api/oauth/callback — state verification', () => {
     expect(res.errorCode).toBe('STATE-MISSING')
   })
 
-  it('400 STATE-MISSING when state expired (TTL < now)', async () => {
+  it('400 STATE-EXPIRED when state TTL < now (distinct from STATE-MISSING — slow user, not a probe)', async () => {
     seedState({ state: '2'.repeat(64), expiresAt: Math.floor(Date.now() / 1000) - 1 })
     const res = await callCallback({ code: 'c', state: '2'.repeat(64), cookie: '1'.repeat(64) })
     expect(res.statusCode).toBe(400)
+    expect(res.errorCode).toBe('STATE-EXPIRED')
+    expect(loggerCalls.find(c => c.event === 'oauth.callback.deny.state-expired')).toBeDefined()
+  })
+
+  it('expired state is still consumed (deleted) — no replay on a second attempt', async () => {
+    seedState({ state: '2'.repeat(64), expiresAt: Math.floor(Date.now() / 1000) - 1 })
+    await callCallback({ code: 'c', state: '2'.repeat(64), cookie: '1'.repeat(64) })
+    // Second attempt: the row was deleted on the first consume → MISSING.
+    const res = await callCallback({ code: 'c', state: '2'.repeat(64), cookie: '1'.repeat(64) })
     expect(res.errorCode).toBe('STATE-MISSING')
   })
 
@@ -284,8 +293,27 @@ describe('/api/oauth/callback — token exchange failure modes', () => {
   it('502 EXCHANGE-FAIL on Bitrix24 5xx', async () => {
     fetchMock.mockResolvedValue(fakeJsonResponse(503, { error: 'service_unavailable' }))
     const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
+    // Bitrix24 5xx is an upstream outage → we surface 503 (retryable),
+    // not 502 (which means "upstream gave malformed response").
+    expect(res.statusCode).toBe(503)
+    expect(res.body).toContain('EXCHANGE-FAIL')
+  })
+
+  it('502 EXCHANGE-FAIL on Bitrix24 4xx error (caller fault — reused code, not retryable)', async () => {
+    fetchMock.mockResolvedValue(fakeJsonResponse(400, { error: 'invalid_request' }))
+    const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
     expect(res.statusCode).toBe(502)
     expect(res.body).toContain('EXCHANGE-FAIL')
+  })
+
+  it('502 EXCHANGE-BAD-MEMBER-ID when Bitrix24 returns a malformed member_id', async () => {
+    fetchMock.mockResolvedValue(fakeJsonResponse(200, {
+      access_token: 'a', refresh_token: 'r', expires_in: 3600,
+      member_id: '../../../etc/passwd', user_id: 1, scope: 'user', domain: 'acme.bitrix24.com',
+    }))
+    const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toContain('EXCHANGE-BAD-MEMBER-ID')
   })
 
   it('502 EXCHANGE-NON-JSON when response body is not JSON (HTML error page from upstream)', async () => {
@@ -384,6 +412,25 @@ describe('/api/oauth/callback — happy path', () => {
     for (const call of loggerCalls) {
       expect(JSON.stringify(call.ctx ?? {})).not.toContain(rawBearer)
     }
+  })
+
+  it('does NOT mint a Bearer when the audit write fails (audit-first at the handler boundary)', async () => {
+    // Round-3 review: the audit-first invariant is exhaustively tested at
+    // the token-store layer, but the END-TO-END contract through the
+    // handler wasn't pinned. If a future refactor reorders the handler's
+    // upsert/createMcpToken vs the audit call, this catches it: a failing
+    // audit must abort BEFORE a Bearer lands in mcp_tokens.
+    seedState()
+    fetchMock.mockResolvedValue(fakeJsonResponse(200, {
+      access_token: 'a', refresh_token: 'r', expires_in: 3600,
+      member_id: 'portal-acme', user_id: 42, scope: 'user', domain: 'acme.bitrix24.com',
+    }))
+    // First audit call (oauth.upsert inside upsertTokens) rejects.
+    recordAuditEvent.mockRejectedValueOnce(new Error('audit ENOSPC'))
+    const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
+    expect(res.statusCode).not.toBe(200)
+    // No oauth_tokens row, no mcp_tokens Bearer landed.
+    expect(store.getTokens('portal-acme', 42)).toBeUndefined()
   })
 
   it('POSTs to oauth.bitrix24.tech/oauth/token/ with the expected form body', async () => {
