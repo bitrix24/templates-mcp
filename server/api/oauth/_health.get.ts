@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer'
 import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
 import { createError, defineEventHandler, getHeader, getRequestIP } from 'h3'
+import { _readRefreshStatus } from '~/server/utils/bitrix24-oauth'
 import { useLogger } from '~/server/utils/logger'
 import { useTokenStore } from '~/server/utils/token-store'
 
@@ -122,9 +123,13 @@ export default defineEventHandler((event) => {
   }
 
   // Happy path: aggregate counts from the token store. Synchronous —
-  // `better-sqlite3` doesn't release the loop for SQL.
+  // `better-sqlite3` doesn't release the loop for SQL. `lastRefreshOk`
+  // / `lastRefreshFail` come from the B24OAuth factory's process-local
+  // tracker (PR-2c step 7) — both `null` on a fresh process is the
+  // correct signal that no refresh has been attempted yet.
   const counts = useTokenStore().getHealthCounts()
-  void logger.info('oauth.health.ok', counts)
+  const refresh = _readRefreshStatus()
+  void logger.info('oauth.health.ok', { ...counts, ...refresh })
 
   return {
     enabled: true,
@@ -132,10 +137,7 @@ export default defineEventHandler((event) => {
     tenants: counts.tenants,
     bearers: counts.bearers,
     pendingStates: counts.pendingStates,
-    // Stubbed null in PR-2c step 4. PR-2c step 6 (B24OAuth factory)
-    // populates these from a process-local "last refresh result"
-    // tracker the factory updates on every refresh attempt.
-    lastRefreshOk: null,
-    lastRefreshFail: null,
+    lastRefreshOk: refresh.lastRefreshOk,
+    lastRefreshFail: refresh.lastRefreshFail,
   }
 })

@@ -104,15 +104,16 @@ describe('b24_user_me', () => {
       await expect(tool.handler({})).rejects.toThrow('outside a tenant scope')
     })
 
-    it('with a tenant scope but PR-2c not yet wired — throws "not yet implemented"', async () => {
+    it('with a tenant scope but no oauth_tokens row — throws "row missing" from the factory', async () => {
       // The second loud-fail branch: tenant context resolves, but the
-      // OAuth factory isn't wired yet. Test it in isolation so a future
-      // PR-2c change to the message text can't accidentally pass the
-      // "outside a tenant scope" test (which was the round-2 risk).
+      // OAuth factory can't find a `oauth_tokens` row for the (memberId,
+      // userId) pair. Test it in isolation so a future change to the
+      // factory's error message can't accidentally pass the "outside a
+      // tenant scope" test (the round-3 OR-regex risk).
       const { runWithTenant } = await import('../../../../server/utils/request-context')
       await expect(
         runWithTenant({ memberId: 'portal', userId: '1' }, () => tool.handler({})),
-      ).rejects.toThrow('not yet implemented')
+      ).rejects.toThrow(/row missing|requires NUXT_BITRIX24_OAUTH_CLIENT_ID/)
     })
   })
 })

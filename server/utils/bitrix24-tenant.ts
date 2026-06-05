@@ -1,27 +1,28 @@
 import type { TypeB24 } from '@bitrix24/b24jssdk'
 import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24OAuth } from '~/server/utils/bitrix24-oauth'
 import { useLogger } from '~/server/utils/logger'
 import { getTenantContext } from '~/server/utils/request-context'
 
 /**
- * Tenant-aware Bitrix24 client dispatcher — the single seam every tool will
- * call once OAuth lands (PR-4 swaps `useBitrix24()` → `useBitrix24Tenant()`
- * across the tool catalogue).
+ * Tenant-aware Bitrix24 client dispatcher — the single seam every tool
+ * calls. PR-2d swapped every tool from `useBitrix24()` to this dispatcher;
+ * PR-2c (this commit) wires the OAuth-on branch to the real `B24OAuth`
+ * factory.
  *
  * Behaviour depends on `NUXT_BITRIX24_OAUTH_ENABLED`:
  *
  *   - **OFF (default)** — returns the webhook singleton from
- *     {@link useBitrix24}. Byte-identical to today's behaviour. This is the
- *     escape hatch that keeps webhook-only forks working forever (§10 of
- *     `docs/OAUTH-DESIGN.md`: webhook stays as the dev / single-tenant /
- *     stdio fallback indefinitely).
+ *     {@link useBitrix24}. Byte-identical to today's behaviour. This is
+ *     the escape hatch that keeps webhook-only forks working forever
+ *     (§10: webhook stays as the dev / single-tenant / stdio fallback
+ *     indefinitely).
  *
- *   - **ON** — reads the tenant from {@link getTenantContext} and resolves
- *     a per-tenant `B24OAuth` instance from the token store. **Not yet
- *     wired in PR-2a** — the OAuth-ON path throws a clear "wire-up pending"
- *     error so accidental enablement before PR-2c lands fails loud rather
- *     than silently routing through webhook. PR-2c replaces the throw with
- *     the real `useBitrix24OAuth(memberId, userId)` lookup.
+ *   - **ON** — reads the tenant from {@link getTenantContext} and
+ *     resolves a per-tenant `B24OAuth` instance from the in-memory LRU
+ *     (`useBitrix24OAuth`). The instance handles refresh-on-expiry via
+ *     its custom refresh callback; tools see a uniform `TypeB24` shape
+ *     regardless of which underlying class powers it.
  *
  * Return type is the SDK-exported {@link TypeB24} structural interface that
  * both `B24Hook` and `B24OAuth` implement (verified upstream in
@@ -47,39 +48,34 @@ export function useBitrix24Tenant(): TypeB24 {
 
   const tenant = getTenantContext()
   if (!tenant) {
-    // OAuth is on but the request never ran through `runWithTenant` — this
-    // is a wiring bug, not a user error. Refuse rather than silently
-    // dropping to webhook (would be a cross-tenant leak class once PR-2c
-    // adds the real OAuth path).
+    // OAuth is on but the request never ran through `runWithTenant` —
+    // this is a wiring bug (Bearer middleware didn't fire, or a tool was
+    // invoked outside the MCP request lifecycle). Refuse rather than
+    // silently dropping to webhook (cross-tenant leak class). The agent
+    // sees the generic error message; the operator gets the diagnosis
+    // through the structured logger.
+    useLogger().error('oauth.tenant.dispatch.no-tenant-scope', {
+      reason: 'useBitrix24Tenant called outside a runWithTenant scope while OAuth is enabled',
+    })
     throw new Error(
       'useBitrix24Tenant() called outside a tenant scope while '
       + 'NUXT_BITRIX24_OAUTH_ENABLED=true. Either turn the flag off (webhook '
-      + 'fallback) or wire `runWithTenant({memberId, userId}, …)` in the MCP '
-      + 'middleware (PR-2c).',
+      + 'fallback) or wire `runWithTenant({memberId, userId, requestId}, …)` '
+      + 'in the MCP middleware.',
     )
   }
 
-  // PR-2c replaces this with: return useBitrix24OAuth(tenant.memberId, tenant.userId)
-  //
-  // Information-disclosure caveat: the `@nuxtjs/mcp-toolkit` wraps an
-  // unhandled tool-handler throw into an MCP `error` response whose
-  // `message` is forwarded to the agent (Claude / Cursor / Windsurf).
-  // Putting `memberId` / `userId` directly in the thrown Error would leak
-  // those identifiers to whoever is on the other side of the MCP stream.
-  // The structured logger writes to STDOUT — visible to `docker logs`,
-  // log-shippers, and any aggregator downstream (NOT just the operator
-  // SSH-ing into the box). That's the right channel for a forensic
-  // breadcrumb here, since access to STDOUT is already gated by the same
-  // infra as the audit log; the wrong channel is the MCP wire because
-  // anyone on the other end of a Bearer can read it. Same posture the
-  // `mcp.auth.deny.*` events in §11 use for 401s.
-  useLogger().error('oauth.tenant.dispatch.unwired', {
-    memberId: tenant.memberId,
-    userId: tenant.userId,
-  })
-  throw new Error(
-    'useBitrix24Tenant() OAuth path is not yet implemented (lands in PR-2c). '
-    + 'Keep NUXT_BITRIX24_OAUTH_ENABLED=false until PR-2c merges. '
-    + 'See server logs for the tenant identifiers.',
-  )
+  // PR-2c wires the real per-tenant client. `tenant.userId` comes from
+  // the ALS as a string (the `TenantContext` interface stores it as a
+  // stringified Bitrix24 user id — matches the audit-log shape); the
+  // factory expects a number, so coerce here. NaN can't happen in
+  // practice (the middleware constructs `TenantContext` from a verified
+  // `findByBearerHash` lookup that originated from a `oauth_tokens` row
+  // with a numeric `user_id` column), but we throw loud if it does.
+  const userIdNum = Number.parseInt(tenant.userId, 10)
+  if (!Number.isFinite(userIdNum)) {
+    useLogger().error('oauth.tenant.dispatch.bad-user-id', { userId: tenant.userId })
+    throw new Error(`useBitrix24Tenant: tenant.userId is not a valid integer (got ${JSON.stringify(tenant.userId)})`)
+  }
+  return useBitrix24OAuth(tenant.memberId, userIdNum)
 }

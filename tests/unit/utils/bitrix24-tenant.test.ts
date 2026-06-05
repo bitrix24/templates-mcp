@@ -30,6 +30,14 @@ const webhookSingleton = Symbol('webhook-client') as unknown as B24Hook
 const useBitrix24 = vi.fn(() => webhookSingleton)
 vi.mock('~/server/utils/bitrix24', () => ({ useBitrix24 }))
 
+// PR-2c step 8: the OAuth-on branch now calls `useBitrix24OAuth`. The
+// test mocks the factory so the dispatcher's tenant→client resolution is
+// driven by a controllable return value (no need to seed a real SQLite
+// store + B24OAuth instance from inside the dispatcher's unit test).
+const oauthClient = Symbol('oauth-client') as unknown as B24Hook
+const useBitrix24OAuth = vi.fn((_memberId: string, _userId: number) => oauthClient)
+vi.mock('~/server/utils/bitrix24-oauth', () => ({ useBitrix24OAuth }))
+
 // Logger mock — the dispatcher uses the structured logger to surface the
 // tenant identifiers operator-side without leaking them into the thrown
 // Error message (which the MCP toolkit forwards to the agent). Tests
@@ -137,72 +145,60 @@ describe('useBitrix24Tenant — flag-gated dispatcher (PR-2a scaffold)', () => {
       expect(() => useBitrix24Tenant()).toThrow(/outside a tenant scope/)
       expect(() => useBitrix24Tenant()).toThrow(/NUXT_BITRIX24_OAUTH_ENABLED/)
       expect(useBitrix24).not.toHaveBeenCalled()
+      expect(useBitrix24OAuth).not.toHaveBeenCalled()
     })
 
-    it('throws "OAuth path not implemented" when a tenant IS bound — and logs the tenant id operator-side, not in the error message', async () => {
-      // Information-disclosure invariant: the `@nuxtjs/mcp-toolkit` wraps
-      // an unhandled tool-handler throw into an MCP `error` response whose
-      // `.message` is forwarded to the agent (Claude / Cursor / Windsurf).
-      // The thrown message MUST stay generic; the tenant identifiers
-      // belong on the structured logger (operator-visible only).
+    it('calls useBitrix24OAuth(memberId, userId) with a tenant bound, returns the factory result', async () => {
+      // PR-2c step 8: the dispatcher now wires the factory. The test
+      // asserts: (a) the factory is invoked with the resolved tenant,
+      // and (b) the dispatcher returns whatever the factory returned.
+      // Tenant id resolution: TenantContext stores `userId` as a string,
+      // the factory expects a number — the dispatcher does the coerce.
+      useBitrix24OAuth.mockClear()
       const { tenant: { useBitrix24Tenant }, ctx: { runWithTenant } } = await loadFresh()
-      const tenant = { memberId: 'portal-value', userId: '1' }
+      const tenant = { memberId: 'portal-value', userId: '42' }
+      const observed = await runWithTenant(tenant, async () => useBitrix24Tenant())
+      expect(observed).toBe(oauthClient)
+      expect(useBitrix24OAuth).toHaveBeenCalledWith('portal-value', 42)
+      expect(useBitrix24).not.toHaveBeenCalled() // webhook path NEVER reached
+    })
+
+    it('refuses a non-numeric tenant.userId (defensive — the middleware should never produce one)', async () => {
+      const { tenant: { useBitrix24Tenant }, ctx: { runWithTenant } } = await loadFresh()
+      const tenant = { memberId: 'portal', userId: 'not-a-number' }
       await expect(
         runWithTenant(tenant, async () => useBitrix24Tenant()),
-      ).rejects.toThrow(/not yet implemented \(lands in PR-2c\)/)
-      // Error message stays generic — no tenant leakage to the agent.
-      try {
-        await runWithTenant(tenant, async () => useBitrix24Tenant())
-      }
-      catch (err) {
-        expect((err as Error).message).not.toContain(tenant.memberId)
-        expect((err as Error).message).not.toContain(tenant.userId)
-      }
-      // Logger DID see the tenant for the operator's forensic timeline.
+      ).rejects.toThrow(/not a valid integer/)
+      // Operator log carries the bad userId for diagnosis.
       expect(loggerError).toHaveBeenCalledWith(
-        'oauth.tenant.dispatch.unwired',
-        expect.objectContaining({ memberId: tenant.memberId, userId: tenant.userId }),
+        'oauth.tenant.dispatch.bad-user-id',
+        expect.objectContaining({ userId: 'not-a-number' }),
       )
     })
 
-    it('N=10 concurrent OAuth-ON requests each log their OWN tenant — no cross-tenant leak through the logger payload', async () => {
-      // Concurrent stress on the dispatcher: each `runWithTenant` scope must
-      // reach the PR-2c stub with its OWN tenant intact, not someone else's.
-      // N=10 is the local floor — parity with the PR-67 audit-log (N=100)
-      // and the PR-64 ALS spike (N=20) where the SDK transport was the
-      // unknown. Here the only thing under test is the dispatcher's read
-      // of `getTenantContext()`, so a smaller-but-still-parallel N=10 is
-      // sufficient signal without bloating run time.
-      //
-      // After the round-2 fix that moved tenant ids off the thrown Error
-      // and onto `useLogger().error(...)`, the cross-tenant invariant is
-      // re-pinned on the logger payload instead of the error message:
-      // each `loggerError.mock.calls[i][1]` must contain ONLY tenant `i`'s
-      // identifiers.
+    it('N=10 concurrent OAuth-ON requests each resolve to the SAME factory call (cross-tenant leak guard)', async () => {
+      // Cross-tenant invariant: each `runWithTenant` scope reaches the
+      // factory with its OWN tenant. The factory mock asserts on the
+      // arguments — if ALS leaked between scopes, the arg pair wouldn't
+      // match the expected (memberId, userId) for that index.
+      useBitrix24OAuth.mockClear()
       const { tenant: { useBitrix24Tenant }, ctx: { runWithTenant } } = await loadFresh()
       const tenants = Array.from({ length: 10 }, (_, i) => ({
         memberId: `portal-${i}`,
         userId: String(i),
       }))
-      const results = await Promise.allSettled(
+      await Promise.all(
         tenants.map(t => runWithTenant(t, async () => useBitrix24Tenant())),
       )
-      results.forEach((r, i) => {
-        expect(r.status, `tenant index ${i}`).toBe('rejected')
-      })
-      expect(loggerError).toHaveBeenCalledTimes(10)
-      // Cross-tenant leak guard: every payload carries exactly one tenant
-      // AND every input tenant appears exactly once. A `.find()`-only check
-      // would silently pass on a "duplicate tenant + missing tenant" bug
-      // (two calls for `portal-3`, none for `portal-5`), so the Set-size
-      // bijection check is mandatory.
-      const seen = loggerError.mock.calls.map(c => c[1] as { memberId: string; userId: string })
-      const seenMemberIds = seen.map(p => p.memberId)
-      expect(new Set(seenMemberIds).size, 'bijection: each tenant logged exactly once').toBe(10)
+      expect(useBitrix24OAuth).toHaveBeenCalledTimes(10)
+      // Bijection guard: each input tenant appears as exactly one
+      // factory call argument pair.
+      const seenPairs = new Set(
+        useBitrix24OAuth.mock.calls.map(c => `${c[0]}:${c[1]}`),
+      )
+      expect(seenPairs.size).toBe(10)
       tenants.forEach((t) => {
-        const match = seen.find(p => p.memberId === t.memberId)
-        expect(match, `payload for ${t.memberId} must exist`).toBeDefined()
-        expect(match!.userId, `payload for ${t.memberId} carries its own userId`).toBe(t.userId)
+        expect(seenPairs.has(`${t.memberId}:${Number(t.userId)}`)).toBe(true)
       })
     })
 
