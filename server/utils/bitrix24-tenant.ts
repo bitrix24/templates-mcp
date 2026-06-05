@@ -66,9 +66,13 @@ export function useBitrix24Tenant(): TypeB24 {
   // `message` is forwarded to the agent (Claude / Cursor / Windsurf).
   // Putting `memberId` / `userId` directly in the thrown Error would leak
   // those identifiers to whoever is on the other side of the MCP stream.
-  // Log them through the structured logger (operator-visible) and throw a
-  // generic message (agent-visible) — same posture the `mcp.auth.deny.*`
-  // events in §11 will use for 401s.
+  // The structured logger writes to STDOUT — visible to `docker logs`,
+  // log-shippers, and any aggregator downstream (NOT just the operator
+  // SSH-ing into the box). That's the right channel for a forensic
+  // breadcrumb here, since access to STDOUT is already gated by the same
+  // infra as the audit log; the wrong channel is the MCP wire because
+  // anyone on the other end of a Bearer can read it. Same posture the
+  // `mcp.auth.deny.*` events in §11 use for 401s.
   useLogger().error('oauth.tenant.dispatch.unwired', {
     memberId: tenant.memberId,
     userId: tenant.userId,

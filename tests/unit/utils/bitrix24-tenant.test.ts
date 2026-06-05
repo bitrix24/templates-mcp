@@ -191,9 +191,14 @@ describe('useBitrix24Tenant — flag-gated dispatcher (PR-2a scaffold)', () => {
         expect(r.status, `tenant index ${i}`).toBe('rejected')
       })
       expect(loggerError).toHaveBeenCalledTimes(10)
-      // Cross-tenant leak guard: every payload carries exactly one tenant.
-      // The set of all member ids across all calls must equal the input set.
+      // Cross-tenant leak guard: every payload carries exactly one tenant
+      // AND every input tenant appears exactly once. A `.find()`-only check
+      // would silently pass on a "duplicate tenant + missing tenant" bug
+      // (two calls for `portal-3`, none for `portal-5`), so the Set-size
+      // bijection check is mandatory.
       const seen = loggerError.mock.calls.map(c => c[1] as { memberId: string; userId: string })
+      const seenMemberIds = seen.map(p => p.memberId)
+      expect(new Set(seenMemberIds).size, 'bijection: each tenant logged exactly once').toBe(10)
       tenants.forEach((t) => {
         const match = seen.find(p => p.memberId === t.memberId)
         expect(match, `payload for ${t.memberId} must exist`).toBeDefined()

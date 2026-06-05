@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeOk, fakeOkEmpty, makeFakeBitrix24 } from '../../_helpers/bitrix24-mock'
 
 vi.mock('@nuxtjs/mcp-toolkit/server', () => ({
@@ -9,6 +9,16 @@ const fake = makeFakeBitrix24()
 
 vi.mock('~/server/utils/bitrix24', () => ({
   useBitrix24: () => fake.b24,
+}))
+
+// Silence the dispatcher's `useLogger().error(...)` call on the flag-on
+// path (round-3 review: PR-2d test isolation). Without this mock, the
+// flag-on test materialises the real SDK Logger and writes to stderr
+// during the test run — noisy in CI and couples this tool test to the
+// concrete logger implementation. The dispatcher's own behaviour is
+// already covered by `tests/unit/utils/bitrix24-tenant.test.ts`.
+vi.mock('~/server/utils/logger', () => ({
+  useLogger: () => ({ error: vi.fn(), info: vi.fn(), debug: vi.fn(), warning: vi.fn() }),
 }))
 
 const tool = (await import('../../../../server/mcp/tools/users/current-user')).default as {
@@ -67,23 +77,42 @@ describe('b24_user_me', () => {
     })
   })
 
-  it('throws loud (no silent webhook fallback) when NUXT_BITRIX24_OAUTH_ENABLED=true', async () => {
-    // Cross-tenant leak guard at the catalogue level (PR-2d round-2 review):
-    // PR-2c hasn't landed yet, but operators CAN flip the flag today. The
-    // tool MUST surface the dispatcher's "OAuth path not yet implemented"
-    // throw instead of silently routing through the webhook singleton —
-    // otherwise a flag-on production deploy would serve EVERY user's MCP
-    // call through one webhook identity, the exact failure class the OAuth
-    // rollout exists to prevent. This test pins the loud-fail contract
-    // through the tool's call site, not just at the dispatcher unit.
-    vi.stubGlobal('useRuntimeConfig', () => ({ bitrix24OauthEnabled: true }))
-    try {
-      await expect(tool.handler({})).rejects.toThrow(
-        /not yet implemented|outside a tenant scope/,
-      )
-    }
-    finally {
-      vi.stubGlobal('useRuntimeConfig', () => ({ bitrix24OauthEnabled: false }))
-    }
+  // Cross-tenant leak guard at the catalogue level — round-2 review found
+  // there was no tool-level assertion proving the dispatcher's loud-fail
+  // contract; round-3 split the single regex-OR test into two so a future
+  // regression that removes ONE of the two dispatcher guards (the "no
+  // tenant scope" check or the "OAuth wiring pending" throw) is caught,
+  // instead of being masked by the other branch matching the same regex.
+  describe('NUXT_BITRIX24_OAUTH_ENABLED=true — loud fail, no silent webhook fallback', () => {
+    // Save the original setup-file stub so `afterEach` restores it
+    // verbatim. Re-stubbing with a new literal works today but would
+    // drift silently if `tests/_setup.ts` adds another field.
+    let originalRuntimeConfig: unknown
+    beforeEach(() => {
+      originalRuntimeConfig = (globalThis as { useRuntimeConfig?: unknown }).useRuntimeConfig
+      vi.stubGlobal('useRuntimeConfig', () => ({ bitrix24OauthEnabled: true }))
+    })
+    afterEach(() => {
+      vi.stubGlobal('useRuntimeConfig', originalRuntimeConfig)
+    })
+
+    it('without a tenant scope — throws "outside a tenant scope" (the wire-up bug branch)', async () => {
+      // The MCP middleware (PR-2c) wraps requests in `runWithTenant`; if
+      // it ever stops doing so while the flag is on, the dispatcher
+      // refuses rather than silently routing to webhook (cross-tenant
+      // leak class). This test pins that specific branch.
+      await expect(tool.handler({})).rejects.toThrow('outside a tenant scope')
+    })
+
+    it('with a tenant scope but PR-2c not yet wired — throws "not yet implemented"', async () => {
+      // The second loud-fail branch: tenant context resolves, but the
+      // OAuth factory isn't wired yet. Test it in isolation so a future
+      // PR-2c change to the message text can't accidentally pass the
+      // "outside a tenant scope" test (which was the round-2 risk).
+      const { runWithTenant } = await import('../../../../server/utils/request-context')
+      await expect(
+        runWithTenant({ memberId: 'portal', userId: '1' }, () => tool.handler({})),
+      ).rejects.toThrow('not yet implemented')
+    })
   })
 })

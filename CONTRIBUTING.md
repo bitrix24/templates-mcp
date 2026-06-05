@@ -106,8 +106,8 @@ Short version:
 3. Use `defineMcpTool({ name, description, inputSchema, handler })`.
 4. Name pattern: `b24_<domain>(_<entity>)*_<action>` for Bitrix24 tools (action LAST, all tokens singular including before `_list` — see `skills/manage-bx24-template-mcp/adding-tools.md`); `bx24mcp_<verb>` for meta-tools (use ONLY for tools that don't call Bitrix24).
 5. Every Zod field gets `.describe()` — the LLM reads it at runtime.
-6. Call Bitrix24 via `useBitrix24()`. Never bypass.
-7. Add a unit test in `tests/unit/tools/<group>/<name>.test.ts` mocking `useBitrix24`.
+6. Call Bitrix24 via `useBitrix24Tenant()` (the OAuth-aware dispatcher in `~/server/utils/bitrix24-tenant`; falls back to the webhook singleton when OAuth is disabled — see `docs/OAUTH-DESIGN.md` §6). Never call `useBitrix24()` directly from a tool handler. Never bypass.
+7. Add a unit test in `tests/unit/tools/<group>/<name>.test.ts` mocking `useBitrix24Tenant`.
 8. Optionally add an eval case in `tests/evals/tool-selection.eval.ts`.
 9. Commit: `feat(tools): add b24_<name>`.
 
