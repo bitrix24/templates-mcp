@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getTenantContext, runWithTenant, tenantContext } from '../../../server/utils/request-context'
+import { getRequestId, getTenantContext, runWithTenant, tenantContext } from '../../../server/utils/request-context'
 
 describe('request-context — AsyncLocalStorage tenant binding (PR-2a scaffold)', () => {
   it('getTenantContext returns undefined outside any runWithTenant scope', () => {
@@ -107,5 +107,46 @@ describe('request-context — AsyncLocalStorage tenant binding (PR-2a scaffold)'
     expect(first).toBe(second)
     expect(second).toBe(third)
     expect(first).toBe(ctx) // same ref as the one passed to runWithTenant
+  })
+})
+
+describe('getRequestId — strict accessor (PR-2c precondition, issue #214)', () => {
+  it('returns the requestId when present in the ALS scope', async () => {
+    const ctx = { memberId: 'portal', userId: '1', requestId: 'a1b2c3d4e5f6'.repeat(2).slice(0, 32) }
+    const observed = await runWithTenant(ctx, async () => getRequestId())
+    expect(observed).toBe(ctx.requestId)
+  })
+
+  it('throws when called outside any runWithTenant scope', () => {
+    // The "middleware not wired" failure mode — caught loudly at the first
+    // log line instead of returning `undefined` and producing a `jq` query
+    // that mysteriously returns nothing.
+    expect(() => getRequestId()).toThrow(/getRequestId\(\) called outside a runWithTenant scope/)
+  })
+
+  it('throws when runWithTenant was called WITHOUT requestId (partial context)', async () => {
+    // A future test fixture that forgets the field, or a middleware
+    // regression that omits it on one code path. The helper refuses to
+    // hand back `undefined` cast to string.
+    const partial = { memberId: 'portal', userId: '1' }
+    await expect(
+      runWithTenant(partial, async () => getRequestId()),
+    ).rejects.toThrow(/runWithTenant was called without a requestId/)
+  })
+
+  it('error message points at the middleware + design-doc reference (operator-debuggable)', async () => {
+    // When this throws in production, the operator needs to know WHERE
+    // the wire-up is missing without digging through the stack trace.
+    // Pin the message hint so a future "shorten this error message" PR
+    // can't silently weaken the diagnostic.
+    try {
+      getRequestId()
+    }
+    catch (err) {
+      const msg = (err as Error).message
+      expect(msg).toContain('MCP middleware (PR-2c)')
+      expect(msg).toContain('§11')
+      expect(msg).toContain('#214')
+    }
   })
 })

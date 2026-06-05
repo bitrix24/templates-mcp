@@ -104,3 +104,31 @@ export function runWithTenant<T>(ctx: TenantContext, fn: () => T | Promise<T>): 
 export function getTenantContext(): TenantContext | undefined {
   return tenantContext.getStore()
 }
+
+/**
+ * Returns the `requestId` bound to the current async scope. **Throws** when
+ * called outside a `runWithTenant` wrap OR when the wrap forgot to set
+ * `requestId` — that's a wire-up bug, not a runtime condition callers
+ * should branch on. Issue #214 (PR-2c precondition): the MCP middleware
+ * populates `requestId` unconditionally for every request, so a throw
+ * here is "middleware not wired" or "test fixture passed a partial
+ * context", never a happy-path 401.
+ *
+ * Callers (the upcoming `oauth.*` and `mcp.auth.*` log emitters) MUST
+ * use this helper instead of reading `getTenantContext()?.requestId`
+ * directly — a missing field then becomes a loud failure at the first
+ * log line, not a silent gap downstream where a `jq` query returns
+ * nothing for events that should have shared a correlation id.
+ */
+export function getRequestId(): string {
+  const ctx = tenantContext.getStore()
+  if (!ctx?.requestId) {
+    throw new Error(
+      'getRequestId() called outside a runWithTenant scope, or runWithTenant was '
+      + 'called without a requestId. The MCP middleware (PR-2c) must wrap every '
+      + 'request with `runWithTenant({memberId, userId, requestId}, …)`. '
+      + 'See docs/OAUTH-DESIGN.md §11 and issue #214.',
+    )
+  }
+  return ctx.requestId
+}
