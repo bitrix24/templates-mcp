@@ -428,9 +428,33 @@ describe('/api/oauth/callback — happy path', () => {
     // First audit call (oauth.upsert inside upsertTokens) rejects.
     recordAuditEvent.mockRejectedValueOnce(new Error('audit ENOSPC'))
     const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
-    expect(res.statusCode).not.toBe(200)
-    // No oauth_tokens row, no mcp_tokens Bearer landed.
+    // A rejected audit surfaces as an unhandled error → 500.
+    expect(res.statusCode).toBe(500)
+    // No oauth_tokens row …
     expect(store.getTokens('portal-acme', 42)).toBeUndefined()
+    // … AND no mcp_tokens Bearer (the whole point of "audit-first": the
+    // Bearer must not exist). Count directly — the handler never returned
+    // a raw Bearer we could hash.
+    const bearerCount = (db.prepare('SELECT COUNT(*) AS n FROM mcp_tokens').get() as { n: number }).n
+    expect(bearerCount).toBe(0)
+  })
+
+  it('succeeds WITHOUT ?domain= and logs oauth.callback.domain-absent (other 3 §8 bindings hold)', async () => {
+    // The domain binding is one of four §8 CSRF checks; Bitrix24 doesn't
+    // always send `?domain=`. When absent, the flow MUST still complete
+    // (state nonce + CSRF cookie + client_id still verified) but log a
+    // WARN so an operator can spot the weakened binding.
+    seedState({ portal: 'acme.bitrix24.com' })
+    fetchMock.mockResolvedValue(fakeJsonResponse(200, {
+      access_token: 'a', refresh_token: 'r', expires_in: 3600,
+      member_id: 'portal-acme', user_id: 7, scope: 'user', domain: 'acme.bitrix24.com',
+    }))
+    // NO domain passed.
+    const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
+    expect(res.statusCode).toBe(200)
+    expect(loggerCalls.find(c => c.event === 'oauth.callback.domain-absent')).toBeDefined()
+    // The tenant still landed (flow completed).
+    expect(store.getTokens('portal-acme', 7)).toBeDefined()
   })
 
   it('POSTs to oauth.bitrix24.tech/oauth/token/ with the expected form body', async () => {

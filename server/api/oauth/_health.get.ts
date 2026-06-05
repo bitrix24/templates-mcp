@@ -52,7 +52,22 @@ import { useTokenStore } from '~/server/utils/token-store'
  * just restarted" from "null because no refresh ever ran".
  */
 
-const LOCALHOST_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+/**
+ * True for any loopback source IP. Accepts the whole `127.0.0.0/8`
+ * range (RFC 5735 — not just `127.0.0.1`), plus IPv6 `::1` and the
+ * IPv4-mapped-IPv6 forms. An orchestrator health-probe binding to a
+ * non-`.1` loopback address (`127.0.0.2`, etc.) is legitimate traffic
+ * and must pass the localhost gate. The source IP is the raw socket
+ * address (see the handler), which a remote attacker cannot forge.
+ */
+function isLoopback(ip: string): boolean {
+  if (ip === '::1') return true
+  // Strip the IPv4-mapped-IPv6 prefix if present (`::ffff:127.0.0.1`).
+  const v4 = ip.startsWith('::ffff:') ? ip.slice('::ffff:'.length) : ip
+  const octets = v4.split('.')
+  return octets.length === 4 && octets[0] === '127'
+    && octets.every(o => /^\d{1,3}$/.test(o) && Number(o) <= 255)
+}
 
 // Captured once at module load. Exposed in the health payload so a
 // monitoring dashboard can tell "lastRefreshOk is null because the
@@ -92,7 +107,7 @@ export default defineEventHandler((event) => {
   // namespace (the request genuinely arrives from 127.0.0.1 inside the
   // container), not on a forwarded header.
   const clientIp = getRequestIP(event) ?? ''
-  const fromLocalhost = LOCALHOST_IPS.has(clientIp)
+  const fromLocalhost = isLoopback(clientIp)
 
   // Fails closed: if neither auth mode is configured, 503. The route is
   // unreachable until the operator picks one.

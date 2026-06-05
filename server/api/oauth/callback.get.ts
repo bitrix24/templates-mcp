@@ -85,16 +85,25 @@ interface TokenExchangeErr {
   error_description?: string
 }
 
+function htmlEscape(s: string): string {
+  return String(s).replace(/[&<>"]/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+  }[c]!))
+}
+
 function callbackErrorPage(errorCode: string, detail: string): string {
   // Tiny HTML — no JS, no external assets, no styling that could pull
   // in resources from another origin. The error code is also sent in
-  // the JSON `data.errorCode` field for non-browser callers.
-  const safeDetail = String(detail).replace(/[&<>"]/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
-  }[c]!))
+  // the JSON `data.errorCode` field for non-browser callers. BOTH
+  // interpolated values are escaped: `errorCode` is always a code
+  // literal today, but escaping it too is defence-in-depth against a
+  // future refactor that passes a Bitrix24-controlled `exchange.error`
+  // string into this slot.
+  const safeCode = htmlEscape(errorCode)
+  const safeDetail = htmlEscape(detail)
   return `<!doctype html><html><head><meta charset="utf-8"><title>OAuth callback failed</title></head><body>
 <h1>OAuth callback failed</h1>
-<p>Error code: <code>${errorCode}</code></p>
+<p>Error code: <code>${safeCode}</code></p>
 <p>${safeDetail}</p>
 <p>Try again from <a href="/api/oauth/install?portal=&lt;your portal&gt;">/api/oauth/install</a> or contact your operator with the error code above.</p>
 </body></html>`
@@ -103,9 +112,7 @@ function callbackErrorPage(errorCode: string, detail: string): string {
 function bearerSuccessPage(bearer: string, portal: string): string {
   // Bearer is shown EXACTLY ONCE. No JS, no copy-to-clipboard helper
   // (would pull in a script-src dependency). Operator pastes manually.
-  const safePortal = String(portal).replace(/[&<>"]/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
-  }[c]!))
+  const safePortal = htmlEscape(portal)
   return `<!doctype html><html><head><meta charset="utf-8"><title>Bitrix24 MCP — Bearer minted</title></head><body>
 <h1>Your Bitrix24 MCP Bearer</h1>
 <p>Portal: <code>${safePortal}</code></p>
@@ -178,6 +185,12 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Strict `<`: a state whose `expiresAt` equals the current second is
+  // still accepted (the boundary second is "valid"). `_health`'s
+  // `pendingStates` count uses `expires_at > now`, so a row on the exact
+  // boundary second is accepted here but not counted as pending there —
+  // a one-second cosmetic skew that's irrelevant against the 5-minute
+  // TTL, noted so the two comparisons don't look like a bug.
   if (stateRow.expiresAt < Math.floor(Date.now() / 1000)) {
     void logger.info('oauth.callback.deny.state-expired', { statePrefix: state.slice(0, 8) })
     throw createError({
@@ -188,6 +201,19 @@ export default defineEventHandler(async (event) => {
   }
 
   const cookieValue = getCookie(event, 'bx24_oauth_csrf') ?? ''
+  // Defend against a corrupt-DB row with an empty csrf_cookie: install
+  // always writes a 64-hex nonce, but the type doesn't guarantee it.
+  // Without this guard, `timingSafeEqual('', '')` would return true and
+  // accept a request that presented NO cookie. Treat an empty persisted
+  // value as a hard server error, not a 400.
+  if (!stateRow.csrfCookie) {
+    void logger.error('oauth.callback.state-row-corrupt', { statePrefix: state.slice(0, 8) })
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'persisted state row has an empty csrf binding',
+      data: { errorCode: 'STATE-ROW-CORRUPT' },
+    })
+  }
   if (!timingSafeEqual(cookieValue, stateRow.csrfCookie)) {
     void logger.warning('oauth.callback.deny.state-cookie-mismatch', { statePrefix: state.slice(0, 8) })
     throw createError({

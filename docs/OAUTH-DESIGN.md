@@ -351,6 +351,7 @@ OAuth failure modes are operator-debuggable only if every reject/throw lands a *
   - `oauth.callback.deny.state-missing` (WARN — nonce never existed; possibly a probe)
   - `oauth.callback.deny.state-expired` (INFO — TTL expiry, expected when a user abandons mid-flow; distinct from `state-missing` so the operator can tell a slow user from a probe)
   - `oauth.callback.deny.state-cookie-mismatch` (WARN)
+  - `oauth.callback.state-row-corrupt` (ERROR — persisted state row had an empty csrf binding, a corrupt-DB guard → 500, not 400)
   - `oauth.callback.domain-absent` (WARN — Bitrix24 omitted `?domain=`; the portal↔callback binding can't be checked, the other three §8 bindings still hold)
   - `oauth.callback.deny.state-portal-mismatch` (WARN)
   - `oauth.callback.deny.state-client-mismatch` (WARN)
@@ -372,7 +373,7 @@ OAuth failure modes are operator-debuggable only if every reject/throw lands a *
 
   MCP auth middleware (**deferred** — lands with the Bearer middleware follow-up):
   - `mcp.auth.deny.bearer-unknown` / `mcp.auth.deny.bearer-revoked` / `mcp.auth.deny.bearer-orphan` (orphan = `mcp_tokens` row whose `oauth_tokens` parent was deleted — impossible under the CASCADE, but log defensively)
-- Each `*.deny.*` and `*.fail.*` log line carries an `errorCode` ≤ 32 chars (the suffix after the last dot, uppercased: `STATE-COOKIE-MISMATCH`, `STATE-EXPIRED`, `BEARER-REVOKED`). The same code is surfaced to the user in the rendered HTML on `/callback` failure and (once the Bearer middleware lands) in the WWW-Authenticate header for the MCP 401, so the operator can grep logs for the exact string the user pasted into Slack.
+- Each `*.deny.*` and `*.fail.*` path carries an `errorCode` ≤ 32 chars, uppercased. For the `*.deny.*` events the code IS the suffix after the last dot (`oauth.callback.deny.state-cookie-mismatch` → `STATE-COOKIE-MISMATCH`, `…state-expired` → `STATE-EXPIRED`, the future `mcp.auth.deny.bearer-revoked` → `BEARER-REVOKED`). The `oauth.callback.exchange.fail` event is the exception: a single event name covers several distinct failure causes, so it carries a **compound** code naming the cause rather than the event suffix — one of `EXCHANGE-NETWORK`, `EXCHANGE-NON-JSON`, `EXCHANGE-FAIL`, `EXCHANGE-BAD-USER-ID`, `EXCHANGE-BAD-MEMBER-ID` (the `reason` field in the log line mirrors the code). The same code is surfaced to the user in the rendered HTML on `/callback` failure and (once the Bearer middleware lands) in the WWW-Authenticate header for the MCP 401, so the operator can grep logs for the exact string the user pasted into Slack.
 
 **Logger redactor (PR-2c extends).**
 
@@ -397,20 +398,22 @@ Reversing this order means a window where a reviewer is asked to accept `logger.
 ```json
 {
   "enabled": true,
-  "dbPath": "/data/oauth.sqlite",
   "tenants": 12,          // count of oauth_tokens rows
   "bearers": 47,          // count of active mcp_tokens rows (revoked_at IS NULL)
   "pendingStates": 3,     // count of oauth_state rows whose expires_at > now
-  "lastRefreshOk":  "2026-06-04T13:14:15Z",
-  "lastRefreshFail": null
+  "lastRefreshOk": 1748000055,   // unix seconds, or null if no refresh yet
+  "lastRefreshFail": null,
+  "processStartedAt": 1748000000 // unix seconds — distinguishes "null because
+                                 // just restarted" from "null, never refreshed"
 }
 ```
+**No `dbPath`** — a filesystem path is infrastructure topology that aids a post-auth attacker / a misconfigured-nginx exposure. Counts + refresh timestamps are all a readiness probe needs.
 No PII, no tokens, no portal hosts in the body — counts only. The endpoint is also the readiness target for orchestrators (`kubelet`, `docker-compose healthcheck`); rolling up "is OAuth wired" into one HTTP call beats greping logs at deploy time.
 
 **Authentication choice for `_health` — privilege separation matters.** Re-using `NUXT_MCP_AUTH_TOKEN` (the token agents present to call tools) would mean a compromised agent — prompt injection, jailbreak, leaked DXT bundle — can read fleet-level OAuth counts. The counts themselves are not PII, but the principle (agent-tier credential vs. operator-tier surface) matters. Two acceptable patterns:
 
-  - **Network-level isolation (recommended for the reference template).** Bind the route to `127.0.0.1`-only inside the container and expose it through a separate nginx `location /api/oauth/_health` block with `allow <ops-cidr>; deny all;`. No application-level token; ops infra owns access. This is consistent with how `/metrics`-style endpoints land in most production deployments.
-  - **Dedicated `NUXT_OAUTH_ADMIN_TOKEN` env var** if network isolation is infeasible (e.g. forks running on shared single-host setups). PR-2c documents both options in `.env.example`; the route is unreachable until ONE of them is configured (fails closed). NEVER fall back to `NUXT_MCP_AUTH_TOKEN`.
+  - **Network-level isolation (recommended for the reference template).** Bind the route to `127.0.0.1`-only inside the container and expose it through a separate nginx `location /api/oauth/_health` block with `allow <ops-cidr>; deny all;`. No application-level token; ops infra owns access. This is consistent with how `/metrics`-style endpoints land in most production deployments. The handler reads the **raw socket IP** (`getRequestIP(event)` with NO `xForwardedFor`), so a client-supplied `X-Forwarded-For` header cannot spoof the localhost check. **Deployment caveat:** some Nitro presets (Cloudflare, Vercel, and any custom preset that populates `event.context.clientAddress` from `CF-Connecting-IP` / `X-Forwarded-For`) would make the localhost check trust a forwarded header again. The reference `node-server` preset does NOT do this. Forks on an edge preset MUST use the admin-token mode instead of relying on localhost isolation. Loopback detection accepts the whole `127.0.0.0/8` range + `::1`.
+  - **Dedicated `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` env var** if network isolation is infeasible (e.g. forks running on shared single-host setups). PR-2c documents both options in `.env.example`; the route is unreachable until ONE of them is configured (fails closed). NEVER fall back to `NUXT_MCP_AUTH_TOKEN`.
 
 **Concrete gate — PR-2c MUST implement this, not just promise it.** "Fails closed" is a code requirement, not a doc claim. The route handler starts with:
 
@@ -430,10 +433,10 @@ export default defineEventHandler((event) => {
 ```
 
 CI test that pins the contract (mandatory in PR-2c's `tests/unit/oauth-health.test.ts`):
-- Default config (`NUXT_OAUTH_ADMIN_TOKEN` unset, no nginx) + remote source IP → expect `503`.
-- `NUXT_OAUTH_ADMIN_TOKEN` set + no Bearer → expect `401`.
-- `NUXT_OAUTH_ADMIN_TOKEN` set + wrong Bearer → expect `401`.
-- `NUXT_OAUTH_ADMIN_TOKEN` set + correct Bearer → expect `200` + counts shape.
+- Default config (`NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` unset, no nginx) + remote source IP → expect `503`.
+- `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` set + no Bearer → expect `401`.
+- `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` set + wrong Bearer → expect `401`.
+- `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` set + correct Bearer → expect `200` + counts shape.
 
 Without these tests the route ships open on first deploy.
 

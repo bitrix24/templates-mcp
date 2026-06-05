@@ -183,6 +183,26 @@ describe('/api/oauth/_health — gating', () => {
     expect(res.errorCode).toBe('NOT-CONFIGURED')
   })
 
+  it('X-Forwarded-For spoof is ignored even with an admin token configured (remote IP still needs the Bearer)', async () => {
+    // Round-4: the round-3 spoof test passes via the 503-no-config path,
+    // which doesn't FULLY distinguish "handler ignores XFF" from "h3
+    // dropped XFF". This test pins it: with an admin token set, a remote
+    // socket + spoofed XFF=127.0.0.1 must STILL require the Bearer (401),
+    // i.e. the spoof didn't grant a localhost bypass.
+    runtimeConfig.bitrix24OauthAdminToken = 'a'.repeat(64)
+    const res = await callHealth({ sourceIp: '203.0.113.10', xff: '127.0.0.1' })
+    expect(res.statusCode).toBe(401)
+    expect(res.errorCode).toBe('ADMIN-TOKEN-MISSING')
+  })
+
+  it('accepts a non-.1 loopback source IP (127.0.0.2 is still localhost)', async () => {
+    // Round-4: the whole 127.0.0.0/8 range is loopback (RFC 5735). An
+    // orchestrator probe binding to 127.0.0.2 is legitimate localhost
+    // traffic and must pass the gate.
+    const res = await callHealth({ sourceIp: '127.0.0.2' })
+    expect(res.statusCode).toBe(200)
+  })
+
   it('401 ADMIN-TOKEN-MISSING when token configured, request from outside localhost, no Bearer', async () => {
     runtimeConfig.bitrix24OauthAdminToken = 'a'.repeat(64)
     const res = await callHealth({ sourceIp: '203.0.113.10' })
@@ -253,8 +273,12 @@ describe('/api/oauth/_health — counts shape', () => {
       lastRefreshOk: null,
       lastRefreshFail: null,
     })
-    // processStartedAt is a unix-seconds timestamp set at module load.
-    expect(typeof res.json!.processStartedAt).toBe('number')
+    // processStartedAt is a unix-SECONDS timestamp set at module load —
+    // assert it's a sane recent value, not just a number (catches a
+    // ms-vs-seconds regression, which would be ~1000× too large).
+    const nowSec = Math.floor(Date.now() / 1000)
+    expect(res.json!.processStartedAt).toBeGreaterThan(nowSec - 120)
+    expect(res.json!.processStartedAt).toBeLessThanOrEqual(nowSec + 5)
     // SECURITY (round-3): dbPath MUST NOT be in the body — it's
     // infrastructure topology that aids a post-auth attacker.
     expect(res.json).not.toHaveProperty('dbPath')
