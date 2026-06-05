@@ -19,9 +19,23 @@
 import type { CustomRefreshAuth } from '@bitrix24/b24jssdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Database from 'better-sqlite3'
+import type * as AuditLogModule from '~/server/utils/audit-log'
 import type * as TokenStoreModule from '~/server/utils/token-store'
 import type * as OAuthFactoryModule from '~/server/utils/bitrix24-oauth'
 import { createTokenStore, type TokenStore } from '~/server/utils/token-store'
+
+// Mock the audit log — `store.upsertTokens` / `createMcpToken` /
+// `revokeMcpToken` all audit (PR-2b invariant). The real audit-log
+// tries to `mkdir /data/audit` on first write, which fails with EACCES
+// on CI runners. Same `vi.hoisted` pattern as `token-store.test.ts`.
+type AuditEvent = Parameters<typeof AuditLogModule.recordAuditEvent>[0]
+const { recordAuditEvent } = vi.hoisted(() => ({
+  recordAuditEvent: vi.fn<(event: AuditEvent) => Promise<void>>(async () => undefined),
+}))
+vi.mock('~/server/utils/audit-log', async () => {
+  const real = await vi.importActual<typeof AuditLogModule>('~/server/utils/audit-log')
+  return { ...real, recordAuditEvent }
+})
 
 const runtimeConfig: Record<string, unknown> = {
   bitrix24OauthEnabled: true,
