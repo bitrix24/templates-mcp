@@ -135,6 +135,21 @@ if ($body -match '"errorCode":"FLAG-OFF"') {
   Assert-ErrorCode "callback with unknown state" "STATE-MISSING" "$Base/api/oauth/callback?code=x&state=$(('0' * 32))"
 
   Write-Host ""
+  Write-Host "--- /mcp Bearer auth (PR #217 — the last wire) ---"
+  $mcp = Invoke-Probe "$Base/mcp"
+  if ($mcp.Status -eq 401) {
+    Green "/mcp without Bearer -> 401"
+  } else {
+    Red "/mcp without Bearer -> expected 401, got $($mcp.Status)"
+  }
+  $wwwAuth = $mcp.Headers["WWW-Authenticate"]
+  if ($wwwAuth -match 'BEARER-UNKNOWN') {
+    Green "  WWW-Authenticate carries errorCode=BEARER-UNKNOWN"
+  } else {
+    Red "  WWW-Authenticate missing or wrong errorCode"
+  }
+
+  Write-Host ""
   Write-Host "--- /api/oauth/_health gates ---"
   $health = Invoke-Probe "$Base/api/oauth/_health"
   switch ($health.Status) {

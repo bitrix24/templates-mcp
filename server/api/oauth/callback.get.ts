@@ -119,7 +119,6 @@ function bearerSuccessPage(bearer: string, portal: string): string {
 <p>Copy this token into your MCP client (Claude Desktop / Cursor / Windsurf) <strong>Authorization: Bearer</strong> setting:</p>
 <pre style="word-wrap:break-word;white-space:pre-wrap;padding:1em;background:#eee;border-radius:4px">${bearer}</pre>
 <p><strong>This page is shown once.</strong> The token is hashed in the database; the raw value above cannot be re-displayed. Lost it? Re-authorize from <code>/api/oauth/install?portal=${safePortal}</code> — your old Bearer keeps working until you revoke it.</p>
-<p style="padding:0.75em;background:#fff3cd;border:1px solid #ffe69c;border-radius:4px"><strong>⚠ Not active yet.</strong> The Bearer-recognising MCP middleware ships in the next release — until then the <code>/mcp</code> endpoint still authenticates with <code>NUXT_MCP_AUTH_TOKEN</code> and this token is stored but not yet accepted. Your operator will tell you when OAuth login is live.</p>
 </body></html>`
 }
 

@@ -92,6 +92,14 @@ export interface BearerLookup {
   readonly userId: number
 }
 
+/** Bearer inspection — includes the `revoked_at` timestamp so callers can tell `unknown` from `revoked`. */
+export interface BearerInspection {
+  readonly memberId: string
+  readonly userId: number
+  /** Unix seconds when revoked, or `null` if still active. */
+  readonly revokedAt: number | null
+}
+
 /** A persisted install state nonce — created by `/install`, consumed by `/callback`. */
 export interface OAuthState {
   readonly state: string
@@ -211,6 +219,17 @@ export interface TokenStore {
    * uniformly as 401, NOT as "fall back to webhook".
    */
   findByBearerHash: (bearerHash: string) => BearerLookup | undefined
+  /**
+   * Bearer → tenant lookup that DOES NOT filter revoked rows — the
+   * middleware uses this to distinguish unknown / revoked / orphan
+   * (the three §11 `mcp.auth.deny.bearer-*` event suffixes). A revoked
+   * row still resolves to a tenant pair so the audit log can record
+   * "who tried to use this dead Bearer"; the middleware then refuses.
+   * `findByBearerHash` is the hot path for the no-distinction case and
+   * stays the right choice when the caller already treats unknown +
+   * revoked uniformly.
+   */
+  inspectBearer: (bearerHash: string) => BearerInspection | undefined
   /** Stamps `revoked_at` on a Bearer (idempotent — re-revoking a revoked row is a no-op). */
   revokeMcpToken: (bearerHash: string, actor: AuditActor) => Promise<void>
   /**
@@ -327,6 +346,10 @@ export function createTokenStore(db: Database.Database): TokenStore {
     findByBearerHash: db.prepare<[string]>(
       `SELECT member_id AS memberId, user_id AS userId
        FROM mcp_tokens WHERE bearer_hash = ? AND revoked_at IS NULL`,
+    ),
+    inspectBearer: db.prepare<[string]>(
+      `SELECT member_id AS memberId, user_id AS userId, revoked_at AS revokedAt
+       FROM mcp_tokens WHERE bearer_hash = ?`,
     ),
     revokeMcpToken: db.prepare<[number, string]>(
       `UPDATE mcp_tokens SET revoked_at = ?
@@ -458,6 +481,9 @@ export function createTokenStore(db: Database.Database): TokenStore {
       stmts.createMcpToken.run(bearerHash, memberId, userId, label ?? null, nowSec())
       return { bearer, bearerHash }
     },
+
+    inspectBearer: bearerHash =>
+      stmts.inspectBearer.get(bearerHash) as BearerInspection | undefined,
 
     findByBearerHash: bearerHash =>
       stmts.findByBearerHash.get(bearerHash) as BearerLookup | undefined,

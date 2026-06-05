@@ -298,7 +298,7 @@ The actual landed order **inverts** the original PR-2/PR-3/PR-4 plan after PR-2a
 | —    | PR-2b (#210) | token store (SQLite, audit-first) |
 | PR-4 | PR-2d (#213) | tool-catalogue swap to `useBitrix24Tenant()` |
 | PR-3 | **PR-2c** (#216) | install/callback routes + B24OAuth factory + refresh + logger-redactor extension + `pruneExpiredStates` scheduler + `/api/oauth/_health` (§11). **Bearer middleware → split out** (see below). |
-| —    | PR-2c-bearer (#217) | Bearer middleware: `Bearer → findByBearerHash → runWithTenant({memberId, userId, requestId})` on `/mcp`. The last wire that makes a minted Bearer actually authenticate. Split from #216 to keep its review focused. |
+| —    | PR-2c-bearer (#217 — this) | Bearer middleware: `Bearer → inspectBearer → runWithTenant({memberId, userId, requestId})` on `/mcp` via `server/mcp/index.ts`'s `defineMcpHandler({ middleware })`. Three §11 deny branches (bearer-unknown / -revoked / -orphan) each with a distinct errorCode + `WWW-Authenticate` header. **This is the last wire.** After this lands the OAuth flow is end-to-end usable. |
 | PR-5 | PR-5 | operator docs |
 
 1. **PR-1 (this PR):** design doc only. See frontmatter.
@@ -371,8 +371,11 @@ OAuth failure modes are operator-debuggable only if every reject/throw lands a *
   Dispatch (`useBitrix24Tenant`, from PR-2d):
   - `oauth.tenant.dispatch.no-tenant-scope` / `oauth.tenant.dispatch.bad-user-id` (ERROR — wiring bugs)
 
-  MCP auth middleware (**deferred** — lands with the Bearer middleware follow-up):
-  - `mcp.auth.deny.bearer-unknown` / `mcp.auth.deny.bearer-revoked` / `mcp.auth.deny.bearer-orphan` (orphan = `mcp_tokens` row whose `oauth_tokens` parent was deleted — impossible under the CASCADE, but log defensively)
+  MCP auth middleware (`server/mcp/index.ts` — `defineMcpHandler({ middleware })`):
+  - `mcp.auth.ok` (INFO — happy path, logs `memberId`, `userId`, `requestId`, `bearerHashPrefix`)
+  - `mcp.auth.deny.bearer-unknown` (WARN — no `Authorization: Bearer`, or no matching `mcp_tokens` row)
+  - `mcp.auth.deny.bearer-revoked` (WARN — `mcp_tokens` row exists with `revoked_at` set)
+  - `mcp.auth.deny.bearer-orphan` (ERROR — `mcp_tokens` row active but `oauth_tokens` parent deleted; impossible under the CASCADE, but log defensively in case of a manual SQLite edit)
 - Each `*.deny.*` and `*.fail.*` path carries an `errorCode` ≤ 32 chars, uppercased. For the `*.deny.*` events the code IS the suffix after the last dot (`oauth.callback.deny.state-cookie-mismatch` → `STATE-COOKIE-MISMATCH`, `…state-expired` → `STATE-EXPIRED`, the future `mcp.auth.deny.bearer-revoked` → `BEARER-REVOKED`). The `oauth.callback.exchange.fail` event is the exception: a single event name covers several distinct failure causes, so it carries a **compound** code naming the cause rather than the event suffix — one of `EXCHANGE-NETWORK`, `EXCHANGE-NON-JSON`, `EXCHANGE-FAIL`, `EXCHANGE-BAD-USER-ID`, `EXCHANGE-BAD-MEMBER-ID` (the `reason` field in the log line mirrors the code). The same code is surfaced to the user in the rendered HTML on `/callback` failure and (once the Bearer middleware lands) in the WWW-Authenticate header for the MCP 401, so the operator can grep logs for the exact string the user pasted into Slack.
 
 **Logger redactor (PR-2c extends).**

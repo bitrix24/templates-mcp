@@ -143,6 +143,23 @@ case "$probe" in
       "$BASE/api/oauth/callback?code=x&state=00000000000000000000000000000000"
 
     echo
+    echo "--- /mcp Bearer auth (PR #217 — the last wire) ---"
+    # /mcp with no Bearer must return 401 BEARER-UNKNOWN with a
+    # WWW-Authenticate header carrying the §11 errorCode.
+    mcp_headers=$(curl -s -D - -o /dev/null "$BASE/mcp" 2>/dev/null || echo "")
+    mcp_status=$(echo "$mcp_headers" | head -1 | awk '{print $2}')
+    if [ "$mcp_status" = "401" ]; then
+      green "/mcp without Bearer -> 401"
+    else
+      red "/mcp without Bearer -> expected 401, got $mcp_status"
+    fi
+    if echo "$mcp_headers" | grep -iq 'www-authenticate.*BEARER-UNKNOWN'; then
+      green "  WWW-Authenticate carries errorCode=BEARER-UNKNOWN"
+    else
+      red "  WWW-Authenticate missing or wrong errorCode"
+    fi
+
+    echo
     echo "--- /api/oauth/_health gates ---"
     # _health from localhost = 200 if no admin token; 401 ADMIN-TOKEN-MISSING if token set.
     health_status=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/oauth/_health" 2>/dev/null)

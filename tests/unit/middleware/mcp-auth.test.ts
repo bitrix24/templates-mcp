@@ -23,7 +23,10 @@ interface FakeEvent {
   _headers?: Record<string, string>
 }
 
-const runtimeConfig: { mcpAuthToken: string } = { mcpAuthToken: '' }
+const runtimeConfig: { mcpAuthToken: string; bitrix24OauthEnabled: boolean } = {
+  mcpAuthToken: '',
+  bitrix24OauthEnabled: false,
+}
 vi.stubGlobal('useRuntimeConfig', () => runtimeConfig)
 
 // h3's defineEventHandler wraps the inner function with markers (__is_event__
@@ -40,6 +43,19 @@ function callMiddleware(url: string, headers: Record<string, string> = {}) {
 describe('mcp-auth middleware', () => {
   beforeEach(() => {
     runtimeConfig.mcpAuthToken = 'secret-token'
+    runtimeConfig.bitrix24OauthEnabled = false
+  })
+
+  it('yields when NUXT_BITRIX24_OAUTH_ENABLED=true (the toolkit-level middleware owns auth)', () => {
+    // PR-2c-bearer (#217): when OAuth is on, this h3-level middleware
+    // skips so the `server/mcp/index.ts` toolkit middleware can do the
+    // Bearer-to-tenant resolution (it also wraps next() in an ALS scope,
+    // which h3 middleware can't). Yielding is safe — the toolkit
+    // middleware fails closed.
+    runtimeConfig.bitrix24OauthEnabled = true
+    runtimeConfig.mcpAuthToken = '' // even with no MCP_AUTH_TOKEN
+    expect(callMiddleware('/mcp')()).toBeUndefined()
+    expect(callMiddleware('/mcp/messages')()).toBeUndefined()
   })
 
   it('skips paths outside /mcp', () => {

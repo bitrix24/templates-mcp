@@ -91,7 +91,7 @@ Optional, only if the run includes integration tests or evals (see `.env.example
 `NUXT_AUDIT_DIR` (OAuth/Bearer audit log destination; default `/data/audit/`, webhook-only manual QA ignores it).
 
 OAuth scaffolding (Phase-3 opt-in, off by default — webhook-only manual QA leaves these unset/false):
-`NUXT_BITRIX24_OAUTH_ENABLED` (default `false`; the install/callback routes + B24OAuth factory have landed, but the `/mcp` Bearer middleware that makes a minted Bearer actually authenticate is still pending — issue #217. With `=true` an operator can complete `/install → /callback` and get a Bearer, but `/mcp` keeps using `NUXT_MCP_AUTH_TOKEN` until #217 lands; the dispatcher fails loud on any tool call made without a tenant scope),
+`NUXT_BITRIX24_OAUTH_ENABLED` (default `false`; with `=true` the OAuth surface is end-to-end live — install/callback mint a Bearer, `/mcp` accepts it via the toolkit middleware in `server/mcp/index.ts`, and `NUXT_MCP_AUTH_TOKEN` is bypassed on `/mcp`. The four §11 deny branches — `BEARER-UNKNOWN` / `BEARER-REVOKED` / `BEARER-ORPHAN` / no Bearer — all 401 with a `WWW-Authenticate` header carrying the errorCode),
 `NUXT_BITRIX24_OAUTH_CLIENT_ID` / `NUXT_BITRIX24_OAUTH_CLIENT_SECRET` (from a registered Bitrix24 Marketplace application, needed only when ENABLED=true),
 `NUXT_BITRIX24_OAUTH_REDIRECT_URL` (no default — must be set to the exact URL registered on the Bitrix24 side when `ENABLED=true`; `.env.example` shows `https://prod.example.com/api/oauth/callback` as a placeholder shape, not a value to copy verbatim),
 `NUXT_BITRIX24_OAUTH_SCOPE` (default `user,task`),

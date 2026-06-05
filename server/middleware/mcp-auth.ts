@@ -9,6 +9,13 @@ export default defineEventHandler((event) => {
   // but also must not require it (404 from the router is fine).
   if (pathname !== '/mcp' && !pathname.startsWith('/mcp/')) return
 
+  // When OAuth is on, the toolkit-level middleware in `server/mcp/index.ts`
+  // owns Bearer-to-tenant resolution (it also needs to wrap `next()` in an
+  // ALS scope, which an h3-level middleware can't do). Yielding here is
+  // safe because the toolkit middleware fails closed: a request without a
+  // valid OAuth Bearer never reaches a tool.
+  if (useRuntimeConfig().bitrix24OauthEnabled) return
+
   const expected = useRuntimeConfig().mcpAuthToken
   // Treat the `.env.example` placeholder as "not configured": an operator who
   // copied the example without running `openssl rand -hex 32` must not end up

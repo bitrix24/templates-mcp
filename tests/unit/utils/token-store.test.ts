@@ -174,6 +174,41 @@ describe('token-store — OAuth + Bearer + state CRUD (PR-2b, docs/OAUTH-DESIGN.
       expect(store.findByBearerHash('sha256-deadbeef')).toBeUndefined()
     })
 
+    it('inspectBearer returns the tenant + revokedAt=null for an ACTIVE Bearer', async () => {
+      // inspectBearer is the middleware lookup that distinguishes
+      // unknown / revoked / orphan (§11). For an active Bearer it
+      // returns the same tenant pair as findByBearerHash plus a null
+      // revokedAt so the caller can branch.
+      const { bearerHash } = await store.createMcpToken(
+        sampleTokens.memberId, sampleTokens.userId, 'laptop', 'install',
+      )
+      const inspect = store.inspectBearer(bearerHash)
+      expect(inspect).toEqual({
+        memberId: sampleTokens.memberId,
+        userId: sampleTokens.userId,
+        revokedAt: null,
+      })
+    })
+
+    it('inspectBearer returns revokedAt=<unix seconds> for a REVOKED Bearer (findByBearerHash returns undefined)', async () => {
+      const { bearerHash } = await store.createMcpToken(
+        sampleTokens.memberId, sampleTokens.userId, undefined, 'install',
+      )
+      await store.revokeMcpToken(bearerHash, 'user')
+      // findByBearerHash filters revoked (its production contract).
+      expect(store.findByBearerHash(bearerHash)).toBeUndefined()
+      // inspectBearer surfaces the row + the revocation timestamp.
+      const inspect = store.inspectBearer(bearerHash)
+      expect(inspect).toBeDefined()
+      expect(inspect!.memberId).toBe(sampleTokens.memberId)
+      expect(inspect!.revokedAt).toBeGreaterThan(0)
+      expect(typeof inspect!.revokedAt).toBe('number')
+    })
+
+    it('inspectBearer returns undefined for an unknown hash (same as findByBearerHash)', () => {
+      expect(store.inspectBearer('sha256-deadbeef')).toBeUndefined()
+    })
+
     it('revoking an already-revoked Bearer is an idempotent no-op (no audit double-emit)', async () => {
       const { bearerHash } = await store.createMcpToken(
         sampleTokens.memberId, sampleTokens.userId, undefined, 'install',
