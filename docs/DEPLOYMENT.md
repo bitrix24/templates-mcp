@@ -247,11 +247,18 @@ Set these in the `.env` file in the deploy directory (consumed by [`docker-compo
 | Variable | Required | Notes |
 |---|---|---|
 | `NUXT_BITRIX24_WEBHOOK_URL` | ✅ | Inbound webhook URL of your portal. Bind it to a dedicated service user, not a person. |
-| `NUXT_MCP_AUTH_TOKEN` | ✅ | Bearer token MCP clients must present on `/mcp`. Generate with `openssl rand -hex 32`. `.env.example` ships the `replace-with-secure-token` **placeholder** — leaving it unchanged makes `/mcp` return **503** (treated as "not configured"), never a working endpoint. |
+| `NUXT_MCP_AUTH_TOKEN` | ✅ ‡ | Bearer token MCP clients must present on `/mcp`. Generate with `openssl rand -hex 32`. `.env.example` ships the `replace-with-secure-token` **placeholder** — leaving it unchanged makes `/mcp` return **503** (treated as "not configured"), never a working endpoint. **‡ BYPASSED when `NUXT_BITRIX24_OAUTH_ENABLED=true`** — `/mcp` then accepts only per-user OAuth Bearers, not this shared token. See [OAuth 2.0 multi-tenant](#oauth-20-multi-tenant-opt-in). |
 | `NUXT_GITHUB_FEEDBACK_TOKEN` | ⬜ | Enables `bx24mcp_submit_feedback`. Fine-grained PAT with Issues: read/write. `.env.example` ships a `github_pat_xxx` **placeholder** — clear it or replace it; a copied placeholder is an invalid token, not "disabled". |
 | `NUXT_GITHUB_FEEDBACK_REPO` | ⬜ | `owner/name` for feedback issues. Defaults to `bitrix24/templates-mcp`. |
 | `NUXT_LOG_LEVEL` | ⬜ | `info` (default) / `debug` / `notice` / `warning` (alias `warn`) / `error` / `critical` / `alert` / `emergency`. Unset → `DEBUG` in dev, `INFO` otherwise. **An unrecognised non-empty value (typo like `debgu`, `infoo`) prints a one-line warning to `stderr` at startup** naming the variable, the value (capped at 32 chars and webhook-secret-redacted), the active `NODE_ENV`, and the level actually used — then falls back to the default. Empty / whitespace values stay silent. |
 | `NUXT_AUDIT_DIR` | ⬜ | Directory for the OAuth/Bearer audit JSONL log. Defaults to `/data/audit/`. Only written by the OAuth flow (Phase 3) — a webhook-only deploy leaves it unused. See [Monitoring & logs](#monitoring--logs). |
+| `NUXT_BITRIX24_OAUTH_ENABLED` | ⬜ | `false` (default) → webhook-only, unchanged. `true` → multi-tenant OAuth on `/mcp` (and `NUXT_MCP_AUTH_TOKEN` is bypassed). The five vars below apply **only** when this is `true`. See [OAuth 2.0 multi-tenant](#oauth-20-multi-tenant-opt-in). |
+| `NUXT_BITRIX24_OAUTH_CLIENT_ID` | OAuth | Marketplace application `CLIENT_ID`. Required when the flag is on. |
+| `NUXT_BITRIX24_OAUTH_CLIENT_SECRET` | OAuth | Marketplace application `CLIENT_SECRET`. Required when the flag is on. Treat as a secret — host `.env` only. |
+| `NUXT_BITRIX24_OAUTH_REDIRECT_URL` | OAuth | HTTPS callback URL, must **exactly** match the one registered on the Bitrix24 application (e.g. `https://mcp.example.com/api/oauth/callback`). No default. |
+| `NUXT_BITRIX24_OAUTH_SCOPE` | ⬜ | Comma-separated REST scopes requested at authorize. Defaults to `user,task`. |
+| `NUXT_BITRIX24_OAUTH_DB_DIR` | ⬜ | Directory holding `oauth.sqlite` (filename fixed in code). Defaults to `/data`. **Must be a persistent, writable mount with an absolute path (no `..`)** — the `bx24_data:/data` volume in `docker-compose.yml` satisfies this. Land it on a non-ephemeral volume or every minted Bearer is lost on restart. |
+| `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` | ⬜ | Gates `GET /api/oauth/_health` (operator-tier OAuth counts). **Deliberately separate** from `NUXT_MCP_AUTH_TOKEN` — the agent's token must never read fleet-level counts. Leave empty for localhost-only access (recommended: an nginx `allow <ops-cidr>; deny all;` block); set to an `openssl rand -hex 32` value if you can't isolate the route at the network layer. Fails closed (503) for a non-localhost request when unset. |
 | `NITRO_PORT` | ✅ | Container listen port. Keep `3000` unless you also change `VIRTUAL_PORT` and the Dockerfile `EXPOSE`/`HEALTHCHECK`. Present in `.env.example`. |
 | `NODE_ENV` | ✅ † | `production`. |
 | `VIRTUAL_HOST` | ✅ | Hostname nginx-proxy routes to this container (e.g. `mcp.example.com`). |
@@ -262,6 +269,34 @@ Set these in the `.env` file in the deploy directory (consumed by [`docker-compo
 † **`NODE_ENV` is special — add it to the host `.env` by hand.** The production `docker-compose.yml` forwards it unconditionally (`NODE_ENV: ${NODE_ENV}`, **no** `:-production` default), so an unset value passes an **empty** string that overrides the image's baked-in `ENV NODE_ENV=production`. `.env.example` deliberately **omits** `NODE_ENV` — that line would break the Nuxt dev/test toolchain, which loads the repo-root `.env` via Vite and rejects `NODE_ENV=production` — so a copied `.env` has no value to forward. Add `NODE_ENV=production` to the host deploy `.env` yourself. That host file is read by *docker compose* for `${VAR}` interpolation and injected into the container as a real env var, so the dev-toolchain caveat does not apply to it. (The local-run `docker-compose.example.yml` instead uses `${NODE_ENV:-production}`, so it is safe without the variable.) `NITRO_PORT` has the same no-default forwarding in prod but is already in `.env.example`.
 
 > **Secrets management**: the `.env` lives only on the host, never in the repo; the image carries no secrets and reads everything from the environment at runtime. Rotating `NUXT_MCP_AUTH_TOKEN` is **not zero-downtime** — editing `.env` and running `docker compose up -d` restarts the container and severs all current MCP clients at once (no dual-accept window), so plan a short maintenance window and re-issue the new token. Rotate `NUXT_GITHUB_FEEDBACK_TOKEN` the same way. Per-secret rotation detail lives in [`SECURITY.md`](./SECURITY.md) and [`FEEDBACK.md`](./FEEDBACK.md).
+
+## OAuth 2.0 multi-tenant (opt-in)
+
+By default this server authenticates `/mcp` with a single shared `NUXT_MCP_AUTH_TOKEN` and runs every Bitrix24 call under one webhook-bound service user. That is the right shape for a single team. For a **multi-user / SaaS** deployment where each end user should act under *their own* Bitrix24 identity and permissions, flip on the OAuth flow: each user authorises once via `/api/oauth/install`, receives a personal Bearer, and every REST call they trigger runs as them. The design rationale, threat model, and event taxonomy live in [`OAUTH-DESIGN.md`](./OAUTH-DESIGN.md); this section is the operator how-to.
+
+The flow is gated behind `NUXT_BITRIX24_OAUTH_ENABLED` and is **off by default** — a webhook-only deployment is completely unaffected and you can skip this section.
+
+> ### ⚠️ Migration warning — `/mcp` auth changes when the flag is on
+>
+> When `NUXT_BITRIX24_OAUTH_ENABLED=true`, **`NUXT_MCP_AUTH_TOKEN` is bypassed on `/mcp`.** The endpoint stops accepting the shared legacy token and accepts **only** a per-user OAuth Bearer minted via `/api/oauth/install → /api/oauth/callback`. Any client still presenting the old `Authorization: Bearer <NUXT_MCP_AUTH_TOKEN>` header gets a **401** with a `WWW-Authenticate: Bearer error="invalid_token", errorCode="BEARER-UNKNOWN"` header.
+>
+> **Migrate every connected client to its own per-user Bearer _before_ you flip the flag.** Rollback is non-destructive — set `NUXT_BITRIX24_OAUTH_ENABLED=false` and restart; the SQLite store stays on disk and the legacy token works again immediately.
+
+### Upgrade runbook — existing webhook deployment → OAuth
+
+1. **Register a marketplace application** on your Bitrix24 portal; record `CLIENT_ID` and `CLIENT_SECRET`. Set the application's redirect URL to `https://<your-mcp>/api/oauth/callback`.
+2. **Mount a persistent volume** at `/data` (or wherever `NUXT_BITRIX24_OAUTH_DB_DIR` points) — `docker-compose.yml` already declares `bx24_data:/data`. Confirm it is on local SSD, **not NFS** (`better-sqlite3` + WAL on NFS corrupts). Without a persistent mount every minted Bearer is lost on restart.
+3. **Set the OAuth env vars** in the host `.env` (or your secrets manager): `NUXT_BITRIX24_OAUTH_CLIENT_ID`, `NUXT_BITRIX24_OAUTH_CLIENT_SECRET`, `NUXT_BITRIX24_OAUTH_REDIRECT_URL`, and optionally `NUXT_BITRIX24_OAUTH_SCOPE` / `NUXT_BITRIX24_OAUTH_DB_DIR` / `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN`. See the [environment table](#environment-variables).
+4. **Restart** with `NUXT_BITRIX24_OAUTH_ENABLED=true` (`make redeploy`).
+5. **Each end user** visits `https://<your-mcp>/api/oauth/install?portal=<theirportal>`, completes the authorize prompt, and copies the per-user Bearer from the callback page into their Claude / Cursor / Windsurf connector (replacing the old shared-token header).
+6. **Transition window**: there is no dual-accept on `/mcp` — the moment the flag is on, the shared token stops working there. Coordinate the cutover, or migrate clients first and flip last.
+7. **Rollback**: `NUXT_BITRIX24_OAUTH_ENABLED=false` + restart. The SQLite file stays on disk; nothing is lost. Audit-log JSONL entries emitted while enabled (`oauth.upsert`, `mcp.create`, `mcp.revoke`, `oauth.delete`) persist under `NUXT_AUDIT_DIR` after rollback **by design** — a SOC analyst inspecting the log post-rollback will see events that no longer map to live DB rows; that is intentional, not corruption.
+
+> **Single-instance only (for now).** The OAuth token cache + refresh state are **process-local** (`OAUTH-DESIGN.md` §5). Running 2+ replicas behind a load balancer means each refreshes tokens independently, `/api/oauth/_health` counts differ per replica, and a revoke on one replica isn't seen by another until its cache entry evicts. Keep OAuth to a single instance until a shared token store lands.
+
+### Health & observability
+
+`GET /api/oauth/_health` returns operator-tier OAuth counts (active tokens, last refresh, etc.), gated by `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` (or localhost-only when unset — it fails closed for non-localhost requests). Every OAuth code path emits a single structured `event: '<area>.<action>.<outcome>'` log line carrying a per-request `requestId`, so one `jq` query reconstructs a whole authorize→callback→Bearer→`/mcp` timeline. The full event taxonomy is in [`OAUTH-DESIGN.md` §11](./OAUTH-DESIGN.md).
 
 ## Manual rollback
 

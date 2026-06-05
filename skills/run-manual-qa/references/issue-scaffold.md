@@ -90,7 +90,7 @@ Optional, only if the run includes integration tests or evals (see `.env.example
 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` (eval LLM),
 `NUXT_AUDIT_DIR` (OAuth/Bearer audit log destination; default `/data/audit/`, webhook-only manual QA ignores it).
 
-OAuth scaffolding (Phase-3 opt-in, off by default — webhook-only manual QA leaves these unset/false):
+OAuth multi-tenant (opt-in, landed and off by default — webhook-only manual QA leaves these unset/false; operator guide in `docs/DEPLOYMENT.md` → "OAuth 2.0 multi-tenant"):
 `NUXT_BITRIX24_OAUTH_ENABLED` (default `false`; with `=true` the OAuth surface is end-to-end live — install/callback mint a Bearer, `/mcp` accepts it via the toolkit middleware in `server/mcp/index.ts`, and `NUXT_MCP_AUTH_TOKEN` is bypassed on `/mcp`. The four §11 deny branches — `BEARER-UNKNOWN` / `BEARER-REVOKED` / `BEARER-ORPHAN` / no Bearer — all 401 with a `WWW-Authenticate` header carrying the errorCode),
 `NUXT_BITRIX24_OAUTH_CLIENT_ID` / `NUXT_BITRIX24_OAUTH_CLIENT_SECRET` (from a registered Bitrix24 Marketplace application, needed only when ENABLED=true),
 `NUXT_BITRIX24_OAUTH_REDIRECT_URL` (no default — must be set to the exact URL registered on the Bitrix24 side when `ENABLED=true`; `.env.example` shows `https://prod.example.com/api/oauth/callback` as a placeholder shape, not a value to copy verbatim),

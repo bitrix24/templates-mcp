@@ -20,7 +20,7 @@ A starter template for building Model Context Protocol (MCP) servers on top of B
 |---|---|---|
 | **A non-technical Bitrix24 operator** (HR, accountant, foreman) on a single workstation | **DXT bundle** → [Desktop Extension](#desktop-extension--claude-desktop-one-file-two-clicks) | One file, two clicks. No terminal, no port, no Bearer. Webhook stored in the OS keychain. Локализованный гайд: [`INSTALL.ru.md`](./mcp-stdio/INSTALL.ru.md) · em PT-BR: [`INSTALL.pt-BR.md`](./mcp-stdio/INSTALL.pt-BR.md). |
 | **A developer** running an AI agent on your laptop (Claude Code / Cursor / Claude Desktop) | **Local HTTP** → [Local MCP](#local-mcp--your-own-machine-claude-desktop-cursor-claude-code-cline) | `pnpm start`, point the client at `localhost:3000`. No public domain. Stays inside your machine. |
-| **A team / SaaS deploying for many users** | **Docker production** → [Remote MCP](#remote-mcp--production-server-claudeai-web) | Public URL with TLS, Bearer-protected `/mcp`, GHCR image, GitHub-Actions deploy + rollback. |
+| **A team / SaaS deploying for many users** | **Docker production** → [Remote MCP](#remote-mcp--production-server-claudeai-web) | Public URL with TLS, Bearer-protected `/mcp`, GHCR image, GitHub-Actions deploy + rollback. Optional **per-user [OAuth 2.0](#multi-tenant-oauth-20--per-user-identity-opt-in)** so each user acts under their own Bitrix24 identity. |
 
 The three paths share **the same tool code** — same files in `server/mcp/tools/**`, same auth model, same logger redaction. Only the transport and packaging differ.
 
@@ -42,7 +42,7 @@ Off-the-shelf Bitrix24 MCP servers are either toy demos or vendor-locked. This p
 
 > **Create the webhook under a dedicated service user**, not a real employee's account. The webhook inherits the creator's permissions for every call, so binding it to a personal account ties the integration to that person's role, department visibility, and tenure — anyone who leaves the company or loses rights silently breaks the MCP. Grant the service user the **minimum rights the tool set actually needs** (admin only if you need cross-user task visibility and want to avoid "task not found" / `ACCESS_DENIED` surprises on entities a non-admin user happens not to see).
 >
-> This is a webhook-era trade-off only. When the template moves to **OAuth 2.0** in a future release, each end user logs in with their own Bitrix24 account and every REST call is executed under that user's identity and permissions — the service-user shortcut goes away, and access becomes per-user by design.
+> This is a webhook-era trade-off only. The template now also ships **OAuth 2.0 multi-tenant** auth (opt-in, behind `NUXT_BITRIX24_OAUTH_ENABLED`): each end user logs in with their own Bitrix24 account and every REST call is executed under that user's identity and permissions — the service-user shortcut goes away, and access becomes per-user by design. It stays **off by default**, so webhook-only deployments are unaffected. See [`docs/OAUTH-DESIGN.md`](./docs/OAUTH-DESIGN.md) and the [OAuth 2.0 multi-tenant](./docs/DEPLOYMENT.md#oauth-20-multi-tenant-opt-in) operator guide.
 
 ```bash
 git clone https://github.com/bitrix24/templates-mcp.git
@@ -119,6 +119,12 @@ The 8 task-mutation tools above (`start_task` / `pause_task` / `complete_task` /
 5. Save, enable in chat, ask "Show me my Bitrix24 current user".
 
 For production deployment, see [`docs/REVERSE-PROXY.md`](./docs/REVERSE-PROXY.md) — covers nginx-proxy (the default), Caddy, plain nginx + certbot, and Traefik. Pick whichever your hosting provider already runs.
+
+#### Multi-tenant OAuth 2.0 — per-user identity (opt-in)
+
+The Remote setup above shares one `NUXT_MCP_AUTH_TOKEN` and runs every call under one webhook service user — right for a single team. For a **multi-user / SaaS** deployment, flip on OAuth (`NUXT_BITRIX24_OAUTH_ENABLED=true`) and each end user authorises once at `https://<your-mcp>/api/oauth/install?portal=<theirportal>`, then pastes the per-user Bearer they receive into their connector. Every REST call then runs under *that* user's Bitrix24 identity and permissions — no shared service user.
+
+> ⚠️ **When the flag is on, `NUXT_MCP_AUTH_TOKEN` is bypassed on `/mcp`** — the endpoint accepts only per-user OAuth Bearers. Migrate every connected client to its own Bearer **before** flipping the flag. It stays **off by default**, so existing webhook deployments are unaffected. Full operator guide: [`docs/DEPLOYMENT.md` → OAuth 2.0 multi-tenant](./docs/DEPLOYMENT.md#oauth-20-multi-tenant-opt-in); design + threat model: [`docs/OAUTH-DESIGN.md`](./docs/OAUTH-DESIGN.md).
 
 ### Local MCP — your own machine (Claude Desktop, Cursor, Claude Code, Cline, …)
 
