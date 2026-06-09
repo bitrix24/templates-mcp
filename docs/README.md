@@ -10,7 +10,7 @@ Start here if you are about to change code.
 2. [`ARCHITECTURE.md`](./ARCHITECTURE.md) — 15-minute orientation: layers, decisions, hot spots.
 3. [`ADDING-TOOLS.md`](./ADDING-TOOLS.md) — human walkthrough for adding a new MCP tool: mental model, where files go, the two registrations, anatomy of a real tool. Links to the agent skill for the full template (`callV2` / `callV3` / `batchV2` / `batchV3` helpers, error funnel, unit-test skeleton, persona walk).
 4. [`EVALS.md`](./EVALS.md) — automated tool-selection eval (Evalite + DeepSeek); how to run, how to add cases.
-5. [`OAUTH-DESIGN.md`](./OAUTH-DESIGN.md) — design doc (DRAFT) for the upcoming OAuth 2.0 + multi-tenant support. Contract first, code later.
+5. [`OAUTH-DESIGN.md`](./OAUTH-DESIGN.md) — normative design doc for the OAuth 2.0 multi-tenant support (shipped, opt-in behind `NUXT_BITRIX24_OAUTH_ENABLED`): threat model, token-store contract, event taxonomy.
 6. [`../PROJECT-BRIEF.md`](../PROJECT-BRIEF.md) — system design and roadmap, source of truth for everything that hasn't earned its own doc yet.
 
 > **Testing strategy** is not a separate doc — see `CONTRIBUTING.md` for the unit/integration split and CI gates, and `EVALS.md` for the LLM tool-selection layer.
