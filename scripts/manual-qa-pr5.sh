@@ -109,4 +109,8 @@ else
   echo " RESULT: $fail problem(s) found  ❌"
 fi
 echo "=================================================="
-exit 0
+if [ "$fail" -eq 0 ]; then
+  exit 0
+else
+  exit 1
+fi

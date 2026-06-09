@@ -96,3 +96,4 @@ Write-Host "=================================================="
 Write-Host " SUMMARY: $($script:pass) passed, $($script:fail) failed"
 if ($script:fail -eq 0) { Write-Host " RESULT: ALL GREEN" } else { Write-Host " RESULT: $($script:fail) problem(s) found" }
 Write-Host "=================================================="
+if ($script:fail -eq 0) { exit 0 } else { exit 1 }
