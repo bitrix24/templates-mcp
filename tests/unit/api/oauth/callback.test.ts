@@ -356,6 +356,11 @@ describe('/api/oauth/callback — domain validation (#220)', () => {
     expect(res.body).toContain('EXCHANGE-DOMAIN-MISMATCH')
     // No DB writes — no token row, no Bearer.
     expect(store.getTokens('portal-acme', 1)).toBeUndefined()
+    // Error pages carry the same anti-framing headers as the success
+    // page (issue #221) — they're rendered by the handler, not by
+    // Nitro's error renderer, so they don't inherit its defaults.
+    expect(res.headers['x-frame-options']).toBe('DENY')
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'")
   })
 
   it('502 EXCHANGE-DOMAIN-MISMATCH when ok.domain fails the allow-list (attacker.example.com)', async () => {
@@ -414,6 +419,12 @@ describe('/api/oauth/callback — happy path', () => {
     // Cache-Control + Pragma headers.
     expect(res.headers['cache-control']).toMatch(/no-store/)
     expect(res.headers.pragma).toMatch(/no-cache/)
+    // Anti-framing (issue #221): the page displays the raw Bearer — it
+    // must refuse to render inside any frame, and the CSP locks the page
+    // down to its own inline content.
+    expect(res.headers['x-frame-options']).toBe('DENY')
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'")
+    expect(res.headers['content-security-policy']).toContain("default-src 'none'")
     // CSRF cookie cleared (deleteCookie emits a Max-Age=0 cookie).
     const raw = res.headers['set-cookie']
     const cookies = Array.isArray(raw) ? raw : raw ? [raw as string] : []

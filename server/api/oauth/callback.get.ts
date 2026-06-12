@@ -92,6 +92,27 @@ interface TokenExchangeErr {
   error_description?: string
 }
 
+/**
+ * Response headers for every HTML page this route renders (issue #221).
+ *
+ * - `Cache-Control: no-store` — the success page carries the raw Bearer;
+ *   it must never land in a proxy/CDN cache.
+ * - `X-Frame-Options: DENY` + `frame-ancestors 'none'` — the Bearer is
+ *   displayed in the DOM; without anti-framing, a same-site context
+ *   (subdomain takeover, sibling-app XSS) could iframe the callback and
+ *   read the token off the page. `SameSite=Lax` on the CSRF cookie does
+ *   not protect against same-site framing.
+ * - CSP `default-src 'none'` — the pages are self-contained (no JS, no
+ *   external assets); `style-src 'unsafe-inline'` allows the one inline
+ *   `style=` attribute on the success page's <pre>.
+ */
+function setHtmlResponseHeaders(event: Parameters<typeof setResponseHeader>[0]): void {
+  setResponseHeader(event, 'cache-control', 'no-store, no-cache')
+  setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+  setResponseHeader(event, 'x-frame-options', 'DENY')
+  setResponseHeader(event, 'content-security-policy', 'default-src \'none\'; style-src \'unsafe-inline\'; frame-ancestors \'none\'')
+}
+
 function htmlEscape(s: string): string {
   return String(s).replace(/[&<>"]/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
@@ -287,8 +308,7 @@ export default defineEventHandler(async (event) => {
       reason: 'network',
       message: (err as Error).message,
     })
-    setResponseHeader(event, 'cache-control', 'no-store, no-cache')
-    setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+    setHtmlResponseHeaders(event)
     event.node.res.statusCode = 502
     return callbackErrorPage('EXCHANGE-NETWORK', 'Failed to reach Bitrix24 OAuth token endpoint.')
   }
@@ -304,8 +324,7 @@ export default defineEventHandler(async (event) => {
       reason: 'non-json',
       httpStatus: exchangeRes.status,
     })
-    setResponseHeader(event, 'cache-control', 'no-store, no-cache')
-    setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+    setHtmlResponseHeaders(event)
     event.node.res.statusCode = 502
     return callbackErrorPage('EXCHANGE-NON-JSON', 'Bitrix24 returned a non-JSON response.')
   }
@@ -319,8 +338,7 @@ export default defineEventHandler(async (event) => {
       // No description — could contain user-supplied or URL-shaped data.
       // Operator inspects the audit log + `_health` for the timeline.
     })
-    setResponseHeader(event, 'cache-control', 'no-store, no-cache')
-    setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+    setHtmlResponseHeaders(event)
     // A Bitrix24 5xx is an upstream outage → 503 (retryable); a 4xx /
     // explicit `{error}` is the caller's fault (reused code, wrong
     // client) → 502 (don't tell the client to retry blindly).
@@ -332,8 +350,7 @@ export default defineEventHandler(async (event) => {
   const userIdNum = typeof ok.user_id === 'string' ? Number.parseInt(ok.user_id, 10) : ok.user_id
   if (!Number.isFinite(userIdNum) || userIdNum <= 0) {
     void logger.error('oauth.callback.exchange.fail', { reason: 'bad-user-id', httpStatus: exchangeRes.status })
-    setResponseHeader(event, 'cache-control', 'no-store, no-cache')
-    setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+    setHtmlResponseHeaders(event)
     event.node.res.statusCode = 502
     return callbackErrorPage('EXCHANGE-BAD-USER-ID', 'Bitrix24 returned an unexpected user_id.')
   }
@@ -344,8 +361,7 @@ export default defineEventHandler(async (event) => {
   // Bitrix24 member_id shape.
   if (typeof ok.member_id !== 'string' || !MEMBER_ID_RE.test(ok.member_id)) {
     void logger.error('oauth.callback.exchange.fail', { reason: 'bad-member-id', httpStatus: exchangeRes.status })
-    setResponseHeader(event, 'cache-control', 'no-store, no-cache')
-    setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+    setHtmlResponseHeaders(event)
     event.node.res.statusCode = 502
     return callbackErrorPage('EXCHANGE-BAD-MEMBER-ID', 'Bitrix24 returned an unexpected member_id.')
   }
@@ -365,8 +381,7 @@ export default defineEventHandler(async (event) => {
       expected: stateRow.portal,
       got: typeof ok.domain === 'string' ? ok.domain.slice(0, 253) : String(ok.domain).slice(0, 253),
     })
-    setResponseHeader(event, 'cache-control', 'no-store, no-cache')
-    setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+    setHtmlResponseHeaders(event)
     event.node.res.statusCode = 502
     return callbackErrorPage('EXCHANGE-DOMAIN-MISMATCH', 'Bitrix24 returned a portal domain that does not match the install.')
   }
@@ -398,8 +413,7 @@ export default defineEventHandler(async (event) => {
   // out of any proxy / CDN cache; `Pragma: no-cache` for HTTP/1.0
   // proxies (uncommon but cheap to be defensive).
   deleteCookie(event, 'bx24_oauth_csrf', { path: '/api/oauth/' })
-  setResponseHeader(event, 'cache-control', 'no-store, no-cache')
+  setHtmlResponseHeaders(event)
   setResponseHeader(event, 'pragma', 'no-cache')
-  setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
   return bearerSuccessPage(minted.bearer, stateRow.portal)
 })

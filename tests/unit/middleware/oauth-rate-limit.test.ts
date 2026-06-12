@@ -1,0 +1,140 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Same h3-stub pattern as mcp-auth.test.ts: defineEventHandler becomes the
+// identity function, the rest read off a synthetic event object.
+vi.mock('h3', () => ({
+  defineEventHandler: <T>(fn: T) => fn,
+  getRequestURL: (event: FakeEvent) => new URL(event._url, 'http://test.local'),
+  getRequestIP: (event: FakeEvent) => event._ip,
+  setResponseHeader: (event: FakeEvent, name: string, value: string) => {
+    event._responseHeaders ??= {}
+    event._responseHeaders[name.toLowerCase()] = value
+  },
+  createError: (opts: { statusCode: number, statusMessage: string, data?: { errorCode?: string } }) => {
+    const err = new Error(opts.statusMessage) as Error & {
+      statusCode: number
+      statusMessage: string
+      data?: { errorCode?: string }
+    }
+    err.statusCode = opts.statusCode
+    err.statusMessage = opts.statusMessage
+    err.data = opts.data
+    return err
+  },
+}))
+
+interface FakeEvent {
+  _url: string
+  _ip?: string
+  _responseHeaders?: Record<string, string>
+}
+
+const runtimeConfig: { bitrix24OauthEnabled: boolean } = { bitrix24OauthEnabled: true }
+vi.stubGlobal('useRuntimeConfig', () => runtimeConfig)
+
+const loggerCalls: Array<{ event: string, ctx: Record<string, unknown> | undefined }> = []
+vi.mock('~/server/utils/logger', () => ({
+  useLogger: () => ({
+    warning: (event: string, ctx?: Record<string, unknown>) => {
+      loggerCalls.push({ event, ctx })
+      return Promise.resolve()
+    },
+  }),
+}))
+
+const mod = await import('../../../server/middleware/oauth-rate-limit')
+const middleware = mod.default as unknown as (event: FakeEvent) => void
+const { _resetOauthRateLimitForTests } = mod
+
+function hit(ip: string, url = '/api/oauth/install'): FakeEvent {
+  const event: FakeEvent = { _url: url, _ip: ip }
+  middleware(event)
+  return event
+}
+
+describe('oauth-rate-limit middleware', () => {
+  beforeEach(() => {
+    _resetOauthRateLimitForTests()
+    runtimeConfig.bitrix24OauthEnabled = true
+    loggerCalls.length = 0
+    vi.useFakeTimers()
+    vi.setSystemTime(1_750_000_000_000)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('skips paths other than /api/oauth/install (callback, health, mcp untouched)', () => {
+    for (let i = 0; i < 20; i++) {
+      expect(() => hit('1.2.3.4', '/api/oauth/callback')).not.toThrow()
+      expect(() => hit('1.2.3.4', '/api/oauth/_health')).not.toThrow()
+      expect(() => hit('1.2.3.4', '/mcp')).not.toThrow()
+    }
+  })
+
+  it('skips entirely when the OAuth flag is off (webhook-only forks see no 429 surface)', () => {
+    runtimeConfig.bitrix24OauthEnabled = false
+    for (let i = 0; i < 20; i++) {
+      expect(() => hit('1.2.3.4')).not.toThrow()
+    }
+  })
+
+  it('allows 5 requests per IP per minute, refuses the 6th with 429 RATE-LIMITED + Retry-After', () => {
+    for (let i = 0; i < 5; i++) expect(() => hit('1.2.3.4')).not.toThrow()
+
+    let caught: (Error & { statusCode?: number, data?: { errorCode?: string } }) | undefined
+    let event: FakeEvent | undefined
+    try {
+      event = { _url: '/api/oauth/install', _ip: '1.2.3.4' }
+      middleware(event)
+    }
+    catch (err) {
+      caught = err as typeof caught
+    }
+    expect(caught).toBeDefined()
+    expect(caught!.statusCode).toBe(429)
+    expect(caught!.data?.errorCode).toBe('RATE-LIMITED')
+    // Standard header so well-behaved clients back off without parsing JSON.
+    expect(Number(event!._responseHeaders?.['retry-after'])).toBeGreaterThanOrEqual(1)
+    // §11 event logged with the source ip.
+    const logged = loggerCalls.find(c => c.event === 'oauth.install.deny.rate-limited')
+    expect(logged).toBeDefined()
+    expect(logged!.ctx).toMatchObject({ ip: '1.2.3.4' })
+  })
+
+  it('buckets are per-IP — a second client is unaffected by the first one flooding', () => {
+    for (let i = 0; i < 10; i++) {
+      try {
+        hit('10.0.0.1')
+      }
+      catch { /* flooding client gets refused — expected */ }
+    }
+    expect(() => hit('10.0.0.2')).not.toThrow()
+  })
+
+  it('window slides: after 60s the oldest hit expires and a new request passes', () => {
+    for (let i = 0; i < 5; i++) hit('1.2.3.4')
+    expect(() => hit('1.2.3.4')).toThrow(/Too many install attempts/)
+
+    vi.advanceTimersByTime(61_000)
+    expect(() => hit('1.2.3.4')).not.toThrow()
+  })
+
+  it('a refused request does not consume a slot (the window is not extended by retries)', () => {
+    for (let i = 0; i < 5; i++) hit('1.2.3.4')
+    // Hammer the refused state a few times…
+    for (let i = 0; i < 3; i++) {
+      expect(() => hit('1.2.3.4')).toThrow()
+    }
+    // …the original 5 still expire on the original schedule.
+    vi.advanceTimersByTime(61_000)
+    expect(() => hit('1.2.3.4')).not.toThrow()
+  })
+
+  it('missing source IP falls into a shared <unknown> bucket and is still limited', () => {
+    for (let i = 0; i < 5; i++) {
+      expect(() => middleware({ _url: '/api/oauth/install' })).not.toThrow()
+    }
+    expect(() => middleware({ _url: '/api/oauth/install' })).toThrow(/Too many install attempts/)
+  })
+})

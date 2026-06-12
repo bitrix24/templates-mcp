@@ -344,6 +344,7 @@ OAuth failure modes are operator-debuggable only if every reject/throw lands a *
   - `oauth.install.deny.not-configured` (ERROR — flag on but `CLIENT_ID`/`REDIRECT_URL` missing)
   - `oauth.install.deny.portal-format` (WARN — `portal` failed the allow-list regex, which covers BOTH a malformed hostname and an unlisted TLD; there is no separate `portal-host` event — the single regex is the one gate)
   - `oauth.install.ok` (INFO — state minted, redirect issued; logs only `statePrefix`, the first 8 hex chars)
+  - `oauth.install.deny.rate-limited` (WARN, issue #221 — emitted by `server/middleware/oauth-rate-limit.ts` when one source IP exceeds 5 install requests per minute; flag-gated, raw socket IP only (never `X-Forwarded-For`), process-local window. The 429 carries errorCode `RATE-LIMITED` + a standard `Retry-After` header. Behind the reference nginx proxy all external clients share the proxy's IP — the limit is then effectively global, which still admits a human and still starves a flood; operators wanting finer grain add nginx `limit_req` in front)
 
   Callback (`/api/oauth/callback`):
   - `oauth.callback.start` (INFO)

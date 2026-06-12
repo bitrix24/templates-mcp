@@ -108,10 +108,16 @@ export default defineEventHandler(async (event) => {
   // redirector (a generic phishing primitive that doesn't even need an
   // OAuth account on the target host).
   const portal = String((getQuery(event).portal ?? '')).trim().toLowerCase()
-  void logger.info('oauth.install.start', { portal: portal || '<empty>', clientId })
+  // Log a CAPPED copy of the raw value (issue #221): `?portal=` is
+  // attacker-supplied and logged before validation — without the cap an
+  // arbitrarily long (or control-character-laden) query string flows
+  // into the structured log verbatim. 253 = max DNS hostname length,
+  // same cap the audit log applies (MAX_PORTAL_LEN).
+  const portalForLog = (portal || '<empty>').slice(0, 253)
+  void logger.info('oauth.install.start', { portal: portalForLog, clientId })
 
   if (!portal || !PORTAL_ALLOW_LIST_RE.test(portal)) {
-    void logger.warning('oauth.install.deny.portal-format', { portal: portal || '<empty>' })
+    void logger.warning('oauth.install.deny.portal-format', { portal: portalForLog })
     throw createError({
       statusCode: 400,
       statusMessage: `portal hostname rejected: must match ${PORTAL_ALLOW_LIST_RE.source}`,

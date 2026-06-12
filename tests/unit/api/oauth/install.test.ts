@@ -192,6 +192,17 @@ describe('/api/oauth/install — portal allow-list', () => {
     expect(loggerCalls.find(c => c.event === 'oauth.install.deny.portal-format')).toBeDefined()
   })
 
+  it('caps the logged raw portal value at 253 chars (issue #221 — no unbounded log injection)', async () => {
+    const evil = `${'a'.repeat(2000)}.example.com`
+    const res = await callHandler({ portal: evil })
+    expect(res.statusCode).toBe(400)
+    for (const event of ['oauth.install.start', 'oauth.install.deny.portal-format']) {
+      const call = loggerCalls.find(c => c.event === event)
+      expect(call).toBeDefined()
+      expect((call!.ctx as { portal: string }).portal.length).toBeLessThanOrEqual(253)
+    }
+  })
+
   it.each([
     'acme.bitrix24.com',
     'sub-portal-123.bitrix24.ru',

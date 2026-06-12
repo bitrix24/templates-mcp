@@ -10,6 +10,7 @@
  * on error — operators reading container logs should not be able to recover
  * the credential from a failure.
  */
+import { getTenantContext } from '~/server/utils/request-context'
 
 const GITHUB_API = 'https://api.github.com'
 
@@ -127,23 +128,46 @@ export async function createGithubIssue(input: CreateIssueInput): Promise<Create
 
 // --- Rate limit ---------------------------------------------------------------
 //
-// Sliding-window counter. Cheap, in-memory, single-instance. Phase 3 will move
-// this to a shared store when we go multi-tenant — until then it's adequate.
+// Sliding-window counter. Cheap, in-memory, single-instance.
 //
 // Counts ATTEMPTS, not successes: a failed call (auth, network, 5xx) still
 // consumes one slot. This is the deliberate trade-off — it discourages tight
 // retry loops at the cost of being unfair on flaky networks. See FEEDBACK.md.
+//
+// Multi-tenant (issue #221): under OAuth, the window is keyed on the
+// caller's `memberId` from the request's ALS tenant context — one noisy
+// (or prompt-injected) tenant exhausting the quota must not block every
+// other tenant's feedback for the rest of the hour. Outside a tenant
+// scope (webhook mode, stdio bundle) everything shares the `__global__`
+// bucket, which is the pre-#221 behaviour exactly: a webhook deployment
+// has a single identity, so a single bucket is correct there.
 
 const WINDOW_MS = 60 * 60 * 1000 // 1 hour
 const MAX_REQUESTS_PER_WINDOW = 5
+// Bound on distinct tenant buckets. Matches the OAuth factory's LRU cap
+// order-of-magnitude; insertion-order eviction (Map iteration order) is
+// fine — an evicted bucket just resets that tenant's window early, which
+// fails OPEN for the tenant and never blocks anyone.
+const MAX_BUCKETS = 200
 
-const timestamps: number[] = []
+const buckets = new Map<string, number[]>()
 
 export function consumeFeedbackQuota(now: number = Date.now()): {
   ok: boolean
   remaining: number
   resetInSeconds: number
 } {
+  const key = getTenantContext()?.memberId ?? '__global__'
+  let timestamps = buckets.get(key)
+  if (!timestamps) {
+    if (buckets.size >= MAX_BUCKETS) {
+      const oldest = buckets.keys().next().value
+      if (oldest !== undefined) buckets.delete(oldest)
+    }
+    timestamps = []
+    buckets.set(key, timestamps)
+  }
+
   const cutoff = now - WINDOW_MS
   // Drop expired entries in place to avoid unbounded growth.
   while (timestamps.length > 0 && timestamps[0]! < cutoff) {

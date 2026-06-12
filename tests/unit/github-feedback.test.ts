@@ -208,6 +208,37 @@ describe('consumeFeedbackQuota', () => {
     const r = consumeFeedbackQuota(justAfterOldestExpires)
     expect(r.ok).toBe(true)
   })
+
+  it('keys the window per tenant under OAuth — one tenant exhausting the quota does not block another (#221)', async () => {
+    const { consumeFeedbackQuota } = await loadFresh()
+    // Use the REAL ALS implementation: the quota function reads
+    // getTenantContext() from `~/server/utils/request-context`, so wrapping
+    // the calls in runWithTenant mirrors what the toolkit middleware does
+    // in production.
+    const { runWithTenant } = await import('../../server/utils/request-context')
+    const base = 1_700_000_000_000
+
+    // Tenant A burns all 5 slots…
+    runWithTenant({ memberId: 'portal-a', userId: '1' }, () => {
+      for (let i = 0; i < 5; i++) expect(consumeFeedbackQuota(base + i).ok).toBe(true)
+      expect(consumeFeedbackQuota(base + 10).ok).toBe(false)
+    })
+
+    // …tenant B is unaffected…
+    runWithTenant({ memberId: 'portal-b', userId: '1' }, () => {
+      expect(consumeFeedbackQuota(base + 11).ok).toBe(true)
+    })
+
+    // …and so is the global (webhook / stdio, no tenant scope) bucket.
+    expect(consumeFeedbackQuota(base + 12).ok).toBe(true)
+  })
+
+  it('outside a tenant scope the global bucket behaves exactly as before (#221 back-compat)', async () => {
+    const { consumeFeedbackQuota } = await loadFresh()
+    const base = 1_700_000_000_000
+    for (let i = 0; i < 5; i++) expect(consumeFeedbackQuota(base + i).ok).toBe(true)
+    expect(consumeFeedbackQuota(base + 10).ok).toBe(false)
+  })
 })
 
 describe('sanitizeDetails', () => {
