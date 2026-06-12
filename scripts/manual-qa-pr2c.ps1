@@ -33,9 +33,18 @@ function Red([string]$msg) {
   $script:Fail++
 }
 
-function Invoke-Probe([string]$url) {
+function Invoke-Probe([string]$url, [hashtable]$Headers = $null) {
   try {
-    $resp = Invoke-WebRequest -Uri $url -Method Get -SkipHttpErrorCheck -UseBasicParsing -MaximumRedirection 0 -ErrorAction Stop
+    $args = @{
+      Uri = $url
+      Method = 'Get'
+      SkipHttpErrorCheck = $true
+      UseBasicParsing = $true
+      MaximumRedirection = 0
+      ErrorAction = 'Stop'
+    }
+    if ($Headers) { $args['Headers'] = $Headers }
+    $resp = Invoke-WebRequest @args
     return @{ Status = $resp.StatusCode; Body = $resp.Content; Headers = $resp.Headers }
   } catch {
     return @{ Status = 0; Body = ""; Headers = @{} }
@@ -149,6 +158,24 @@ if ($body -match '"errorCode":"FLAG-OFF"') {
     Red "  WWW-Authenticate missing or wrong errorCode"
   }
 
+  # /mcp with a RANDOM Bearer that was never minted must also return 401
+  # BEARER-UNKNOWN (issue #224 — proves the toolkit-middleware path in
+  # server/mcp/index.ts actually runs the sha256 lookup against mcp_tokens
+  # rather than just matching the legacy shared token).
+  $randomBearer = "ci$([DateTimeOffset]::Now.ToUnixTimeSeconds())deadbeef" + ('0' * 56)
+  $mcpRandom = Invoke-Probe "$Base/mcp" -Headers @{ "Authorization" = "Bearer $randomBearer" }
+  if ($mcpRandom.Status -eq 401) {
+    Green "/mcp with random unminted Bearer -> 401"
+  } else {
+    Red "/mcp with random unminted Bearer -> expected 401, got $($mcpRandom.Status)"
+  }
+  $wwwAuthRand = $mcpRandom.Headers["WWW-Authenticate"]
+  if ($wwwAuthRand -match 'BEARER-UNKNOWN') {
+    Green "  WWW-Authenticate (random Bearer) carries errorCode=BEARER-UNKNOWN"
+  } else {
+    Red "  WWW-Authenticate (random Bearer) missing or wrong errorCode"
+  }
+
   Write-Host ""
   Write-Host "--- /api/oauth/_health gates ---"
   $health = Invoke-Probe "$Base/api/oauth/_health"
@@ -165,6 +192,15 @@ if ($body -match '"errorCode":"FLAG-OFF"') {
         Green "_health (admin token configured) → 401 ADMIN-TOKEN-MISSING"
       } else {
         Red "_health 401 but body unexpected: $($health.Body)"
+      }
+    }
+    503 {
+      # Non-localhost without admin token: fails-closed. Expected when the
+      # probe runs through a published docker port.
+      if ($health.Body -match "NOT-CONFIGURED") {
+        Green "_health (non-localhost, no admin token) → 503 NOT-CONFIGURED (fails-closed)"
+      } else {
+        Red "_health 503 but body unexpected: $($health.Body)"
       }
     }
     default {

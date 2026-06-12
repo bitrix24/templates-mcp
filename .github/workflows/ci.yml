@@ -516,23 +516,106 @@ jobs:
             exit 1
           fi
           echo "OK — /mcp correctly returned 503 with the placeholder token."
+      - name: Boot a third `oauth-on` container on port 3002 (issue #224)
+        id: oauth-on
+        env:
+          # A real, fresh Bearer is generated but the OAuth-on path bypasses
+          # NUXT_MCP_AUTH_TOKEN on /mcp entirely, so the value is irrelevant
+          # for the assertions below — we just need a non-placeholder so
+          # that the 503 "not configured" gate of the legacy path doesn't
+          # fire and mask the OAuth-on behaviour. Generated inline (not via
+          # ::add-mask::) because nothing in this step echoes it.
+          NUXT_MCP_AUTH_TOKEN: ${{ steps.start.outputs.token }}
+        # Pins the contract that's flipped on when an operator sets
+        # NUXT_BITRIX24_OAUTH_ENABLED=true (issue #224 — the flag-on path
+        # was previously NEVER booted in CI, so a schema-migration cold-
+        # boot failure or an auth-bypass regression in the toolkit
+        # middleware would have shipped through `docker-smoke` undetected).
+        #
+        # Different host port (3002) for the same kernel-port-reuse reason
+        # the placeholder container uses 3001. CLIENT_ID/CLIENT_SECRET/
+        # REDIRECT_URL are dummies — nothing in the boot or the assertions
+        # below reaches a real Bitrix24 portal, and the install handler's
+        # PORTAL-FORMAT gate fires (and is checked) before any outbound
+        # request would be made. NUXT_BITRIX24_OAUTH_DB_DIR points at a
+        # writable tmpfs path inside the container (`/tmp/oauthtest`); the
+        # token-store auto-creates the directory at 0700.
+        run: |
+          set -euo pipefail
+          docker run -d --name bx24-smoke-oauth \
+            -e NUXT_BITRIX24_WEBHOOK_URL=https://example.invalid/rest/1/x/ \
+            -e NUXT_MCP_AUTH_TOKEN="$NUXT_MCP_AUTH_TOKEN" \
+            -e NUXT_BITRIX24_OAUTH_ENABLED=true \
+            -e NUXT_BITRIX24_OAUTH_CLIENT_ID=ci.smoke.client \
+            -e NUXT_BITRIX24_OAUTH_CLIENT_SECRET=ci-smoke-secret-not-real \
+            -e NUXT_BITRIX24_OAUTH_REDIRECT_URL=https://ci.example.invalid/api/oauth/callback \
+            -e NUXT_BITRIX24_OAUTH_DB_DIR=/tmp/oauthtest \
+            -e NITRO_PORT=3000 \
+            -p 3002:3000 \
+            bx24-template-mcp:smoke
+
+          # Health-wait — also implicitly asserts the oauth-schema plugin
+          # bootstrap ran without crashing the Nitro process (a failed
+          # `mkdirSync(/tmp/oauthtest, 0o700)` or a SQL syntax error in
+          # the schema would make the container exit before /api/health
+          # ever responds 200).
+          HEALTHY="no"
+          for _ in $(seq 1 30); do
+            STATUS=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:3002/api/health || echo "error")
+            if [ "$STATUS" = "200" ]; then HEALTHY="yes"; break; fi
+            sleep 2
+          done
+          if [ "$HEALTHY" != "yes" ]; then
+            echo "::error::oauth-on container never returned /api/health=200; the oauth-schema plugin may have crashed at boot."
+            docker logs bx24-smoke-oauth 2>&1 | tail -200 || true
+            exit 1
+          fi
+      - name: Assert the SQLite token-store materialised on cold boot
+        # Direct evidence that `server/plugins/oauth-schema.ts` ran and
+        # the token-store ran its WAL setup + CREATE TABLE statements
+        # against a fresh DB. A regression in the schema migration would
+        # leave the file missing (or leave the container crash-looped,
+        # caught one step earlier).
+        run: |
+          set -euo pipefail
+          if ! docker exec bx24-smoke-oauth ls -la /tmp/oauthtest/oauth.sqlite >/dev/null 2>&1; then
+            echo "::error::oauth.sqlite was not created in /tmp/oauthtest — the schema-bootstrap plugin did not run, or its mkdir failed."
+            docker exec bx24-smoke-oauth ls -la /tmp/oauthtest 2>&1 || true
+            exit 1
+          fi
+          echo "OK — oauth.sqlite materialised."
+      - name: Run scripts/manual-qa-pr2c.sh against the `oauth-on` container
+        # The script auto-detects "Scenario B" by probing /api/oauth/install
+        # without ?portal= and matching `errorCode:"PORTAL-FORMAT"`. With
+        # the OAuth surface fully configured, it asserts: install allow-list
+        # rejection + happy 302 + CSRF cookie attrs, callback PARAMS-MISSING
+        # + STATE-MISSING gates, /mcp 401 BEARER-UNKNOWN (with AND without
+        # a random Bearer), /api/oauth/_health 503 NOT-CONFIGURED for
+        # non-localhost requests (fails-closed). One bash run covers the
+        # full §11 contract on the flag-on boot.
+        run: |
+          ./scripts/manual-qa-pr2c.sh http://localhost:3002
       - name: Container logs (on failure only)
         if: failure()
         # 500-line tail handles a Nitro cold-boot stack trace + the route
-        # table dump that the toolkit emits at materialisation. Dump BOTH
-        # containers' logs so a cascading failure across the two boots is
-        # reconstructable from a single CI run.
+        # table dump that the toolkit emits at materialisation. Dump ALL
+        # three containers' logs so a cascading failure across the boots
+        # is reconstructable from a single CI run.
         run: |
           echo "=== bx24-smoke (valid-token, port 3000) ==="
           docker logs bx24-smoke 2>&1 | tail -500 || true
           echo
           echo "=== bx24-smoke-placeholder (placeholder-token, port 3001) ==="
           docker logs bx24-smoke-placeholder 2>&1 | tail -500 || true
+          echo
+          echo "=== bx24-smoke-oauth (oauth-on, port 3002) ==="
+          docker logs bx24-smoke-oauth 2>&1 | tail -500 || true
       - name: Cleanup
         if: always()
         run: |
           docker rm -f bx24-smoke 2>/dev/null || true
           docker rm -f bx24-smoke-placeholder 2>/dev/null || true
+          docker rm -f bx24-smoke-oauth 2>/dev/null || true
 
   # Aggregate gate. The `main` branch protection rule requires a single
   # status check named `ci` — this job is that gate. It depends on every

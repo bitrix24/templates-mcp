@@ -159,9 +159,29 @@ case "$probe" in
       red "  WWW-Authenticate missing or wrong errorCode"
     fi
 
+    # /mcp with a RANDOM Bearer that was never minted must also return 401
+    # BEARER-UNKNOWN (issue #224 — proves the toolkit-middleware path in
+    # `server/mcp/index.ts` actually runs the sha256 lookup against
+    # `mcp_tokens` rather than just matching the legacy shared token).
+    random_bearer="ci$(date +%s)deadbeef0000000000000000000000000000000000000000000000000000"
+    mcp_random_headers=$(curl -s -D - -o /dev/null \
+      -H "Authorization: Bearer $random_bearer" "$BASE/mcp" 2>/dev/null || echo "")
+    mcp_random_status=$(echo "$mcp_random_headers" | head -1 | awk '{print $2}')
+    if [ "$mcp_random_status" = "401" ]; then
+      green "/mcp with random unminted Bearer -> 401"
+    else
+      red "/mcp with random unminted Bearer -> expected 401, got $mcp_random_status"
+    fi
+    if echo "$mcp_random_headers" | grep -iq 'www-authenticate.*BEARER-UNKNOWN'; then
+      green "  WWW-Authenticate (random Bearer) carries errorCode=BEARER-UNKNOWN"
+    else
+      red "  WWW-Authenticate (random Bearer) missing or wrong errorCode"
+    fi
+
     echo
     echo "--- /api/oauth/_health gates ---"
-    # _health from localhost = 200 if no admin token; 401 ADMIN-TOKEN-MISSING if token set.
+    # _health from localhost = 200 if no admin token; 401 ADMIN-TOKEN-MISSING if token set;
+    # 503 NOT-CONFIGURED if non-localhost without an admin token (fails-closed).
     health_status=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/api/oauth/_health" 2>/dev/null)
     health_body=$(curl -s "$BASE/api/oauth/_health" 2>/dev/null || echo "")
     case "$health_status" in
@@ -170,6 +190,17 @@ case "$probe" in
           green "_health (no admin token, localhost) → 200 + enabled=true"
         else
           red "_health 200 but body shape unexpected: $health_body"
+        fi
+        ;;
+      503)
+        # Non-localhost request without an admin token: fails-closed.
+        # Exactly what we want when the probe runs through a published
+        # docker port (the source IP inside the container is the docker
+        # bridge, not 127.0.0.1).
+        if echo "$health_body" | grep -q "NOT-CONFIGURED"; then
+          green "_health (non-localhost, no admin token) → 503 NOT-CONFIGURED (fails-closed)"
+        else
+          red "_health 503 but body unexpected: $health_body"
         fi
         ;;
       401)
