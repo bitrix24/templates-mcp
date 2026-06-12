@@ -61,6 +61,15 @@ describe('portal-validation — PORTAL_ALLOW_LIST_RE + isAllowedPortalDomain', (
     expect(isAllowedPortalDomain('acme.bitrix24.com\n')).toBe(false)
   })
 
+  it('rejects labels with a leading or trailing hyphen (RFC-1123 shape)', () => {
+    expect(isAllowedPortalDomain('-acme.bitrix24.com')).toBe(false)
+    expect(isAllowedPortalDomain('acme-.bitrix24.com')).toBe(false)
+    // interior hyphen is fine
+    expect(isAllowedPortalDomain('a-c-me.bitrix24.com')).toBe(true)
+    // single-char label is fine
+    expect(isAllowedPortalDomain('a.bitrix24.com')).toBe(true)
+  })
+
   it('PORTAL_ALLOW_LIST_RE is a real RegExp with the expected source', () => {
     expect(PORTAL_ALLOW_LIST_RE).toBeInstanceOf(RegExp)
     expect(PORTAL_ALLOW_LIST_RE.test('acme.bitrix24.ru')).toBe(true)
@@ -84,6 +93,24 @@ describe('portal-validation — safeHostname', () => {
     expect(safeHostname('http://acme.bitrix24.com/rest/')).toBeNull()
     expect(safeHostname('ftp://acme.bitrix24.com/rest/')).toBeNull()
     expect(safeHostname('javascript:alert(1)')).toBeNull()
+  })
+
+  it('returns null for URLs carrying userinfo (URL.hostname would silently strip it)', () => {
+    // The attack: `hostname` parses to the allow-listed host, but the raw
+    // string smuggles `attacker:creds@` past a naive equality check.
+    expect(safeHostname('https://attacker:creds@acme.bitrix24.com/rest/')).toBeNull()
+    expect(safeHostname('https://user@acme.bitrix24.com/rest/')).toBeNull()
+  })
+
+  it('returns null for URLs with an explicit non-standard port', () => {
+    expect(safeHostname('https://acme.bitrix24.com:9000/rest/')).toBeNull()
+    expect(safeHostname('https://acme.bitrix24.com:8443/rest/')).toBeNull()
+  })
+
+  it('treats the implicit/standard HTTPS port (:443) as no port — URL normalises it away', () => {
+    // `URL.port` is '' for the scheme-default port, so :443 is identical
+    // to omitting it. This is correct, not a bypass — 443 IS HTTPS.
+    expect(safeHostname('https://acme.bitrix24.com:443/rest/')).toBe('acme.bitrix24.com')
   })
 })
 
@@ -112,6 +139,29 @@ describe('portal-validation — validateClientEndpoint', () => {
     const out = validateClientEndpoint('http://acme.bitrix24.com/rest/', 'acme.bitrix24.com', ctx)
     expect(out).toBe('https://acme.bitrix24.com/rest/')
     expect(loggerCalls.find(c => c.event === 'oauth.endpoint.reject')).toBeDefined()
+  })
+
+  it('returns the safe fallback when the URL smuggles userinfo past the hostname', () => {
+    loggerCalls.length = 0
+    const out = validateClientEndpoint('https://attacker:creds@acme.bitrix24.com/rest/', 'acme.bitrix24.com', ctx)
+    expect(out).toBe('https://acme.bitrix24.com/rest/')
+    expect(loggerCalls.find(c => c.event === 'oauth.endpoint.reject')).toBeDefined()
+  })
+
+  it('returns the safe fallback when the URL specifies a non-standard port', () => {
+    loggerCalls.length = 0
+    const out = validateClientEndpoint('https://acme.bitrix24.com:9000/rest/', 'acme.bitrix24.com', ctx)
+    expect(out).toBe('https://acme.bitrix24.com/rest/')
+    expect(loggerCalls.find(c => c.event === 'oauth.endpoint.reject')).toBeDefined()
+  })
+
+  it('canonicalises a matching URL — strips query string and fragment', () => {
+    loggerCalls.length = 0
+    // Even when the hostname matches, anything after the path is dropped so
+    // nothing attacker-controllable rides along into the SDK.
+    const out = validateClientEndpoint('https://acme.bitrix24.com/rest/?evil=1#frag', 'acme.bitrix24.com', ctx)
+    expect(out).toBe('https://acme.bitrix24.com/rest/')
+    expect(loggerCalls.find(c => c.event === 'oauth.endpoint.reject')).toBeUndefined()
   })
 
   it('returns the safe fallback (no log) when URL is null/undefined — legitimate upstream omission', () => {

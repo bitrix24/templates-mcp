@@ -190,6 +190,13 @@ export function useBitrix24OAuth(memberId: string, userId: number): B24OAuth {
   // reaches stdout in raw form. Mirrors the webhook singleton in
   // `bitrix24.ts:113`. The instances are LRU-cached, so this runs once
   // per tenant and stays attached for the lifetime of the entry.
+  //
+  // Coverage caveat: `AbstractB24.setLogger` propagates to the actions /
+  // tools managers and the HTTP-v2/v3 clients, but NOT to the SDK's
+  // internal `AuthOAuthManager` (it has no `setLogger` in
+  // @bitrix24/b24jssdk ≤1.1.2 and does not log directly today). If a
+  // future SDK major adds logging inside that manager, re-verify this
+  // redactor still covers it.
   b24.setLogger(makeRedactingLogger(useLogger()))
 
   // Custom refresh: we do the fetch + the persistence + the error

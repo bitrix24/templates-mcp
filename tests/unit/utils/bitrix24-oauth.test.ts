@@ -403,6 +403,11 @@ describe('useBitrix24OAuth — refresh flow', () => {
 describe('useBitrix24OAuth — domain & endpoint validation (#220)', () => {
   // Reusable sniffer: capture the factory's refresh callback so we can
   // invoke it directly with whatever response shape we want.
+  //
+  // If `useBitrix24OAuth(...)` throws before this returns, the prototype
+  // patch is not restored here — but `beforeEach`'s `vi.resetModules()` +
+  // the fresh `@bitrix24/b24jssdk` import per test contains the leak to
+  // this `it`. Callers still wrap the `restore()` in their own `finally`.
   async function captureFactoryCb(): Promise<{
     factoryCb: CustomRefreshAuth
     restore: () => void
@@ -458,10 +463,16 @@ describe('useBitrix24OAuth — domain & endpoint validation (#220)', () => {
       // mock above.
       const wired = setLoggerSpy.mock.calls[0]![0] as { info: (event: string, ctx?: Record<string, unknown>) => Promise<void> }
       expect(typeof wired.info).toBe('function')
-      // Sanity round-trip: drive a log line through the wired logger
-      // and confirm it landed in our recorder.
-      await wired.info('sdk.smoke.test', { sample: 1 })
-      expect(loggerCalls.some(c => c.event === 'sdk.smoke.test')).toBe(true)
+      // The wired logger must be the REDACTING wrapper, not a bare logger:
+      // push a webhook-secret-shaped URL through it and confirm the secret
+      // segment comes out `<REDACTED>`. A regression that drops
+      // `makeRedactingLogger` (wiring `useLogger()` raw) fails here — which
+      // is the exact credential-leak #220 guards against.
+      await wired.info('https://acme.bitrix24.com/rest/1/SUPERSECRETWEBHOOK', { sample: 1 })
+      const rec = loggerCalls.find(c => c.event.includes('acme.bitrix24.com'))
+      expect(rec).toBeDefined()
+      expect(rec!.event).toContain('<REDACTED>')
+      expect(rec!.event).not.toContain('SUPERSECRETWEBHOOK')
     }
     finally {
       Object.defineProperty(sdk.B24OAuth.prototype, 'setLogger', { value: originalSet, configurable: true })
@@ -559,7 +570,7 @@ describe('useBitrix24OAuth — domain & endpoint validation (#220)', () => {
       // tenant portal.
       expect(result.client_endpoint).toBe(`https://${SAMPLE_TENANT.portalDomain}/rest/`)
       const reject = loggerCalls.find(
-        c => c.event === 'oauth.endpoint.reject' && (c.ctx as Record<string, unknown>)?.field === 'client_endpoint',
+        c => c.event === 'oauth.endpoint.reject' && c.ctx?.field === 'client_endpoint',
       )
       expect(reject).toBeDefined()
       expect(reject!.ctx).toMatchObject({ expectedHost: SAMPLE_TENANT.portalDomain })
@@ -616,7 +627,7 @@ describe('useBitrix24OAuth — domain & endpoint validation (#220)', () => {
       const result = await factoryCb()
       expect(result.server_endpoint).toBe('https://oauth.bitrix.info/rest/')
       const reject = loggerCalls.find(
-        c => c.event === 'oauth.endpoint.reject' && (c.ctx as Record<string, unknown>)?.field === 'server_endpoint',
+        c => c.event === 'oauth.endpoint.reject' && c.ctx?.field === 'server_endpoint',
       )
       expect(reject).toBeDefined()
     }

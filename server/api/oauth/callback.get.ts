@@ -77,7 +77,13 @@ interface TokenExchangeOk {
   user_id: number | string
   scope?: string
   domain?: string
-  client_endpoint?: string
+  // NOTE: the exchange response also carries `client_endpoint` /
+  // `server_endpoint`, but the install path deliberately ignores them —
+  // we never persist an endpoint URL; the per-tenant REST endpoint is
+  // derived from the validated `portalDomain` at call time
+  // (`bitrix24-oauth.ts`). Only the refresh path (where the SDK consumes
+  // the endpoints live) validates them, via `portal-validation.ts`. Not
+  // declaring them here keeps "what we actually read" honest.
   status?: string
 }
 
@@ -355,6 +361,7 @@ export default defineEventHandler(async (event) => {
   if (ok.domain != null && (!isAllowedPortalDomain(ok.domain) || ok.domain !== stateRow.portal)) {
     void logger.error('oauth.callback.exchange.fail', {
       reason: 'domain-mismatch',
+      httpStatus: exchangeRes.status,
       expected: stateRow.portal,
       got: typeof ok.domain === 'string' ? ok.domain.slice(0, 253) : String(ok.domain).slice(0, 253),
     })
