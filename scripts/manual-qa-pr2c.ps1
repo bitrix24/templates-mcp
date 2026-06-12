@@ -12,13 +12,15 @@
 #
 # Usage:
 #   1. Boot the app locally (pnpm dev OR docker compose up).
-#   2. (Optional) `$env:MCP_BASE = "http://localhost:3000"` to override URL.
-#   3. .\scripts\manual-qa-pr2c.ps1
+#   2. .\scripts\manual-qa-pr2c.ps1 [http://localhost:3002]
+#      (positional URL wins; falls back to $env:MCP_BASE, then :3000)
 #
 # Detects scenario automatically via /api/oauth/install probe.
 
+param([string]$BaseUrl = "")
+
 $ErrorActionPreference = "Continue"
-$Base = if ($env:MCP_BASE) { $env:MCP_BASE } else { "http://localhost:3000" }
+$Base = if ($BaseUrl) { $BaseUrl } elseif ($env:MCP_BASE) { $env:MCP_BASE } else { "http://localhost:3000" }
 $script:Pass = 0
 $script:Fail = 0
 
@@ -35,7 +37,10 @@ function Red([string]$msg) {
 
 function Invoke-Probe([string]$url, [hashtable]$Headers = $null) {
   try {
-    $args = @{
+    # NOTE: deliberately NOT named `$args` — that's a reserved automatic
+    # variable in PowerShell (unbound function arguments) and shadowing it
+    # breaks under strict mode.
+    $invokeArgs = @{
       Uri = $url
       Method = 'Get'
       SkipHttpErrorCheck = $true
@@ -43,8 +48,8 @@ function Invoke-Probe([string]$url, [hashtable]$Headers = $null) {
       MaximumRedirection = 0
       ErrorAction = 'Stop'
     }
-    if ($Headers) { $args['Headers'] = $Headers }
-    $resp = Invoke-WebRequest @args
+    if ($Headers) { $invokeArgs['Headers'] = $Headers }
+    $resp = Invoke-WebRequest @invokeArgs
     return @{ Status = $resp.StatusCode; Body = $resp.Content; Headers = $resp.Headers }
   } catch {
     return @{ Status = 0; Body = ""; Headers = @{} }

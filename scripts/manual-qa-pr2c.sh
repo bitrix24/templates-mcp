@@ -18,10 +18,13 @@
 #   3. ./scripts/manual-qa-pr2c.sh
 #
 # The script auto-detects which scenario the running server is in by hitting
-# /api/oauth/install and looking at the response. No env vars required.
+# /api/oauth/install and looking at the response. The base URL comes from
+# the first positional argument, falling back to $MCP_BASE, falling back to
+# http://localhost:3000:
+#   ./scripts/manual-qa-pr2c.sh http://localhost:3002
 
 set -uo pipefail
-BASE="${MCP_BASE:-http://localhost:3000}"
+BASE="${1:-${MCP_BASE:-http://localhost:3000}}"
 PASS=0
 FAIL=0
 

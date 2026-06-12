@@ -519,12 +519,13 @@ jobs:
       - name: Boot a third `oauth-on` container on port 3002 (issue #224)
         id: oauth-on
         env:
-          # A real, fresh Bearer is generated but the OAuth-on path bypasses
-          # NUXT_MCP_AUTH_TOKEN on /mcp entirely, so the value is irrelevant
-          # for the assertions below — we just need a non-placeholder so
-          # that the 503 "not configured" gate of the legacy path doesn't
-          # fire and mask the OAuth-on behaviour. Generated inline (not via
-          # ::add-mask::) because nothing in this step echoes it.
+          # Re-uses the Bearer minted (and ::add-mask::'d) in the `start`
+          # step — the mask registered there applies to every later step of
+          # this job, so the value renders as `***` here too. The OAuth-on
+          # path bypasses NUXT_MCP_AUTH_TOKEN on /mcp entirely; the value
+          # only needs to be a non-placeholder so the legacy 503
+          # "not configured" gate doesn't fire and mask the OAuth-on
+          # behaviour.
           NUXT_MCP_AUTH_TOKEN: ${{ steps.start.outputs.token }}
         # Pins the contract that's flipped on when an operator sets
         # NUXT_BITRIX24_OAUTH_ENABLED=true (issue #224 — the flag-on path
@@ -593,8 +594,21 @@ jobs:
         # a random Bearer), /api/oauth/_health 503 NOT-CONFIGURED for
         # non-localhost requests (fails-closed). One bash run covers the
         # full §11 contract on the flag-on boot.
+        #
+        # The grep below pins WHICH scenario the script detected. Without
+        # it, a regression that points the probe at the wrong container
+        # (or an env-var typo that boots the third container flag-off)
+        # would let the script happily assert Scenario A's 503 gates and
+        # come back green — silently un-testing everything this job
+        # exists to test. Review round-1 caught exactly that shape of bug
+        # (the script used to ignore its positional URL argument).
         run: |
-          ./scripts/manual-qa-pr2c.sh http://localhost:3002
+          set -euo pipefail
+          OUT=$(./scripts/manual-qa-pr2c.sh http://localhost:3002 | tee /dev/stderr)
+          if ! echo "$OUT" | grep -q "Detected: Scenario B"; then
+            echo "::error::manual-qa-pr2c.sh did not detect Scenario B against port 3002 — the oauth-on container is misconfigured (or the probe hit the wrong container)."
+            exit 1
+          fi
       - name: Container logs (on failure only)
         if: failure()
         # 500-line tail handles a Nitro cold-boot stack trace + the route
