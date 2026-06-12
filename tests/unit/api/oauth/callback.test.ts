@@ -334,6 +334,62 @@ describe('/api/oauth/callback — token exchange failure modes', () => {
   })
 })
 
+describe('/api/oauth/callback — domain validation (#220)', () => {
+  // Defence-in-depth: the token-exchange response carries a `domain`
+  // we used to persist verbatim. We now refuse any value that fails
+  // the allow-list OR doesn't equal the portal the operator authorised.
+  // The state row is the source of truth.
+
+  it('502 EXCHANGE-DOMAIN-MISMATCH when ok.domain ≠ stateRow.portal (allow-listed but a different tenant)', async () => {
+    seedState({ portal: 'acme.bitrix24.com' })
+    fetchMock.mockResolvedValue(fakeJsonResponse(200, {
+      access_token: 'a', refresh_token: 'r', expires_in: 3600,
+      member_id: 'portal-acme', user_id: 1, scope: 'user',
+      // Allow-listed value, but NOT the portal the operator authorised.
+      domain: 'evil.bitrix24.com',
+    }))
+    const res = await callCallback({
+      code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64),
+      domain: 'acme.bitrix24.com',
+    })
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toContain('EXCHANGE-DOMAIN-MISMATCH')
+    // No DB writes — no token row, no Bearer.
+    expect(store.getTokens('portal-acme', 1)).toBeUndefined()
+  })
+
+  it('502 EXCHANGE-DOMAIN-MISMATCH when ok.domain fails the allow-list (attacker.example.com)', async () => {
+    seedState({ portal: 'acme.bitrix24.com' })
+    fetchMock.mockResolvedValue(fakeJsonResponse(200, {
+      access_token: 'a', refresh_token: 'r', expires_in: 3600,
+      member_id: 'portal-acme', user_id: 1, scope: 'user',
+      domain: 'attacker.example.com',
+    }))
+    const res = await callCallback({
+      code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64),
+      domain: 'acme.bitrix24.com',
+    })
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toContain('EXCHANGE-DOMAIN-MISMATCH')
+    expect(store.getTokens('portal-acme', 1)).toBeUndefined()
+  })
+
+  it('200 when ok.domain is omitted — falls back to the validated state portal', async () => {
+    seedState({ portal: 'acme.bitrix24.com' })
+    fetchMock.mockResolvedValue(fakeJsonResponse(200, {
+      access_token: 'a', refresh_token: 'r', expires_in: 3600,
+      member_id: 'portal-acme', user_id: 1, scope: 'user',
+      // no domain field
+    }))
+    const res = await callCallback({
+      code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64),
+      domain: 'acme.bitrix24.com',
+    })
+    expect(res.statusCode).toBe(200)
+    expect(store.getTokens('portal-acme', 1)?.portalDomain).toBe('acme.bitrix24.com')
+  })
+})
+
 describe('/api/oauth/callback — happy path', () => {
   it('200 with Bearer in HTML, oauth_tokens + mcp_tokens persisted, CSRF cookie cleared', async () => {
     seedState({ portal: 'acme.bitrix24.com' })

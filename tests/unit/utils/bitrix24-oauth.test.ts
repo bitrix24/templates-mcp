@@ -400,6 +400,248 @@ describe('useBitrix24OAuth — refresh flow', () => {
   })
 })
 
+describe('useBitrix24OAuth — domain & endpoint validation (#220)', () => {
+  // Reusable sniffer: capture the factory's refresh callback so we can
+  // invoke it directly with whatever response shape we want.
+  async function captureFactoryCb(): Promise<{
+    factoryCb: CustomRefreshAuth
+    restore: () => void
+  }> {
+    const sdk = await import('@bitrix24/b24jssdk')
+    const originalSet = sdk.B24OAuth.prototype.setCustomRefreshAuth
+    let captured: CustomRefreshAuth | undefined
+    const spy = vi.fn(function (this: never, cb: CustomRefreshAuth) {
+      captured = cb
+      return originalSet.call(this, cb)
+    })
+    Object.defineProperty(sdk.B24OAuth.prototype, 'setCustomRefreshAuth', { value: spy, configurable: true })
+
+    await store.upsertTokens(SAMPLE_TENANT, 'install')
+    const { useBitrix24OAuth } = await loadFactory()
+    await useBitrix24OAuth(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId)
+    if (!captured) throw new Error('factory cb was not captured')
+
+    return {
+      factoryCb: captured,
+      restore: () => {
+        Object.defineProperty(
+          sdk.B24OAuth.prototype,
+          'setCustomRefreshAuth',
+          { value: originalSet, configurable: true },
+        )
+      },
+    }
+  }
+
+  // ============================================================
+  //  setLogger — defence-in-depth on the SDK's stdout log line
+  // ============================================================
+
+  it('attaches a redacting logger to every B24OAuth instance on construction', async () => {
+    // Sniff `setLogger` on the prototype so we observe the factory's
+    // single call without depending on the SDK's internal storage.
+    // A future regression that drops the wiring leaves the spy at zero
+    // calls — the exact failure mode #220 was filed for.
+    const sdk = await import('@bitrix24/b24jssdk')
+    const originalSet = sdk.B24OAuth.prototype.setLogger
+    const setLoggerSpy = vi.fn(function (this: never, logger: unknown) {
+      return originalSet.call(this, logger as never)
+    })
+    Object.defineProperty(sdk.B24OAuth.prototype, 'setLogger', { value: setLoggerSpy, configurable: true })
+    try {
+      await store.upsertTokens(SAMPLE_TENANT, 'install')
+      const { useBitrix24OAuth } = await loadFactory()
+      await useBitrix24OAuth(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId)
+      expect(setLoggerSpy).toHaveBeenCalledTimes(1)
+      // The wired logger object must NOT be the SDK's default ConsoleHandler;
+      // it has to be the redactor wrapper sourced from our `useLogger()`
+      // mock above.
+      const wired = setLoggerSpy.mock.calls[0]![0] as { info: (event: string, ctx?: Record<string, unknown>) => Promise<void> }
+      expect(typeof wired.info).toBe('function')
+      // Sanity round-trip: drive a log line through the wired logger
+      // and confirm it landed in our recorder.
+      await wired.info('sdk.smoke.test', { sample: 1 })
+      expect(loggerCalls.some(c => c.event === 'sdk.smoke.test')).toBe(true)
+    }
+    finally {
+      Object.defineProperty(sdk.B24OAuth.prototype, 'setLogger', { value: originalSet, configurable: true })
+    }
+  })
+
+  // ============================================================
+  //  data.domain — refuse swap of tenant portal mid-refresh
+  // ============================================================
+
+  it('refresh: refuses domain ≠ current.portalDomain (no persist, throws domain-mismatch)', async () => {
+    const { factoryCb, restore } = await captureFactoryCb()
+    try {
+      fetchMock.mockResolvedValue(jsonResp(200, {
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        expires_in: 3600,
+        scope: 'user,task',
+        // Allow-listed value, but a DIFFERENT tenant — attacker / upstream
+        // bug attempting to swap portals mid-refresh.
+        domain: 'evil.bitrix24.com',
+      }))
+
+      await expect(factoryCb()).rejects.toThrow(/domain-mismatch/)
+
+      // Tokens were NOT persisted — old values still on the row.
+      const row = store.getTokens(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId)!
+      expect(row.accessToken).toBe(SAMPLE_TENANT.accessToken)
+      expect(row.refreshToken).toBe(SAMPLE_TENANT.refreshToken)
+      expect(row.portalDomain).toBe(SAMPLE_TENANT.portalDomain)
+
+      // Logged as transient (Bearers stay active — this is an
+      // upstream anomaly, not a revocation).
+      const fail = loggerCalls.find(c => c.event === 'oauth.refresh.fail.transient')
+      expect(fail).toBeDefined()
+      expect(fail!.ctx).toMatchObject({ reason: 'domain-mismatch', expected: SAMPLE_TENANT.portalDomain })
+    }
+    finally { restore() }
+  })
+
+  it('refresh: refuses domain that fails the allow-list (e.g. attacker.example.com)', async () => {
+    const { factoryCb, restore } = await captureFactoryCb()
+    try {
+      fetchMock.mockResolvedValue(jsonResp(200, {
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        expires_in: 3600,
+        scope: 'user,task',
+        domain: 'attacker.example.com',
+      }))
+      await expect(factoryCb()).rejects.toThrow(/domain-mismatch/)
+      const row = store.getTokens(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId)!
+      expect(row.accessToken).toBe(SAMPLE_TENANT.accessToken)
+    }
+    finally { restore() }
+  })
+
+  it('refresh: omitting data.domain is allowed — falls back to stored portal (legitimate upstream)', async () => {
+    const { factoryCb, restore } = await captureFactoryCb()
+    try {
+      fetchMock.mockResolvedValue(jsonResp(200, {
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        expires_in: 3600,
+        scope: 'user,task',
+        // no domain field
+      }))
+      await factoryCb()
+      const row = store.getTokens(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId)!
+      expect(row.accessToken).toBe('new-access')
+      expect(row.portalDomain).toBe(SAMPLE_TENANT.portalDomain)
+    }
+    finally { restore() }
+  })
+
+  // ============================================================
+  //  client_endpoint / server_endpoint — no-throw substitution
+  // ============================================================
+
+  it('refresh: malicious client_endpoint is substituted with the canonical safe URL + logged', async () => {
+    const { factoryCb, restore } = await captureFactoryCb()
+    try {
+      fetchMock.mockResolvedValue(jsonResp(200, {
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        expires_in: 3600,
+        scope: 'user,task',
+        domain: SAMPLE_TENANT.portalDomain,
+        // Attacker-supplied — hostname ≠ stored portal.
+        client_endpoint: 'https://attacker.example.com/rest/',
+      }))
+      const result = await factoryCb()
+      // No throw, no DB taint: tokens persisted, but the SDK gets the
+      // canonical fallback so all subsequent REST calls hit the real
+      // tenant portal.
+      expect(result.client_endpoint).toBe(`https://${SAMPLE_TENANT.portalDomain}/rest/`)
+      const reject = loggerCalls.find(
+        c => c.event === 'oauth.endpoint.reject' && (c.ctx as Record<string, unknown>)?.field === 'client_endpoint',
+      )
+      expect(reject).toBeDefined()
+      expect(reject!.ctx).toMatchObject({ expectedHost: SAMPLE_TENANT.portalDomain })
+    }
+    finally { restore() }
+  })
+
+  it('refresh: HTTP (non-HTTPS) client_endpoint is rejected → safe fallback', async () => {
+    const { factoryCb, restore } = await captureFactoryCb()
+    try {
+      fetchMock.mockResolvedValue(jsonResp(200, {
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        expires_in: 3600,
+        scope: 'user,task',
+        domain: SAMPLE_TENANT.portalDomain,
+        client_endpoint: `http://${SAMPLE_TENANT.portalDomain}/rest/`,
+      }))
+      const result = await factoryCb()
+      expect(result.client_endpoint).toBe(`https://${SAMPLE_TENANT.portalDomain}/rest/`)
+    }
+    finally { restore() }
+  })
+
+  it('refresh: legitimate client_endpoint that matches the stored portal is preserved', async () => {
+    const { factoryCb, restore } = await captureFactoryCb()
+    try {
+      const goodUrl = `https://${SAMPLE_TENANT.portalDomain}/rest/`
+      fetchMock.mockResolvedValue(jsonResp(200, {
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        expires_in: 3600,
+        scope: 'user,task',
+        domain: SAMPLE_TENANT.portalDomain,
+        client_endpoint: goodUrl,
+      }))
+      const result = await factoryCb()
+      expect(result.client_endpoint).toBe(goodUrl)
+    }
+    finally { restore() }
+  })
+
+  it('refresh: server_endpoint substitution — unknown host is replaced + logged', async () => {
+    const { factoryCb, restore } = await captureFactoryCb()
+    try {
+      fetchMock.mockResolvedValue(jsonResp(200, {
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        expires_in: 3600,
+        scope: 'user,task',
+        domain: SAMPLE_TENANT.portalDomain,
+        server_endpoint: 'https://attacker.example.com/rest/',
+      }))
+      const result = await factoryCb()
+      expect(result.server_endpoint).toBe('https://oauth.bitrix.info/rest/')
+      const reject = loggerCalls.find(
+        c => c.event === 'oauth.endpoint.reject' && (c.ctx as Record<string, unknown>)?.field === 'server_endpoint',
+      )
+      expect(reject).toBeDefined()
+    }
+    finally { restore() }
+  })
+
+  it('refresh: server_endpoint at oauth.bitrix24.tech is preserved (known central host)', async () => {
+    const { factoryCb, restore } = await captureFactoryCb()
+    try {
+      const goodUrl = 'https://oauth.bitrix24.tech/rest/'
+      fetchMock.mockResolvedValue(jsonResp(200, {
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        expires_in: 3600,
+        scope: 'user,task',
+        domain: SAMPLE_TENANT.portalDomain,
+        server_endpoint: goodUrl,
+      }))
+      const result = await factoryCb()
+      expect(result.server_endpoint).toBe(goodUrl)
+    }
+    finally { restore() }
+  })
+})
+
 describe('useBitrix24OAuth — _readRefreshStatus', () => {
   it('starts both fields at null on a fresh process', async () => {
     const { _readRefreshStatus } = await loadFactory()

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { createError, defineEventHandler, getQuery, sendRedirect, setCookie } from 'h3'
 import { useLogger } from '~/server/utils/logger'
+import { PORTAL_ALLOW_LIST_RE } from '~/server/utils/portal-validation'
 import { useTokenStore } from '~/server/utils/token-store'
 
 /**
@@ -46,8 +47,11 @@ import { useTokenStore } from '~/server/utils/token-store'
  * `.env.example`'s portal-URL examples. We keep the regex conservative
  * here rather than permissive: an open redirector via `?portal=` is a
  * higher-cost mistake than rejecting a legitimate-but-unlisted TLD.
+ *
+ * The regex itself lives in `~/server/utils/portal-validation.ts` so the
+ * callback handler and the OAuth refresh path share the same rule — see
+ * issue #220.
  */
-const PORTAL_ALLOW_LIST_RE = /^[a-z0-9-]+\.bitrix24\.(?:com|ru|eu|de|by|kz|ua)$/
 
 const NONCE_BYTES = 32
 const STATE_TTL_SEC = 5 * 60 // 5 minutes per §8 #2

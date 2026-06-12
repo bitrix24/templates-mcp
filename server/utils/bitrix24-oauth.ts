@@ -1,5 +1,7 @@
 import { B24OAuth, type B24OAuthParams, type B24OAuthSecret, type HandlerRefreshAuth } from '@bitrix24/b24jssdk'
 import { useLogger } from '~/server/utils/logger'
+import { makeRedactingLogger } from '~/server/utils/logger-redactor'
+import { isAllowedPortalDomain, validateClientEndpoint, validateServerEndpoint } from '~/server/utils/portal-validation'
 import { useTokenStore } from '~/server/utils/token-store'
 
 /**
@@ -182,6 +184,13 @@ export function useBitrix24OAuth(memberId: string, userId: number): B24OAuth {
   const secret: B24OAuthSecret = { clientId, clientSecret }
 
   const b24 = new B24OAuth(params, secret)
+  // Defence-in-depth (issue #220): wrap the SDK's default logger with the
+  // shared redactor so any future regression that logs a URL with a
+  // credential, or a refresh-response field containing a token, never
+  // reaches stdout in raw form. Mirrors the webhook singleton in
+  // `bitrix24.ts:113`. The instances are LRU-cached, so this runs once
+  // per tenant and stays attached for the lifetime of the entry.
+  b24.setLogger(makeRedactingLogger(useLogger()))
 
   // Custom refresh: we do the fetch + the persistence + the error
   // classification ourselves. The SDK calls this when its internal
@@ -259,6 +268,38 @@ export function useBitrix24OAuth(memberId: string, userId: number): B24OAuth {
       throw new Error(`refresh failed: ${data.error || `http-${res.status}`}`)
     }
 
+    // Defence-in-depth (issue #220): the refresh response carries
+    // `domain`, `client_endpoint`, and `server_endpoint` from Bitrix24.
+    // We never let an upstream-supplied value silently mutate the
+    // stored portal or the SDK's HTTP target.
+    //
+    // - `data.domain`: must pass the allow-list AND equal the stored
+    //   portal — a refresh is bound to a specific tenant, swapping
+    //   portals mid-flow is a bug or an attack. Refuse without writing.
+    // - `data.client_endpoint` / `data.server_endpoint`: validated by the
+    //   shared helpers below, which substitute the safe canonical URL
+    //   and log `oauth.endpoint.reject` on mismatch (no throw).
+    if (data.domain != null && (!isAllowedPortalDomain(data.domain) || data.domain !== current.portalDomain)) {
+      refreshStatus.lastRefreshFail = Math.floor(Date.now() / 1000)
+      void log.error('oauth.refresh.fail.transient', {
+        memberId,
+        userId,
+        reason: 'domain-mismatch',
+        expected: current.portalDomain,
+        got: typeof data.domain === 'string' ? data.domain.slice(0, 253) : String(data.domain).slice(0, 253),
+      })
+      throw new Error('refresh failed: domain-mismatch')
+    }
+    const validatedClientEndpoint = validateClientEndpoint(
+      data.client_endpoint,
+      current.portalDomain,
+      { memberId, userId, reason: 'refresh' },
+    )
+    const validatedServerEndpoint = validateServerEndpoint(
+      data.server_endpoint,
+      { memberId, userId, reason: 'refresh' },
+    )
+
     // Happy path — persist new tokens (audit-first via upsertTokens).
     const accessExpiresAt = data.expires ?? Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600)
     await store.upsertTokens({
@@ -282,8 +323,8 @@ export function useBitrix24OAuth(memberId: string, userId: number): B24OAuth {
       refresh_token: data.refresh_token,
       expires: String(accessExpiresAt),
       expires_in: String(data.expires_in ?? 3600),
-      client_endpoint: data.client_endpoint ?? `https://${current.portalDomain}/rest/`,
-      server_endpoint: data.server_endpoint ?? 'https://oauth.bitrix.info/rest/',
+      client_endpoint: validatedClientEndpoint,
+      server_endpoint: validatedServerEndpoint,
       member_id: data.member_id ?? memberId,
       scope: data.scope ?? current.scope,
       status: data.status ?? 'L',

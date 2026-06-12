@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer'
 import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
 import { createError, defineEventHandler, deleteCookie, getCookie, getQuery, setResponseHeader } from 'h3'
 import { useLogger } from '~/server/utils/logger'
+import { isAllowedPortalDomain } from '~/server/utils/portal-validation'
 import { useTokenStore } from '~/server/utils/token-store'
 
 /**
@@ -341,6 +342,26 @@ export default defineEventHandler(async (event) => {
     setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
     event.node.res.statusCode = 502
     return callbackErrorPage('EXCHANGE-BAD-MEMBER-ID', 'Bitrix24 returned an unexpected member_id.')
+  }
+
+  // Defence-in-depth (issue #220): the token-exchange response carries a
+  // `domain` field that we previously persisted verbatim. If it disagrees
+  // with the `?portal=` the operator authorised — or fails the allow-list —
+  // refuse. The validated `stateRow.portal` is the source of truth: it was
+  // checked against `PORTAL_ALLOW_LIST_RE` at /install AND bound to the
+  // CSRF state row. A divergent `ok.domain` would only happen via a
+  // Bitrix24-side bug or an upstream compromise of `oauth.bitrix24.tech`,
+  // both of which we refuse loudly rather than silently accept.
+  if (ok.domain != null && (!isAllowedPortalDomain(ok.domain) || ok.domain !== stateRow.portal)) {
+    void logger.error('oauth.callback.exchange.fail', {
+      reason: 'domain-mismatch',
+      expected: stateRow.portal,
+      got: typeof ok.domain === 'string' ? ok.domain.slice(0, 253) : String(ok.domain).slice(0, 253),
+    })
+    setResponseHeader(event, 'cache-control', 'no-store, no-cache')
+    setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+    event.node.res.statusCode = 502
+    return callbackErrorPage('EXCHANGE-DOMAIN-MISMATCH', 'Bitrix24 returned a portal domain that does not match the install.')
   }
 
   const accessExpiresAt = ok.expires
