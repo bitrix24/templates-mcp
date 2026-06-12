@@ -275,6 +275,11 @@ describe('/api/oauth/callback — token exchange failure modes', () => {
     const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
     expect(res.statusCode).toBe(502)
     expect(res.body).toContain('EXCHANGE-NETWORK')
+    // Anti-framing headers (issue #221) are set by the shared helper on
+    // ALL HTML-rendering paths, not just the success page — pin a couple
+    // of error variants so a refactor that bypasses the helper is caught.
+    expect(res.headers['x-frame-options']).toBe('DENY')
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'")
     expect(loggerCalls.find(c => c.event === 'oauth.callback.exchange.fail')).toBeDefined()
   })
 
@@ -321,6 +326,8 @@ describe('/api/oauth/callback — token exchange failure modes', () => {
     const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
     expect(res.statusCode).toBe(502)
     expect(res.body).toContain('EXCHANGE-NON-JSON')
+    expect(res.headers['x-frame-options']).toBe('DENY')
+    expect(res.headers['content-security-policy']).toContain("default-src 'none'")
   })
 
   it('502 EXCHANGE-BAD-USER-ID when Bitrix24 returns a non-numeric user_id', async () => {

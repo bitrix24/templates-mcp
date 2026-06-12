@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
-import { createError, defineEventHandler, deleteCookie, getCookie, getQuery, setResponseHeader } from 'h3'
+import { createError, defineEventHandler, deleteCookie, getCookie, getQuery, type H3Event, setResponseHeader } from 'h3'
 import { useLogger } from '~/server/utils/logger'
 import { isAllowedPortalDomain } from '~/server/utils/portal-validation'
 import { useTokenStore } from '~/server/utils/token-store'
@@ -102,15 +102,16 @@ interface TokenExchangeErr {
  *   (subdomain takeover, sibling-app XSS) could iframe the callback and
  *   read the token off the page. `SameSite=Lax` on the CSRF cookie does
  *   not protect against same-site framing.
- * - CSP `default-src 'none'` — the pages are self-contained (no JS, no
- *   external assets); `style-src 'unsafe-inline'` allows the one inline
- *   `style=` attribute on the success page's <pre>.
+ * - CSP `default-src 'none'; frame-ancestors 'none'` — the pages are fully
+ *   self-contained: no JS, no external assets, and no inline styles (the
+ *   success page's <pre> uses no `style=` attribute), so the CSP can be
+ *   maximally strict with no `'unsafe-inline'` carve-out.
  */
-function setHtmlResponseHeaders(event: Parameters<typeof setResponseHeader>[0]): void {
+function setHtmlResponseHeaders(event: H3Event): void {
   setResponseHeader(event, 'cache-control', 'no-store, no-cache')
   setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
   setResponseHeader(event, 'x-frame-options', 'DENY')
-  setResponseHeader(event, 'content-security-policy', 'default-src \'none\'; style-src \'unsafe-inline\'; frame-ancestors \'none\'')
+  setResponseHeader(event, 'content-security-policy', 'default-src \'none\'; frame-ancestors \'none\'')
 }
 
 function htmlEscape(s: string): string {
@@ -145,7 +146,7 @@ function bearerSuccessPage(bearer: string, portal: string): string {
 <h1>Your Bitrix24 MCP Bearer</h1>
 <p>Portal: <code>${safePortal}</code></p>
 <p>Copy this token into your MCP client (Claude Desktop / Cursor / Windsurf) <strong>Authorization: Bearer</strong> setting:</p>
-<pre style="word-wrap:break-word;white-space:pre-wrap;padding:1em;background:#eee;border-radius:4px">${bearer}</pre>
+<pre>${bearer}</pre>
 <p><strong>This page is shown once.</strong> The token is hashed in the database; the raw value above cannot be re-displayed. Lost it? Re-authorize from <code>/api/oauth/install?portal=${safePortal}</code> — your old Bearer keeps working until you revoke it.</p>
 </body></html>`
 }

@@ -1,6 +1,6 @@
 # Agent feedback (`bx24mcp_submit_feedback`)
 
-`Last reviewed: 2026-05-30`
+`Last reviewed: 2026-06-12`
 
 This MCP exposes a meta-tool — `bx24mcp_submit_feedback` — that lets the AI agent file a GitHub issue against this repository when it notices something worth reporting. The mechanism is the project's primary channel for structured, machine-authored feedback. This document is for **maintainers** triaging those issues and **operators** configuring the integration; agents should look at [`../skills/manage-bx24-template-mcp/feedback.md`](../skills/manage-bx24-template-mcp/feedback.md) for the calling guide.
 
@@ -44,7 +44,7 @@ GitHub creates the labels on demand when the token has `issues:write` — the fi
 
 ## Rate limit
 
-A sliding-window counter caps **attempts** at **5 per hour** across the running process. Failed attempts (auth errors, network drops, GitHub 5xx) consume a slot too — this is intentional, it discourages tight retry loops at the cost of being unfair on flaky networks. The check is in-memory: a Nitro restart resets it; this is acceptable because the limit is a soft floodgate, not a security boundary.
+A sliding-window counter caps **attempts** at **5 per hour per tenant**. Under OAuth the window is keyed on the caller's `memberId` (from the request's tenant context), so one noisy or prompt-injected tenant can't exhaust every other tenant's quota (issue #221). In webhook / stdio deployments there is a single identity, so everything shares one `__global__` bucket — identical to the pre-#221 behaviour. Failed attempts (auth errors, network drops, GitHub 5xx) consume a slot too — this is intentional, it discourages tight retry loops at the cost of being unfair on flaky networks. The check is in-memory: a Nitro restart resets it; this is acceptable because the limit is a soft floodgate, not a security boundary.
 
 When the quota is exhausted, the tool returns:
 
@@ -52,7 +52,7 @@ When the quota is exhausted, the tool returns:
 Feedback rate limit reached. Try again in about <N> seconds. (5 attempts per hour, including failures.)
 ```
 
-No GitHub call is made. The agent is expected to back off and try later. Phase 3 (multi-tenant) will move this to a per-token shared store.
+No GitHub call is made. The agent is expected to back off and try later. (A future multi-instance deployment would move this counter to a shared store; the single-process map is adequate for the single-instance design — see `OAUTH-DESIGN.md` §5.)
 
 ## Privacy — no personal data in feedback
 
@@ -103,12 +103,12 @@ If the token is absent, `bx24mcp_submit_feedback` returns a `Failed to submit fe
 
 ### Revoking a noisy agent
 
-Per-agent revocation is **not currently supported** — the MCP token is shared. To stop a misbehaving caller:
+**Webhook mode** (`NUXT_BITRIX24_OAUTH_ENABLED=false`): the MCP token is shared, so per-agent revocation isn't possible. To stop a misbehaving caller:
 
 1. Rotate the MCP `NUXT_MCP_AUTH_TOKEN` (this severs all current callers).
 2. Re-issue the new token only to the agents that should retain access.
 
-Phase 3 will introduce per-tenant credentials; revocation will become surgical at that point.
+**OAuth mode**: each tenant has its own per-user Bearer, so revocation is already surgical — revoke that user's Bearer (re-authorise at `/api/oauth/install`) without touching anyone else. The per-tenant feedback quota above means a noisy tenant is also rate-limited in isolation.
 
 ## Failure modes
 

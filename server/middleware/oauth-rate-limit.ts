@@ -24,11 +24,16 @@ import { useLogger } from '~/server/utils/logger'
  *   - **Process-local** map, consistent with the single-instance design
  *     (`docs/OAUTH-DESIGN.md §5`). A multi-replica deployment rates per
  *     replica.
- *   - **Bounded memory**: at `MAX_TRACKED_IPS` distinct source IPs the
- *     map is cleared outright rather than LRU-evicted. An attacker who
- *     can rotate >10k source addresses defeats per-IP limiting anyway
- *     (that's network-layer DDoS territory, out of scope per
- *     `docs/SECURITY.md`); the reset just keeps memory flat.
+ *   - **Bounded memory, true LRU**: at `MAX_TRACKED_IPS` distinct source
+ *     IPs the LEAST-recently-used bucket is evicted one at a time (each
+ *     request moves its IP to the MRU end). A hot IP — a real flood or an
+ *     attacker hammering one address — is always MRU, so the churn of
+ *     10k other IPs can never evict its bucket and reset its counter.
+ *     (Insertion-order or flush-all eviction would let the attacker reset
+ *     their own window by rotating throwaway IPs.) An attacker who can
+ *     rotate >10k addresses *and* keep them all recently-active defeats
+ *     per-IP limiting anyway — network-layer DDoS, out of scope per
+ *     `docs/SECURITY.md`.
  *   - Flag-gated: with `NUXT_BITRIX24_OAUTH_ENABLED=false` the route
  *     refuses with 503 FLAG-OFF before any DB write, so webhook-only
  *     forks keep byte-identical behaviour (no new 429 surface).
@@ -38,7 +43,13 @@ import { useLogger } from '~/server/utils/logger'
  */
 
 const WINDOW_MS = 60_000
-const MAX_PER_WINDOW = 5
+// 10/min/IP: a human authorises once, a flood does thousands — 10 starves
+// the oauth_state-flood vector with comfortable headroom. The headroom is
+// load-bearing for CI: the docker-smoke OAuth-on gate (#227) runs
+// `scripts/manual-qa-pr2c.sh`, which makes 5 `/api/oauth/install` probes
+// from one IP in one run. Keep MAX_PER_WINDOW comfortably above that probe
+// count — if you add install probes to that script, bump this too.
+const MAX_PER_WINDOW = 10
 const MAX_TRACKED_IPS = 10_000
 
 const hits = new Map<string, number[]>()
@@ -56,15 +67,33 @@ export default defineEventHandler((event) => {
   const ip = getRequestIP(event) ?? '<unknown>'
   const now = Date.now()
 
+  // True LRU on the IP map: every touched IP is re-inserted at the MRU end
+  // (Map preserves insertion order; delete-then-set moves a key to the
+  // back). Eviction at capacity removes the FRONT — the least-recently-used
+  // IP, which is by definition idle. This is what makes the limit
+  // tamper-resistant: an actively-requesting IP (a real flood, or an
+  // attacker hammering one address) is always MRU, so the churn of 10k
+  // other IPs can never evict its bucket and reset its counter. A
+  // flush-all or insertion-order eviction would let the attacker's own
+  // bucket be wiped.
   let bucket = hits.get(ip)
-  if (!bucket) {
-    if (hits.size >= MAX_TRACKED_IPS) hits.clear()
-    bucket = []
-    hits.set(ip, bucket)
+  if (bucket) {
+    hits.delete(ip)
   }
+  else {
+    if (hits.size >= MAX_TRACKED_IPS) {
+      const lru = hits.keys().next().value
+      if (lru !== undefined) hits.delete(lru)
+    }
+    bucket = []
+  }
+  hits.set(ip, bucket)
 
-  // Slide the window: drop timestamps older than WINDOW_MS.
-  while (bucket.length > 0 && bucket[0]! <= now - WINDOW_MS) bucket.shift()
+  // Slide the window: drop timestamps strictly older than WINDOW_MS. The
+  // strict `<` (a hit exactly WINDOW_MS old still counts) matches the
+  // feedback-quota window in `github-feedback.ts` — the two windows keep
+  // identical boundary semantics.
+  while (bucket.length > 0 && bucket[0]! < now - WINDOW_MS) bucket.shift()
 
   if (bucket.length >= MAX_PER_WINDOW) {
     const retryAfterSec = Math.max(1, Math.ceil((bucket[0]! + WINDOW_MS - now) / 1000))

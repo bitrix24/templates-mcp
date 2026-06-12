@@ -299,6 +299,8 @@ The flow is gated behind `NUXT_BITRIX24_OAUTH_ENABLED` and is **off by default**
 
 `GET /api/oauth/_health` returns operator-tier OAuth counts (active tokens, last refresh, etc.), gated by `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` (or localhost-only when unset — it fails closed for non-localhost requests). Every OAuth code path emits a single structured `event: '<area>.<action>.<outcome>'` log line carrying a per-request `requestId`, so one `jq` query reconstructs a whole authorize→callback→Bearer→`/mcp` timeline. The full event taxonomy is in [`OAUTH-DESIGN.md` §11](./OAUTH-DESIGN.md).
 
+> **Rate limit behind a reverse proxy.** `/api/oauth/install` applies a per-IP sliding-window limit (10 requests/min, issue #221) to blunt an `oauth_state`-flood. When the server sits behind the reference nginx-proxy, all external clients reach Nitro from the proxy's socket IP — so the bucket is effectively **global** (10 installs/min across everyone). That still lets a human through (one authorize flow) while starving an automated flood, but if you expect many users authorising in the same minute, add an nginx `limit_req` zone in front keyed on the real client IP (the in-process limit and `limit_req` compose), or raise `MAX_PER_WINDOW` in `server/middleware/oauth-rate-limit.ts`. Clients that trip it get `429` + `Retry-After`; see [`RUNBOOK.md`](./RUNBOOK.md).
+
 ## Manual rollback
 
 ### With Watchtower

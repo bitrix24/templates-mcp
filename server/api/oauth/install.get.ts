@@ -108,12 +108,14 @@ export default defineEventHandler(async (event) => {
   // redirector (a generic phishing primitive that doesn't even need an
   // OAuth account on the target host).
   const portal = String((getQuery(event).portal ?? '')).trim().toLowerCase()
-  // Log a CAPPED copy of the raw value (issue #221): `?portal=` is
-  // attacker-supplied and logged before validation — without the cap an
-  // arbitrarily long (or control-character-laden) query string flows
-  // into the structured log verbatim. 253 = max DNS hostname length,
-  // same cap the audit log applies (MAX_PORTAL_LEN).
-  const portalForLog = (portal || '<empty>').slice(0, 253)
+  // Log a SANITISED, CAPPED copy of the raw value (issue #221): `?portal=`
+  // is attacker-supplied and logged before validation. Strip C0/C1 control
+  // characters (newline / CR / ANSI escape) first — a plain-text log sink
+  // would otherwise let a crafted portal inject extra log lines or recolour
+  // the operator's terminal — then cap at 253 (max DNS hostname length,
+  // the same cap the audit log applies via MAX_PORTAL_LEN).
+  // eslint-disable-next-line no-control-regex -- strip C0/C1 controls + DEL
+  const portalForLog = (portal || '<empty>').replace(/[\u0000-\u001f\u007f]/g, '?').slice(0, 253)
   void logger.info('oauth.install.start', { portal: portalForLog, clientId })
 
   if (!portal || !PORTAL_ALLOW_LIST_RE.test(portal)) {

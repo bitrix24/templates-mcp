@@ -239,6 +239,24 @@ describe('consumeFeedbackQuota', () => {
     for (let i = 0; i < 5; i++) expect(consumeFeedbackQuota(base + i).ok).toBe(true)
     expect(consumeFeedbackQuota(base + 10).ok).toBe(false)
   })
+
+  it('bounds memory: the 201st distinct tenant evicts the oldest bucket without throwing (#221)', async () => {
+    const { consumeFeedbackQuota } = await loadFresh()
+    const { runWithTenant } = await import('../../server/utils/request-context')
+    const base = 1_700_000_000_000
+    // 200 distinct tenants each take one slot — fills the bucket map to cap.
+    for (let i = 0; i < 200; i++) {
+      runWithTenant({ memberId: `tenant-${i}`, userId: '1' }, () => {
+        expect(consumeFeedbackQuota(base).ok).toBe(true)
+      })
+    }
+    // The 201st tenant must succeed (eviction of the oldest, fails-open) and
+    // must not throw on the empty-map / iterator edge.
+    runWithTenant({ memberId: 'tenant-200', userId: '1' }, () => {
+      expect(() => consumeFeedbackQuota(base)).not.toThrow()
+      expect(consumeFeedbackQuota(base).ok).toBe(true)
+    })
+  })
 })
 
 describe('sanitizeDetails', () => {

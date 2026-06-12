@@ -79,8 +79,8 @@ describe('oauth-rate-limit middleware', () => {
     }
   })
 
-  it('allows 5 requests per IP per minute, refuses the 6th with 429 RATE-LIMITED + Retry-After', () => {
-    for (let i = 0; i < 5; i++) expect(() => hit('1.2.3.4')).not.toThrow()
+  it('allows 10 requests per IP per minute, refuses the 11th with 429 RATE-LIMITED + Retry-After', () => {
+    for (let i = 0; i < 10; i++) expect(() => hit('1.2.3.4')).not.toThrow()
 
     let caught: (Error & { statusCode?: number, data?: { errorCode?: string } }) | undefined
     let event: FakeEvent | undefined
@@ -102,8 +102,15 @@ describe('oauth-rate-limit middleware', () => {
     expect(logged!.ctx).toMatchObject({ ip: '1.2.3.4' })
   })
 
+  it('leaves comfortable headroom over the 5 install probes the CI smoke script makes', () => {
+    // Regression guard for the #227 docker-smoke coupling: the OAuth-on
+    // gate runs manual-qa-pr2c.sh, which makes 5 /install probes from one
+    // IP. The limit must stay above that or CI flakes.
+    for (let i = 0; i < 5; i++) expect(() => hit('10.9.8.7')).not.toThrow()
+  })
+
   it('buckets are per-IP — a second client is unaffected by the first one flooding', () => {
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 15; i++) {
       try {
         hit('10.0.0.1')
       }
@@ -113,28 +120,64 @@ describe('oauth-rate-limit middleware', () => {
   })
 
   it('window slides: after 60s the oldest hit expires and a new request passes', () => {
-    for (let i = 0; i < 5; i++) hit('1.2.3.4')
+    for (let i = 0; i < 10; i++) hit('1.2.3.4')
     expect(() => hit('1.2.3.4')).toThrow(/Too many install attempts/)
 
     vi.advanceTimersByTime(61_000)
     expect(() => hit('1.2.3.4')).not.toThrow()
   })
 
+  it('window boundary is strict: at EXACTLY 60s the oldest hit still counts (matches the feedback-quota window)', () => {
+    // 10 hits at t=0; the bucket is full.
+    for (let i = 0; i < 10; i++) hit('1.2.3.4')
+    // Advance to exactly 60_000ms. With strict `<` semantics the t=0 hit
+    // is NOT yet expired (0 < 0 is false), so the 11th is still refused.
+    vi.advanceTimersByTime(60_000)
+    expect(() => hit('1.2.3.4')).toThrow(/Too many install attempts/)
+    // One more ms and the window opens.
+    vi.advanceTimersByTime(1)
+    expect(() => hit('1.2.3.4')).not.toThrow()
+  })
+
   it('a refused request does not consume a slot (the window is not extended by retries)', () => {
-    for (let i = 0; i < 5; i++) hit('1.2.3.4')
+    for (let i = 0; i < 10; i++) hit('1.2.3.4')
     // Hammer the refused state a few times…
     for (let i = 0; i < 3; i++) {
       expect(() => hit('1.2.3.4')).toThrow()
     }
-    // …the original 5 still expire on the original schedule.
+    // …the original 10 still expire on the original schedule.
     vi.advanceTimersByTime(61_000)
     expect(() => hit('1.2.3.4')).not.toThrow()
   })
 
   it('missing source IP falls into a shared <unknown> bucket and is still limited', () => {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 10; i++) {
       expect(() => middleware({ _url: '/api/oauth/install' })).not.toThrow()
     }
     expect(() => middleware({ _url: '/api/oauth/install' })).toThrow(/Too many install attempts/)
+  })
+
+  it('LRU eviction cannot be gamed: a continuously-active IP survives a 10k-IP churn and stays limited', () => {
+    // The bypass we're defending against: an attacker hammers one IP to
+    // its limit, then rotates throwaway IPs to flush the map and reset
+    // their own counter. With true LRU the attacker's IP stays MRU (each
+    // request — even a refused one — moves it to the back), so the churn
+    // only ever evicts genuinely idle throwaways, never the active IP.
+    for (let i = 0; i < 10; i++) hit('1.1.1.1')
+    expect(() => hit('1.1.1.1')).toThrow(/Too many install attempts/)
+
+    // Churn 10k throwaway IPs, but the attacker keeps touching their own
+    // IP periodically (as a real attacker would) — that keeps it MRU.
+    for (let i = 0; i < 10_000; i++) {
+      hit(`10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`)
+      if (i % 50 === 0) {
+        try {
+          hit('1.1.1.1')
+        }
+        catch { /* still refused — and the touch refreshes its MRU position */ }
+      }
+    }
+    // The attacker's window was never reset by the churn.
+    expect(() => hit('1.1.1.1')).toThrow(/Too many install attempts/)
   })
 })
