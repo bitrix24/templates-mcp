@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
-import { createError, defineEventHandler, getHeader, getRequestURL } from 'h3'
+import { createError, defineEventHandler, getHeader, getRequestURL, setResponseHeader } from 'h3'
 
 export default defineEventHandler((event) => {
   const { pathname } = getRequestURL(event)
@@ -21,7 +21,17 @@ export default defineEventHandler((event) => {
   if (useRuntimeConfig().bitrix24OauthEnabled) {
     const header = getHeader(event, 'authorization')
     if (!header || !/^Bearer\s+\S/i.test(header)) {
-      throw createError({ statusCode: 401, statusMessage: 'Bearer required' })
+      // §11 / RFC 6750 §3: every Bearer-auth 401 carries WWW-Authenticate
+      // with the errorCode. This branch fires BEFORE the toolkit
+      // middleware in `server/mcp/index.ts` (which sets the same header
+      // on its own deny paths), so it must set the header itself —
+      // otherwise a no-Bearer request gets a bare 401 and the §11
+      // contract is silently broken in production (caught by the #224
+      // docker-smoke OAuth-on boot). BEARER-UNKNOWN matches the toolkit
+      // middleware's bucket for an absent Bearer: indistinguishable from
+      // one that was never minted.
+      setResponseHeader(event, 'www-authenticate', 'Bearer error="invalid_token", errorCode="BEARER-UNKNOWN", error_description="Bearer required"')
+      throw createError({ statusCode: 401, statusMessage: 'Bearer required', data: { errorCode: 'BEARER-UNKNOWN' } })
     }
     return
   }

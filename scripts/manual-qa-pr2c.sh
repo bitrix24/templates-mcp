@@ -48,13 +48,18 @@ assert_status() {
 
 # Probe and check that the response body contains a specific errorCode.
 # Usage: assert_error_code <name> <expected_code> <url>
+#
+# The body is whitespace-stripped before matching: a production Nitro
+# build pretty-prints the error JSON (`"errorCode": "X"` with a space and
+# newlines), while dev serves it compact — the CI run of issue #224
+# caught exactly this drift, so match both shapes.
 assert_error_code() {
   local name=$1
   local expected_code=$2
   local url=$3
   local body
   body=$(curl -s "$url" 2>/dev/null || echo "")
-  if echo "$body" | grep -q "\"errorCode\":\"$expected_code\""; then
+  if echo "$body" | tr -d ' \n\t' | grep -q "\"errorCode\":\"$expected_code\""; then
     green "$name → errorCode=$expected_code"
   else
     red "$name → expected errorCode=$expected_code, body was: $(echo "$body" | head -c 200)"
@@ -69,7 +74,13 @@ echo
 # - Scenario B (flag on, configured): 400 with errorCode PORTAL-FORMAT (no portal arg)
 # - Scenario C (flag on, NOT configured): 503 with errorCode NOT-CONFIGURED
 probe=$(curl -s "$BASE/api/oauth/install" 2>/dev/null || echo "")
-case "$probe" in
+# Strip whitespace before the glob match: production Nitro pretty-prints
+# the error JSON (`"errorCode": "X"` + newlines) while dev serves it
+# compact. Without this the detection silently falls through to the
+# "could not detect" branch on a production boot (caught by the #224 CI
+# run). The raw $probe is kept for the human-readable error message below.
+probe_compact=$(echo "$probe" | tr -d ' \n\t')
+case "$probe_compact" in
   *'"errorCode":"FLAG-OFF"'*)
     echo "Detected: Scenario A — NUXT_BITRIX24_OAUTH_ENABLED=false (default)"
     echo
@@ -107,8 +118,13 @@ case "$probe" in
 
     echo
     echo "--- Happy-path install (302 + CSRF cookie) ---"
-    # Capture the redirect Location + cookie attributes.
-    install_response=$(curl -sI "$BASE/api/oauth/install?portal=acme.bitrix24.com" 2>/dev/null || echo "")
+    # Capture the redirect Location + cookie attributes. GET with -D -
+    # (NOT curl -sI): a production Nitro build does not match HEAD
+    # requests onto `.get.ts` route handlers — HEAD falls through to the
+    # landing renderer and answers 200, silently breaking the assertion
+    # (caught by the #224 CI run; dev servers route HEAD fine, which is
+    # why this passed local QA).
+    install_response=$(curl -s -D - -o /dev/null "$BASE/api/oauth/install?portal=acme.bitrix24.com" 2>/dev/null || echo "")
     install_status=$(echo "$install_response" | head -1 | awk '{print $2}')
     if [ "$install_status" = "302" ]; then
       green "install with acme.bitrix24.com → 302"

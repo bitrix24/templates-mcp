@@ -67,7 +67,7 @@ function Assert-Status([string]$name, [int]$expected, [string]$url) {
 
 function Assert-ErrorCode([string]$name, [string]$code, [string]$url) {
   $r = Invoke-Probe $url
-  if ($r.Body -match """errorCode"":""$code""") {
+  if ($r.Body -match """errorCode"":\s*""$code""") {
     Green "$name → errorCode=$code"
   } else {
     $preview = if ($r.Body.Length -gt 200) { $r.Body.Substring(0, 200) } else { $r.Body }
@@ -82,7 +82,7 @@ Write-Host ""
 $probe = Invoke-Probe "$Base/api/oauth/install"
 $body = $probe.Body
 
-if ($body -match '"errorCode":"FLAG-OFF"') {
+if ($body -match '"errorCode":\s*"FLAG-OFF"') {
   Write-Host "Detected: Scenario A — NUXT_BITRIX24_OAUTH_ENABLED=false (default)"
   Write-Host ""
 
@@ -95,13 +95,13 @@ if ($body -match '"errorCode":"FLAG-OFF"') {
   Assert-ErrorCode "/api/oauth/callback (any params)" "FLAG-OFF" "$Base/api/oauth/callback?code=x&state=y"
   Assert-ErrorCode "/api/oauth/_health" "FLAG-OFF" "$Base/api/oauth/_health"
 
-} elseif ($body -match '"errorCode":"NOT-CONFIGURED"') {
+} elseif ($body -match '"errorCode":\s*"NOT-CONFIGURED"') {
   Write-Host "Detected: Scenario C — flag ON but CLIENT_ID/REDIRECT_URL missing"
   Write-Host ""
   Assert-ErrorCode "/api/oauth/install (any portal, no config)" "NOT-CONFIGURED" "$Base/api/oauth/install?portal=acme.bitrix24.com"
   Write-Host "  → Fix: set NUXT_BITRIX24_OAUTH_CLIENT_ID and _REDIRECT_URL."
 
-} elseif ($body -match '"errorCode":"PORTAL-FORMAT"') {
+} elseif ($body -match '"errorCode":\s*"PORTAL-FORMAT"') {
   Write-Host "Detected: Scenario B — NUXT_BITRIX24_OAUTH_ENABLED=true, configured"
   Write-Host ""
 

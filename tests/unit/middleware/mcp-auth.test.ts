@@ -7,6 +7,10 @@ vi.mock('h3', () => ({
   defineEventHandler: <T>(fn: T) => fn,
   getRequestURL: (event: FakeEvent) => new URL(event._url, 'http://test.local'),
   getHeader: (event: FakeEvent, name: string) => event._headers?.[name.toLowerCase()],
+  setResponseHeader: (event: FakeEvent, name: string, value: string) => {
+    event._responseHeaders ??= {}
+    event._responseHeaders[name.toLowerCase()] = value
+  },
   createError: (opts: { statusCode: number; statusMessage: string }) => {
     const err = new Error(opts.statusMessage) as Error & {
       statusCode: number
@@ -21,6 +25,7 @@ vi.mock('h3', () => ({
 interface FakeEvent {
   _url: string
   _headers?: Record<string, string>
+  _responseHeaders?: Record<string, string>
 }
 
 const runtimeConfig: { mcpAuthToken: string; bitrix24OauthEnabled: boolean } = {
@@ -67,6 +72,19 @@ describe('mcp-auth middleware', () => {
     expect(callMiddleware('/mcp')).toThrow(/Bearer required/)
     expect(callMiddleware('/mcp', { authorization: 'Basic xyz' })).toThrow(/Bearer required/)
     expect(callMiddleware('/mcp', { authorization: 'Bearer ' })).toThrow(/Bearer required/)
+  })
+
+  it('flag=true no-Bearer 401 carries the §11 WWW-Authenticate header (RFC 6750)', () => {
+    // Caught by the #224 docker-smoke OAuth-on boot: this h3 branch fires
+    // BEFORE the toolkit middleware, so without setting the header itself
+    // the production no-Bearer 401 ships bare — breaking the §11 promise
+    // that every Bearer-auth 401 is grep-able by errorCode.
+    runtimeConfig.bitrix24OauthEnabled = true
+    const event: FakeEvent = { _url: '/mcp', _headers: {} }
+    expect(() => middleware(event)).toThrow(/Bearer required/)
+    expect(event._responseHeaders?.['www-authenticate']).toBe(
+      'Bearer error="invalid_token", errorCode="BEARER-UNKNOWN", error_description="Bearer required"',
+    )
   })
 
   it('skips paths outside /mcp', () => {
