@@ -1,5 +1,7 @@
 # Adding a tool
 
+`Last reviewed: 2026-06-13`
+
 A human-facing walkthrough for forking this template and adding your own Bitrix24
 MCP tool. It covers the mental model, where files go, the two registrations you
 must not forget, and an end-to-end look at a real tool.
@@ -23,7 +25,7 @@ The request path for one call:
 
 ```
 MCP client ── /mcp ──▶ defineMcpTool handler
-                          │  useBitrix24()        → the configured webhook client
+                          │  useBitrix24Tenant()  → OAuth-aware dispatcher (webhook OR per-tenant)
                           │  callV2 / callV3 ...  → typed SDK boundary (sdk-helpers.ts)
                           ▼
                        Bitrix24 REST  →  compact JSON back to the agent
@@ -76,7 +78,7 @@ Read it top to bottom — every tool in the repo is a variation on it:
 
 ```ts
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
-import { useBitrix24 } from '~/server/utils/bitrix24'
+import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
 import { callV2 } from '~/server/utils/sdk-helpers'
 
 // Local interface describing the subset of the REST response you surface.
@@ -90,7 +92,7 @@ export default defineMcpTool({
     + 'Bitrix24 calls.',
   inputSchema: {},                       // Zod raw shape; every field gets a .describe()
   handler: async () => {
-    const b24 = useBitrix24()            // the webhook-backed client
+    const b24 = useBitrix24Tenant()      // OAuth-aware dispatcher — see below
     const user = await callV2<CurrentUserResponse>(
       b24,
       'user.current',
@@ -104,8 +106,7 @@ export default defineMcpTool({
 
 Four things the example bakes in, and why they matter for a human writing the next one:
 
-- **`useBitrix24()`** hands you the client wired to the configured webhook. You
-  never construct credentials yourself.
+- **Never call `useBitrix24()` directly from a tool handler** — it pins the tool to the webhook path forever and silently breaks multi-tenant mode. CI catches this via a static guard test (see Hot spot 2 in [`ARCHITECTURE.md`](./ARCHITECTURE.md)). Always go through `useBitrix24Tenant()`, which returns the opaque `TypeB24` contract — you never assert `B24Hook` or `B24OAuth` on the handler side. The dispatcher (`server/utils/bitrix24-tenant.ts`) does the right thing under both flag states. Design lives in [`OAUTH-DESIGN.md` §6](./OAUTH-DESIGN.md#6-mcp-bearer--tenant-token-coupling).
 - **`callV2` / `callV3`** (from `server/utils/sdk-helpers.ts`) are the *only*
   sanctioned way to reach the SDK. They collapse the
   `await → isSuccess → getErrorMessages → getData` dance into one call and throw a

@@ -1,5 +1,7 @@
 # Reverse-proxy variants for production
 
+`Last reviewed: 2026-06-13`
+
 The shipped `docker-compose.yml` assumes the [`nginx-proxy`](https://github.com/nginx-proxy/nginx-proxy) + [`acme-companion`](https://github.com/nginx-proxy/acme-companion) duo. That works, but it's a **specific shop's taste** — not the default in most regions:
 
 - **BR / LatAm hosting (Hostinger, KingHost, HostGator, AWS São Paulo)** — `certbot + plain nginx` or Caddy.

@@ -1,5 +1,7 @@
 # Contributing to bx24-template-mcp
 
+`Last reviewed: 2026-06-13`
+
 Thanks for considering a contribution. This document describes how to land code.
 
 ## Quick start

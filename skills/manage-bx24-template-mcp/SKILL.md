@@ -1,6 +1,6 @@
 # bx24-template-mcp — Agent Skill
 
-`Last reviewed: 2026-06-12`
+`Last reviewed: 2026-06-13`
 
 You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. Read this before making changes.
 
@@ -11,7 +11,7 @@ You are working on a Bitrix24 MCP server built on Nuxt + `@nuxtjs/mcp-toolkit`. 
 - **Stack**: Nuxt 4 (Nitro `node-server`), `@nuxtjs/mcp-toolkit`, `@bitrix24/b24jssdk-nuxt`
 - **Auth to Bitrix24**: incoming webhook (default), or OAuth 2.0 multi-tenant (opt-in, landed — `NUXT_BITRIX24_OAUTH_ENABLED`)
 - **Auth from Claude to us**: Bearer token via middleware
-- **Deployment**: Docker behind `nginx-proxy` + `acme-companion` on shared `proxy-net` network. CI builds and pushes the image to GHCR on `v*` tag; the operator deploys via Watchtower (auto) or `make redeploy` on the host (manual)
+- **Deployment**: Docker behind `nginx-proxy` + `acme-companion` on shared `proxy-net` network. CI builds and pushes the image to GHCR on `v*` tag; the operator deploys via Watchtower in **monitor-only** mode by default (it notifies on a new `:latest` but does NOT restart — opt into auto-apply by removing `WATCHTOWER_MONITOR_ONLY`) or via `make redeploy` on the host (manual)
 - **Dependency updates**: npm & GitHub Actions — Renovate Bot (see `renovate.json`); Dockerfile base images — Dependabot; docker-compose infra images — Renovate's `docker-compose` manager (see `renovate.json`). Transitive-dependency security advisories are patched manually via `overrides` in `pnpm-workspace.yaml` (pnpm v11 location) — Dependabot/Renovate don't open PRs for nested deps. A blocking `pnpm audit --audit-level=moderate` CI job guards against regressions.
 - **License**: MIT
 

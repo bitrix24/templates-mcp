@@ -1,5 +1,7 @@
 # Security audit
 
+`Last reviewed: 2026-06-13`
+
 Track-record of security audits performed against the dependencies and surfaces
 that handle credentials in this MCP. Update on every dependency bump that
 touches a credential-adjacent surface.
@@ -348,6 +350,19 @@ The bar here is lower than for `@bitrix24/b24jssdk` (no webhook URL or auth head
 **Where they're used**: `app.vue` consumes `<B24App>` and `<B24Button>` only; `@bitrix24/b24icons-vue` is imported via subpaths (`/social`, `/solid`) for `GitHubIcon` and `HeartIcon`. No `runtimeConfig`, no server-side use.
 
 **Verdict**: clean to land. Renovate is configured to auto-merge patch updates and to gate minor / major bumps on manual review; the manual review for any future b24ui-nuxt bump must execute the checklist below.
+
+### Audit pass — b24ui-nuxt 2.8.0 (2026-06-13)
+
+Renovate bumped `@bitrix24/b24ui-nuxt` from 2.7.1 → 2.8.0. The four mandatory checks below executed against the 2.8.0 build; clean to land.
+
+1. **New `runtimeConfig` keys**: none. `dist/module.mjs` registers the same Nuxt plugin shape as 2.7.1; no new `runtimeConfig.public` or `runtimeConfig` reads.
+2. **New install hooks**: none of `postinstall` / `preinstall` / `prepare` are declared in the published `package.json` — these are the only hooks npm/pnpm runs at consumer install time. The published manifest does carry build-time `scripts` (`build`, `dev`, `test`, …), but those are author-side conveniences that do not execute on consumers; flagged here so future auditors don't mistake their presence for an install-time surface.
+3. **New outbound calls**: none. Same `dist/` audit as 2.7.1 — no `fetch(` / `XMLHttpRequest` / hard-coded `https://` URLs against analytics or telemetry endpoints.
+4. **Transitive dep delta**: bounded (~140 packages in the sub-tree, unchanged in order of magnitude). The diff is internal Reka UI / tanstack churn at minor versions; no new top-level vendor crossed into the tree.
+
+**Where 2.8.0 is consumed today**: same surface as 2.7.1 — `app.vue` still uses `<B24App>` and `<B24Button>` only; no server-side use. No code change in this repo was needed for the bump.
+
+**Verdict**: clean to land. Watch the next minor for any `runtimeConfig` introduction (the b24ui roadmap mentions a future theming hook).
 
 ### What to check on every future bump
 

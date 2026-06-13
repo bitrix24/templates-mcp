@@ -12,7 +12,7 @@ Guia de **instalação local** via extensão do Claude Desktop. O servidor roda 
 
 1. **Crie um webhook de entrada no Bitrix24.**
    - Portal → **Recursos para desenvolvedores → Outros → Webhook de entrada**.
-   - Permissões necessárias: `task`, `user`, `crm` (preparação futura). Em portal de teste pode marcar tudo.
+   - Permissões necessárias: `task` + `user` (mínimo para o conjunto atual de ferramentas). Em portal de teste pode marcar tudo. Estenda a lista apenas quando você adicionar ferramentas para um novo domínio (por exemplo, `crm` — só depois que ferramentas de deals/contatos/leads forem adicionadas no fork).
    - Salve e **copie a URL inteira** — algo como `https://sua-empresa.bitrix24.com.br/rest/1/abc123def456/`.
 
 2. **Instale a extensão.**

@@ -1,6 +1,6 @@
 # Issue scaffold
 
-`Last reviewed: 2026-06-12`
+`Last reviewed: 2026-06-13`
 
 Canonical English source for the non-block parts of the tracking issue: preamble, the "how to work" section (GitHub Convert-to-issue flow), the preparation/access section, and the placeholder data table. Render these into the test repo at issue-creation time. Operator-facing phrasing may be translated into the chosen language; structure and labels stay English.
 
@@ -60,7 +60,7 @@ The checklist item becomes a clickable link to that issue. Closing the issue aut
 
 ### 2. Local environment
 
-- Node.js 20+ (`node -v`), pnpm (`pnpm -v`).
+- Node.js 22+ (`node -v`; matches `package.json#engines` and the CI / Docker images), pnpm (`pnpm -v`).
 - `bitrix24/templates-mcp` cloned.
 - For PR scope: the PR branch checked out. For whole-project: the merge-target branch, with all in-scope PRs merged (else their tools are absent and the startup tool count won't match).
 
@@ -91,7 +91,7 @@ Optional, only if the run includes integration tests or evals (see `.env.example
 `NUXT_AUDIT_DIR` (OAuth/Bearer audit log destination; default `/data/audit/`, webhook-only manual QA ignores it).
 
 OAuth multi-tenant (opt-in, landed and off by default — webhook-only manual QA leaves these unset/false; operator guide in `docs/DEPLOYMENT.md` → "OAuth 2.0 multi-tenant"):
-`NUXT_BITRIX24_OAUTH_ENABLED` (default `false`; with `=true` the OAuth surface is end-to-end live — install/callback mint a Bearer, `/mcp` accepts it via the toolkit middleware in `server/mcp/index.ts`, and `NUXT_MCP_AUTH_TOKEN` is bypassed on `/mcp`. The four §11 deny branches — `BEARER-UNKNOWN` / `BEARER-REVOKED` / `BEARER-ORPHAN` / no Bearer — all 401 with a `WWW-Authenticate` header carrying the errorCode),
+`NUXT_BITRIX24_OAUTH_ENABLED` (default `false`; with `=true` the OAuth surface is end-to-end live — install/callback mint a Bearer, `/mcp` accepts it via the toolkit middleware in `server/mcp/index.ts`, and `NUXT_MCP_AUTH_TOKEN` is bypassed on `/mcp`. Three §11 deny branches — `BEARER-UNKNOWN` (covers an absent or unminted Bearer) / `BEARER-REVOKED` / `BEARER-ORPHAN` — all 401 with a `WWW-Authenticate` header carrying the errorCode),
 `NUXT_BITRIX24_OAUTH_CLIENT_ID` / `NUXT_BITRIX24_OAUTH_CLIENT_SECRET` (from a registered Bitrix24 Marketplace application, needed only when ENABLED=true),
 `NUXT_BITRIX24_OAUTH_REDIRECT_URL` (no default — must be set to the exact URL registered on the Bitrix24 side when `ENABLED=true`; `.env.example` shows `https://prod.example.com/api/oauth/callback` as a placeholder shape, not a value to copy verbatim),
 `NUXT_BITRIX24_OAUTH_SCOPE` (default `user,task`),
