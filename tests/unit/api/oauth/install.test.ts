@@ -99,7 +99,10 @@ interface CapturedResponse {
   errorCode?: string
 }
 
-async function callHandler(query: Record<string, string>): Promise<CapturedResponse> {
+async function callHandler(
+  query: Record<string, string>,
+  opts: { acceptHtml?: boolean } = {},
+): Promise<CapturedResponse> {
   // Fresh app per call so the handler module's mock isolation holds.
   const handler = (await import('~/server/api/oauth/install.get')).default
   const app = createApp({ onError: (err, event) => {
@@ -118,7 +121,15 @@ async function callHandler(query: Record<string, string>): Promise<CapturedRespo
   const req = new IncomingMessage(socket)
   req.method = 'GET'
   req.url = `/api/oauth/install?${new URLSearchParams(query).toString()}`
-  req.headers = { host: 'mcp.example.com' }
+  // Default Accept-less request mimics curl / fetch with no header — the
+  // CLI path that the landing form / HTML deny pages must NEVER swallow.
+  // Tests that want the browser branch pass `acceptHtml: true`.
+  req.headers = {
+    host: 'mcp.example.com',
+    ...(opts.acceptHtml
+      ? { accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+      : {}),
+  }
 
   return await new Promise<CapturedResponse>((resolve) => {
     const chunks: Buffer[] = []
@@ -378,5 +389,157 @@ describe('/api/oauth/install — happy path', () => {
     const cookieA = cookieAstr.match(/^bx24_oauth_csrf=([a-f0-9]{64})/)![1]
     const cookieB = cookieBstr.match(/^bx24_oauth_csrf=([a-f0-9]{64})/)![1]
     expect(cookieA).not.toBe(cookieB)
+  })
+})
+
+/**
+ * Operator UX (#221 follow-up): a browser hitting `/api/oauth/install`
+ * directly — no `?portal=` in the URL — gets a tiny HTML landing form
+ * instead of a JSON 400. CLI callers (no `text/html` in Accept) keep
+ * the old contract so the docker-smoke script and every `curl`-based
+ * probe stay byte-identical. Deny branches (FLAG-OFF, NOT-CONFIGURED,
+ * PORTAL-FORMAT) get HTML pages for browsers and JSON for everyone else.
+ */
+describe('/api/oauth/install — operator UX (browser landing form)', () => {
+  it('GET /install with no portal AND Accept: text/html renders the landing form (no state, no cookie)', async () => {
+    const res = await callHandler({}, { acceptHtml: true })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toMatch(/^text\/html/)
+    expect(res.body).toContain('<form')
+    expect(res.body).toContain('name="portal"')
+    expect(res.body).toContain('Authorize on Bitrix24')
+    // Form submits GET back to the same handler — the existing server-side
+    // allow-list validation is still authoritative.
+    expect(res.body).toMatch(/action="\/api\/oauth\/install"\s+method="get"/)
+    // No state minted, no cookie set, no oauth.install.start log.
+    expect(res.headers['set-cookie']).toBeUndefined()
+    expect(loggerCalls.find(c => c.event === 'oauth.install.start')).toBeUndefined()
+    // The DEBUG `landing` event IS logged so an operator can spot e.g.
+    // a spike of pre-form opens that never convert.
+    expect(loggerCalls.find(c => c.event === 'oauth.install.landing')).toBeDefined()
+  })
+
+  it('GET /install with no portal AND no Accept header returns the existing JSON 400 PORTAL-FORMAT (CLI contract)', async () => {
+    const res = await callHandler({})
+    expect(res.statusCode).toBe(400)
+    expect(res.errorCode).toBe('PORTAL-FORMAT')
+    expect(res.headers['content-type']).toMatch(/json/)
+    // No landing-form HTML body for the CLI path.
+    expect(res.body).not.toContain('<form')
+  })
+
+  it('GET /install with no portal AND Accept: application/json returns the JSON 400 PORTAL-FORMAT', async () => {
+    // Direct override of the Accept header — mimics an MCP-style probe that
+    // wants the machine-readable response, not HTML.
+    const handler = (await import('~/server/api/oauth/install.get')).default
+    const app = createApp({ onError: (err, event) => {
+      const e = err as { statusCode?: number, data?: { errorCode?: string } }
+      event.node.res.statusCode = e.statusCode ?? 500
+      event.node.res.setHeader('content-type', 'application/json')
+      event.node.res.end(JSON.stringify({ errorCode: e.data?.errorCode }))
+    } })
+    app.use('/api/oauth/install', eventHandler(handler))
+    const listener = toNodeListener(app)
+    const socket = new Socket()
+    const req = new IncomingMessage(socket)
+    req.method = 'GET'
+    req.url = '/api/oauth/install'
+    req.headers = { host: 'mcp.example.com', accept: 'application/json' }
+    const body = await new Promise<{ statusCode: number, body: string }>((resolve) => {
+      const chunks: Buffer[] = []
+      const res = new ServerResponse(req)
+      const origEnd = res.end.bind(res)
+      res.end = ((c?: unknown, ...r: unknown[]) => {
+        if (c) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)))
+        const result = origEnd(c as never, ...r as never[])
+        resolve({ statusCode: res.statusCode, body: Buffer.concat(chunks).toString('utf8') })
+        return result
+      }) as typeof res.end
+      listener(req, res)
+    })
+    expect(body.statusCode).toBe(400)
+    expect(JSON.parse(body.body).errorCode).toBe('PORTAL-FORMAT')
+  })
+
+  it('GET /install with valid portal AND Accept: text/html still 302s to Bitrix24 (form-submit happy path)', async () => {
+    const res = await callHandler({ portal: 'acme.bitrix24.com' }, { acceptHtml: true })
+    expect(res.statusCode).toBe(302)
+    expect(String(res.headers.location)).toContain('https://acme.bitrix24.com/oauth/authorize/')
+  })
+
+  it('landing form lists the configured OAuth scopes and the app clientId', async () => {
+    const res = await callHandler({}, { acceptHtml: true })
+    // Default scope per the test fixture is 'user,task' — both <li>s present.
+    expect(res.body).toMatch(/<li><code>user<\/code><\/li>/)
+    expect(res.body).toMatch(/<li><code>task<\/code><\/li>/)
+    expect(res.body).toContain('app.cid.12345')
+  })
+
+  it('landing form mirrors PORTAL_ALLOW_LIST_RE in the input pattern attribute (client-side typo guard, NOT a security boundary)', async () => {
+    const res = await callHandler({}, { acceptHtml: true })
+    // Anchors stripped — HTML5 `pattern` is implicitly anchored.
+    expect(res.body).toContain('pattern="[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.bitrix24\\.(?:com|ru|eu|de|by|kz|ua)"')
+  })
+
+  it('landing form is JS-free and inline-style-free (strict-CSP defence-in-depth)', async () => {
+    const res = await callHandler({}, { acceptHtml: true })
+    // The strict CSP set by setAntiFramingHeaders would block any inline
+    // script or style. Body assertions catch a regression that adds one
+    // back without thinking through CSP.
+    expect(res.body).not.toMatch(/<script/i)
+    expect(res.body).not.toMatch(/\sstyle=/i)
+    expect(res.body).not.toMatch(/javascript:/i)
+  })
+
+  it('landing form carries anti-framing + form-action self CSP (#221 posture extended for the form)', async () => {
+    const res = await callHandler({}, { acceptHtml: true })
+    expect(res.headers['x-frame-options']).toBe('DENY')
+    const csp = String(res.headers['content-security-policy'])
+    expect(csp).toContain("default-src 'none'")
+    expect(csp).toContain("frame-ancestors 'none'")
+    expect(csp).toContain("form-action 'self'")
+  })
+
+  it('FLAG-OFF + Accept: text/html renders the HTML 503 (no retry link — operator-fixable, not user-fixable)', async () => {
+    runtimeConfig.bitrix24OauthEnabled = false
+    const res = await callHandler({}, { acceptHtml: true })
+    expect(res.statusCode).toBe(503)
+    expect(res.headers['content-type']).toMatch(/^text\/html/)
+    expect(res.body).toContain('FLAG-OFF')
+    expect(res.body).toContain('OAuth installation is disabled')
+    expect(res.body).not.toContain('Start over')
+  })
+
+  it('NOT-CONFIGURED + Accept: text/html renders the HTML 503 (no retry link)', async () => {
+    runtimeConfig.bitrix24OauthClientId = ''
+    const res = await callHandler({ portal: 'acme.bitrix24.com' }, { acceptHtml: true })
+    expect(res.statusCode).toBe(503)
+    expect(res.headers['content-type']).toMatch(/^text\/html/)
+    expect(res.body).toContain('NOT-CONFIGURED')
+    expect(res.body).not.toContain('Start over')
+  })
+
+  it('PORTAL-FORMAT + Accept: text/html renders an HTML 400 WITH a "Start over" retry link (user-fixable)', async () => {
+    const res = await callHandler({ portal: 'evil.example.com' }, { acceptHtml: true })
+    expect(res.statusCode).toBe(400)
+    expect(res.headers['content-type']).toMatch(/^text\/html/)
+    expect(res.body).toContain('PORTAL-FORMAT')
+    // Retry link points back to /api/oauth/install (no query) → renders
+    // the form again. Lets the user fix a typo without a back-button trip.
+    expect(res.body).toContain('href="/api/oauth/install"')
+    expect(res.body).toContain('Start over')
+  })
+
+  it('flag gate logs `oauth.install.deny.flag-off` whether the caller is a browser or CLI', async () => {
+    // Symmetry check: HTML branch must not skip the audit log just because
+    // it returns nice HTML. The deny event is the operator's signal.
+    runtimeConfig.bitrix24OauthEnabled = false
+    loggerCalls.length = 0
+    await callHandler({}, { acceptHtml: true })
+    expect(loggerCalls.find(c => c.event === 'oauth.install.deny.flag-off')).toBeDefined()
+    runtimeConfig.bitrix24OauthEnabled = true
+    loggerCalls.length = 0
+    await callHandler({})
+    expect(loggerCalls.find(c => c.event === 'oauth.install.deny.flag-off')).toBeUndefined()
   })
 })
