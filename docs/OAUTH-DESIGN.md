@@ -1,5 +1,7 @@
 # OAuth 2.0 design — multi-tenant auth (shipped)
 
+`Last reviewed: 2026-06-13`
+
 > **Status: SHIPPED.** The implementation is live behind the `NUXT_BITRIX24_OAUTH_ENABLED` feature flag (off by default) — landed across #209 → #210 → #213 → #216 → #218, operator docs in #219 (§10 has the full rollout table). This document remains the **normative design reference**: threat model, token-store contract, §11 event taxonomy.
 >
 > **Doc-vs-code drift policy.** If implementation diverges from this document, `OAUTH-DESIGN.md` is updated in the same PR that introduces the divergence. This file is normative until superseded.
