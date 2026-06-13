@@ -101,7 +101,7 @@ interface CapturedResponse {
 
 async function callHandler(
   query: Record<string, string>,
-  opts: { acceptHtml?: boolean } = {},
+  opts: { acceptHtml?: boolean, acceptHeader?: string } = {},
 ): Promise<CapturedResponse> {
   // Fresh app per call so the handler module's mock isolation holds.
   const handler = (await import('~/server/api/oauth/install.get')).default
@@ -124,11 +124,16 @@ async function callHandler(
   // Default Accept-less request mimics curl / fetch with no header — the
   // CLI path that the landing form / HTML deny pages must NEVER swallow.
   // Tests that want the browser branch pass `acceptHtml: true`.
+  // `acceptHeader` (raw, set as-is) wins over `acceptHtml` (browser-ish
+  // default). Default — neither — mimics curl / fetch without any Accept,
+  // the CLI-path that the landing form must never swallow.
+  const accept = opts.acceptHeader
+    ?? (opts.acceptHtml
+      ? 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      : undefined)
   req.headers = {
     host: 'mcp.example.com',
-    ...(opts.acceptHtml
-      ? { accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
-      : {}),
+    ...(accept ? { accept } : {}),
   }
 
   return await new Promise<CapturedResponse>((resolve) => {
@@ -408,15 +413,23 @@ describe('/api/oauth/install — operator UX (browser landing form)', () => {
     expect(res.body).toContain('<form')
     expect(res.body).toContain('name="portal"')
     expect(res.body).toContain('Authorize on Bitrix24')
-    // Form submits GET back to the same handler — the existing server-side
-    // allow-list validation is still authoritative.
-    expect(res.body).toMatch(/action="\/api\/oauth\/install"\s+method="get"/)
+    // Form submits GET back to the same handler — two separate
+    // assertions instead of a single regex so a future attribute-order
+    // shuffle in the template doesn't break this test for the wrong
+    // reason (#232 test review).
+    expect(res.body).toContain('action="/api/oauth/install"')
+    expect(res.body).toContain('method="get"')
     // No state minted, no cookie set, no oauth.install.start log.
     expect(res.headers['set-cookie']).toBeUndefined()
     expect(loggerCalls.find(c => c.event === 'oauth.install.start')).toBeUndefined()
     // The DEBUG `landing` event IS logged so an operator can spot e.g.
-    // a spike of pre-form opens that never convert.
-    expect(loggerCalls.find(c => c.event === 'oauth.install.landing')).toBeDefined()
+    // a spike of pre-form opens that never convert. It carries `ip` so
+    // the §11 alerting recipe works without an nginx access-log join
+    // (#232 docs review).
+    const landing = loggerCalls.find(c => c.event === 'oauth.install.landing')
+    expect(landing).toBeDefined()
+    expect(landing!.ctx).toMatchObject({ clientId: 'app.cid.12345' })
+    expect(landing!.ctx).toHaveProperty('ip')
   })
 
   it('GET /install with no portal AND no Accept header returns the existing JSON 400 PORTAL-FORMAT (CLI contract)', async () => {
@@ -429,36 +442,33 @@ describe('/api/oauth/install — operator UX (browser landing form)', () => {
   })
 
   it('GET /install with no portal AND Accept: application/json returns the JSON 400 PORTAL-FORMAT', async () => {
-    // Direct override of the Accept header — mimics an MCP-style probe that
-    // wants the machine-readable response, not HTML.
-    const handler = (await import('~/server/api/oauth/install.get')).default
-    const app = createApp({ onError: (err, event) => {
-      const e = err as { statusCode?: number, data?: { errorCode?: string } }
-      event.node.res.statusCode = e.statusCode ?? 500
-      event.node.res.setHeader('content-type', 'application/json')
-      event.node.res.end(JSON.stringify({ errorCode: e.data?.errorCode }))
-    } })
-    app.use('/api/oauth/install', eventHandler(handler))
-    const listener = toNodeListener(app)
-    const socket = new Socket()
-    const req = new IncomingMessage(socket)
-    req.method = 'GET'
-    req.url = '/api/oauth/install'
-    req.headers = { host: 'mcp.example.com', accept: 'application/json' }
-    const body = await new Promise<{ statusCode: number, body: string }>((resolve) => {
-      const chunks: Buffer[] = []
-      const res = new ServerResponse(req)
-      const origEnd = res.end.bind(res)
-      res.end = ((c?: unknown, ...r: unknown[]) => {
-        if (c) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)))
-        const result = origEnd(c as never, ...r as never[])
-        resolve({ statusCode: res.statusCode, body: Buffer.concat(chunks).toString('utf8') })
-        return result
-      }) as typeof res.end
-      listener(req, res)
-    })
-    expect(body.statusCode).toBe(400)
-    expect(JSON.parse(body.body).errorCode).toBe('PORTAL-FORMAT')
+    // Direct override of the Accept header — mimics an MCP-style probe
+    // that wants the machine-readable response, not HTML. Uses the
+    // unified callHandler `acceptHeader` knob (#232 test review — was
+    // an inline duplicate of callHandler before).
+    const res = await callHandler({}, { acceptHeader: 'application/json' })
+    expect(res.statusCode).toBe(400)
+    expect(res.errorCode).toBe('PORTAL-FORMAT')
+  })
+
+  it('GET /install with no portal AND Accept: */* returns the JSON 400 PORTAL-FORMAT (curl default contract #232)', async () => {
+    // The curl default (`Accept: */*`) MUST NOT be treated as a browser
+    // navigation — otherwise every smoke probe would suddenly start
+    // getting HTML. Pinned regression guard.
+    const res = await callHandler({}, { acceptHeader: '*/*' })
+    expect(res.statusCode).toBe(400)
+    expect(res.errorCode).toBe('PORTAL-FORMAT')
+    expect(res.body).not.toContain('<form')
+  })
+
+  it('GET /install with `Accept: application/json;q=0.9,text/html;q=0.1` STILL renders the landing form (q-factor not parsed)', async () => {
+    // Documented decision: q-factor weights are not parsed — a probe
+    // explicitly asking for HTML, even at a low priority, still gets
+    // HTML. A misbehaving probe can pin a JSON-only contract with
+    // `Accept: application/json` (no text/html anywhere).
+    const res = await callHandler({}, { acceptHeader: 'application/json;q=0.9,text/html;q=0.1' })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('<form')
   })
 
   it('GET /install with valid portal AND Accept: text/html still 302s to Bitrix24 (form-submit happy path)', async () => {
@@ -476,9 +486,14 @@ describe('/api/oauth/install — operator UX (browser landing form)', () => {
   })
 
   it('landing form mirrors PORTAL_ALLOW_LIST_RE in the input pattern attribute (client-side typo guard, NOT a security boundary)', async () => {
+    // Derive the expected pattern from the source-of-truth regex —
+    // when the allow-list grows a TLD, this test follows automatically
+    // instead of failing with a mysterious magic-string mismatch.
+    // (#232 test review.)
+    const { PORTAL_ALLOW_LIST_RE } = await import('~/server/utils/portal-validation')
+    const expectedPattern = PORTAL_ALLOW_LIST_RE.source.replace(/^\^/, '').replace(/\$$/, '')
     const res = await callHandler({}, { acceptHtml: true })
-    // Anchors stripped — HTML5 `pattern` is implicitly anchored.
-    expect(res.body).toContain('pattern="[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.bitrix24\\.(?:com|ru|eu|de|by|kz|ua)"')
+    expect(res.body).toContain(`pattern="${expectedPattern}"`)
   })
 
   it('landing form is JS-free and inline-style-free (strict-CSP defence-in-depth)', async () => {
@@ -497,7 +512,7 @@ describe('/api/oauth/install — operator UX (browser landing form)', () => {
     const csp = String(res.headers['content-security-policy'])
     expect(csp).toContain("default-src 'none'")
     expect(csp).toContain("frame-ancestors 'none'")
-    expect(csp).toContain("form-action 'self'")
+    expect(csp).toContain('form-action /api/oauth/install')
   })
 
   it('FLAG-OFF + Accept: text/html renders the HTML 503 (no retry link — operator-fixable, not user-fixable)', async () => {
@@ -541,5 +556,47 @@ describe('/api/oauth/install — operator UX (browser landing form)', () => {
     loggerCalls.length = 0
     await callHandler({})
     expect(loggerCalls.find(c => c.event === 'oauth.install.deny.flag-off')).toBeUndefined()
+    // Positive assertion (#232 test review): without flag-off, the
+    // CLI path with empty portal still emits the deny.portal-format
+    // event so the test fails if the handler short-circuits to nothing.
+    expect(loggerCalls.find(c => c.event === 'oauth.install.deny.portal-format')).toBeDefined()
+  })
+
+  it('HTML-escapes a malicious clientId injected via the runtime config (XSS regression guard #232)', async () => {
+    // The runtime config is operator-controlled, but a CI/CD pipeline
+    // or a fork that templates the env from an upstream source could
+    // smuggle HTML metachars. htmlEscape is the only thing between
+    // them and the rendered landing page — pin its behaviour.
+    runtimeConfig.bitrix24OauthClientId = 'app<script>alert(1)</script>&"id\'X'
+    const res = await callHandler({}, { acceptHtml: true })
+    expect(res.statusCode).toBe(200)
+    // None of the dangerous metachars survive raw into the body.
+    expect(res.body).not.toContain('<script>alert(1)')
+    expect(res.body).not.toContain('app<script')
+    // The properly escaped form does appear.
+    expect(res.body).toContain('app&lt;script&gt;alert(1)&lt;/script&gt;&amp;&quot;id&#39;X')
+  })
+
+  it('empty scope env falls back to `user,task` in the landing form (regression guard for the `|| user,task` default)', async () => {
+    runtimeConfig.bitrix24OauthScope = ''
+    const res = await callHandler({}, { acceptHtml: true })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toMatch(/<li><code>user<\/code><\/li>/)
+    expect(res.body).toMatch(/<li><code>task<\/code><\/li>/)
+  })
+
+  it('landing render does NOT count against the rate-limit bucket (#232 security: F5 must not self-ban)', async () => {
+    // The bucket-skip is implemented in the rate-limit middleware
+    // (a unit test of which lives in `oauth-rate-limit.test.ts`).
+    // From the install-handler side we pin the upstream-visible
+    // contract: a string of landing renders never sets `Retry-After`,
+    // never mints state, never sets cookies, never emits
+    // `deny.rate-limited`.
+    for (let i = 0; i < 20; i++) {
+      const res = await callHandler({}, { acceptHtml: true })
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['retry-after']).toBeUndefined()
+    }
+    expect(loggerCalls.find(c => c.event === 'oauth.install.deny.rate-limited')).toBeUndefined()
   })
 })

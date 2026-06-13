@@ -105,16 +105,26 @@ export function _resetOauthRateLimitForTests(): void {
 }
 
 export default defineEventHandler((event) => {
-  const { pathname } = getRequestURL(event)
-  const limit = ROUTE_LIMITS[pathname]
+  const url = getRequestURL(event)
+  const limit = ROUTE_LIMITS[url.pathname]
   if (!limit) return
   if (!useRuntimeConfig().bitrix24OauthEnabled) return
+
+  // #232 review (security): on `/api/oauth/install`, a browser hit
+  // WITHOUT `?portal=` is a pure landing-form render — no `oauth_state`
+  // row gets minted, the rate-limit threat model (DB-write flood) does
+  // NOT apply. Skip the counter so a tab F5-er can't self-ban from the
+  // very form they're trying to use. A submitted `?portal=` IS counted
+  // as before. Same surface, two costs; only the costly half is rated.
+  if (url.pathname === '/api/oauth/install' && !url.searchParams.get('portal')) {
+    return
+  }
 
   const ip = getRequestIP(event) ?? '<unknown>'
   // Key buckets by (route, ip) so install's tighter 10/min limit isn't
   // consumed by callback hits and vice versa. Same IP, two surfaces,
   // two independent counters.
-  const key = `${pathname}:${ip}`
+  const key = `${url.pathname}:${ip}`
   const now = Date.now()
 
   // True LRU on the bucket map: every touched key is re-inserted at the

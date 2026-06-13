@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { createError, defineEventHandler, getQuery, getRequestHeader, sendRedirect, setCookie, setResponseHeader } from 'h3'
+import { createError, defineEventHandler, getQuery, getRequestHeader, getRequestIP, sendRedirect, setCookie, setResponseStatus } from 'h3'
 import type { H3Event } from 'h3'
 import { useLogger } from '~/server/utils/logger'
+import { htmlEscape, setAntiFramingHeaders, setHtmlResponseHeaders } from '~/server/utils/oauth-html'
 import { PORTAL_ALLOW_LIST_RE } from '~/server/utils/portal-validation'
 import { useTokenStore } from '~/server/utils/token-store'
 
@@ -42,7 +43,7 @@ import { useTokenStore } from '~/server/utils/token-store'
  *   - `oauth.install.start` (INFO, on entry — `portal`, `clientId`)
  *   - `oauth.install.deny.portal-format` (WARN — failed regex)
  *   - `oauth.install.deny.flag-off` (WARN — flag disabled)
- *   - `oauth.install.deny.not-configured` (WARN — clientId/redirect missing)
+ *   - `oauth.install.deny.not-configured` (ERROR — clientId/redirect missing)
  *   - `oauth.install.landing` (DEBUG — browser hit the route with no
  *     `?portal=`; the form was rendered. Doesn't mint state or set
  *     cookies. Quiet on purpose — operators expect every browser open
@@ -64,57 +65,34 @@ function newNonce(): string {
 }
 
 /**
+ * Path the landing form's GET submission is allowed to target under the
+ * CSP `form-action` directive. Sized down from `'self'` (#232 review):
+ * any other endpoint on the same origin can't be the target of a form
+ * post under the resulting policy — minimal-privilege principle.
+ *
+ * CSP Level 2 supports path-level form-action; all browsers MCP cares
+ * about (Chrome ≥40, Firefox ≥31, Safari ≥10) implement it.
+ */
+const INSTALL_PATH = '/api/oauth/install'
+
+/**
  * `true` when the caller's `Accept` header includes `text/html` — a
  * browser navigation. Default-fail to JSON: a missing Accept (curl,
- * fetch with no header) is the conservative CLI assumption, so the
- * landing form / HTML error pages never accidentally swallow an
- * automated probe's 400.
+ * fetch with no header), the curl-default bare wildcard
+ * (`star-slash-star`), and any machine-readable value
+ * (`application/json`, `application/xml`) all resolve to false, so
+ * automated CLI probes never accidentally get an HTML response. We
+ * require the literal substring `text/html` to be present.
  *
- * A bare wildcard (`star/star`) does NOT count — that's the curl /
- * generic-HTTP fallback, not a browser. We require `text/html` to
- * appear explicitly.
+ * Q-factor weights (`text/html;q=0.001`) are deliberately NOT parsed:
+ * a probe asking for HTML "if absolutely nothing else is available"
+ * still asks for HTML, and the simpler `includes` check has one less
+ * thing to get wrong. A misbehaving probe can always pin the contract
+ * with an explicit `Accept: application/json`.
  */
 function wantsHtml(event: H3Event): boolean {
   const accept = getRequestHeader(event, 'accept') ?? ''
   return accept.toLowerCase().includes('text/html')
-}
-
-/**
- * Anti-framing + anti-cache response headers for EVERY path this route
- * takes (issue #221 + operator-UX follow-up).
- *
- * Same posture as `/api/oauth/callback`'s helper of the same name — see
- * the doc comment there for the per-header rationale. One difference:
- * we add `form-action 'self'` to the CSP because the new landing page
- * carries a `<form>` whose submission must be allowed under the strict
- * `default-src 'none'` base. The callback page has no form and can use
- * the tighter directive set; the install page needs this one extra.
- */
-function setAntiFramingHeaders(event: H3Event): void {
-  setResponseHeader(event, 'cache-control', 'no-store, no-cache')
-  setResponseHeader(event, 'pragma', 'no-cache')
-  setResponseHeader(event, 'x-frame-options', 'DENY')
-  setResponseHeader(
-    event,
-    'content-security-policy',
-    'default-src \'none\'; frame-ancestors \'none\'; form-action \'self\'',
-  )
-}
-
-/** HTML render paths additionally pin `content-type: text/html`. */
-function setHtmlResponseHeaders(event: H3Event): void {
-  setAntiFramingHeaders(event)
-  setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
-}
-
-function htmlEscape(s: string): string {
-  // `?? c` fallback mirrors the callback handler's escape helper —
-  // a no-op preserve if the character class and lookup table ever
-  // drift, instead of a non-null assertion that lies to the type
-  // checker.
-  return String(s).replace(/[&<>"]/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
-  }[c] ?? c))
 }
 
 /**
@@ -134,11 +112,16 @@ function htmlEscape(s: string): string {
  * No JS, no inline styles, no external assets — the strict CSP set
  * by `setAntiFramingHeaders` would block any of those. Operators who
  * want branding should put a styled wrapper page at `/` on their
- * reverse proxy and link `/api/oauth/install` from it.
+ * reverse proxy and link `/api/oauth/install` from it. (Tracked as a
+ * follow-up: optional `style-src` carve-out for an in-page brand — see
+ * the open issue linked from `docs/OAUTH-DESIGN.md` §3.)
  */
 function installLandingPage(clientId: string, scope: string): string {
   // Strip the regex anchors for the HTML pattern attribute. The source
   // is `^…$`; HTML5 `pattern` is implicitly anchored so we drop both.
+  // `safePattern` is interpolated into a DOUBLE-quoted attribute and
+  // routed through `htmlEscape` (which now covers `'` too) — safe even
+  // if the regex source ever grows a quote character.
   const portalPattern = PORTAL_ALLOW_LIST_RE.source.replace(/^\^/, '').replace(/\$$/, '')
   const safePattern = htmlEscape(portalPattern)
   const safeClientId = htmlEscape(clientId)
@@ -197,8 +180,11 @@ export default defineEventHandler(async (event) => {
   // Pin anti-framing + no-cache on EVERY path: 302 success, the landing
   // form, HTML deny pages, and the JSON `throw createError` throws. h3
   // preserves headers across throws, so the JSON deny responses carry
-  // X-Frame-Options + the strict CSP too (uniform contract).
-  setAntiFramingHeaders(event)
+  // X-Frame-Options + the strict CSP too (uniform contract). The
+  // `form-action` directive is pinned to the install path itself —
+  // even on JSON deny paths it's harmless (no <form> in JSON bodies)
+  // and tightens the uniform CSP without per-branch divergence.
+  setAntiFramingHeaders(event, { formAction: INSTALL_PATH })
   const wantHtml = wantsHtml(event)
   const {
     bitrix24OauthEnabled,
@@ -213,8 +199,8 @@ export default defineEventHandler(async (event) => {
   if (!bitrix24OauthEnabled) {
     void logger.warning('oauth.install.deny.flag-off', { reason: 'OAuth disabled at runtime' })
     if (wantHtml) {
-      setHtmlResponseHeaders(event)
-      event.node.res.statusCode = 503
+      setHtmlResponseHeaders(event, { formAction: INSTALL_PATH })
+      setResponseStatus(event, 503)
       return installErrorPage(
         'FLAG-OFF',
         'OAuth installation is disabled on this server. The operator needs to enable it before anyone can install.',
@@ -240,8 +226,8 @@ export default defineEventHandler(async (event) => {
       hasRedirectUrl: !!redirectUrl,
     })
     if (wantHtml) {
-      setHtmlResponseHeaders(event)
-      event.node.res.statusCode = 503
+      setHtmlResponseHeaders(event, { formAction: INSTALL_PATH })
+      setResponseStatus(event, 503)
       return installErrorPage(
         'NOT-CONFIGURED',
         'The operator enabled OAuth but did not finish configuring it. Required environment variables are missing on the server.',
@@ -262,13 +248,24 @@ export default defineEventHandler(async (event) => {
   const portal = String((getQuery(event).portal ?? '')).trim().toLowerCase()
 
   // Step 2a (operator UX, follow-up to #221): if a browser hits the
-  // route with no `?portal=`, render the landing form instead of
-  // refusing with PORTAL-FORMAT. No state minted, no cookie set — pure
-  // GET render. CLI callers (no `text/html` in Accept) still drop
-  // through to the unchanged 400 path so smoke probes are byte-identical.
+  // route with `?portal=` absent OR empty, render the landing form
+  // instead of refusing with PORTAL-FORMAT. No state minted, no cookie
+  // set — pure GET render. CLI callers (no `text/html` in Accept) still
+  // drop through to the unchanged 400 path so smoke probes get the
+  // byte-identical JSON body+status (anti-framing headers are now
+  // present on JSON responses too — see the §3 note in OAUTH-DESIGN.md).
+  //
+  // We log `ip` here so the §11 monitoring recipe "spike of `landing`
+  // events from one IP with no matching `oauth.install.start`" can be
+  // built without an nginx access-log join. `clientId` is the
+  // marketplace app id (publicly identifiable, not a secret) and is
+  // shown on the landing page itself — logging it is intentional.
   if (!portal && wantHtml) {
-    void logger.debug('oauth.install.landing', { clientId })
-    setHtmlResponseHeaders(event)
+    void logger.debug('oauth.install.landing', {
+      clientId,
+      ip: getRequestIP(event) ?? '<unknown>',
+    })
+    setHtmlResponseHeaders(event, { formAction: INSTALL_PATH })
     return installLandingPage(clientId, scope)
   }
 
@@ -294,11 +291,11 @@ export default defineEventHandler(async (event) => {
   if (!portal || !PORTAL_ALLOW_LIST_RE.test(portal)) {
     void logger.warning('oauth.install.deny.portal-format', { portal: portalForLog })
     if (wantHtml) {
-      setHtmlResponseHeaders(event)
-      event.node.res.statusCode = 400
+      setHtmlResponseHeaders(event, { formAction: INSTALL_PATH })
+      setResponseStatus(event, 400)
       return installErrorPage(
         'PORTAL-FORMAT',
-        'The portal hostname you entered is not in the accepted format. It must look like ‘acme.bitrix24.com’ (TLDs allowed: com, ru, eu, de, by, kz, ua).',
+        'The portal hostname you entered is not in the accepted format. It must look like "acme.bitrix24.com" (TLDs allowed: com, ru, eu, de, by, kz, ua).',
         true,
       )
     }

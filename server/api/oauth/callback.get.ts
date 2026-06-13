@@ -1,7 +1,8 @@
 import { Buffer } from 'node:buffer'
 import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
-import { createError, defineEventHandler, deleteCookie, getCookie, getQuery, type H3Event, setResponseHeader } from 'h3'
+import { createError, defineEventHandler, deleteCookie, getCookie, getQuery, setResponseStatus } from 'h3'
 import { useLogger } from '~/server/utils/logger'
+import { htmlEscape, setAntiFramingHeaders, setHtmlResponseHeaders } from '~/server/utils/oauth-html'
 import { isAllowedPortalDomain } from '~/server/utils/portal-validation'
 import { useTokenStore } from '~/server/utils/token-store'
 
@@ -92,57 +93,11 @@ interface TokenExchangeErr {
   error_description?: string
 }
 
-/**
- * Anti-framing + anti-cache response headers for EVERY path this route
- * takes (issue #221) — including early `throw createError()` paths whose
- * body h3 renders as JSON. The headers are content-agnostic (they don't
- * set content-type), so they're safe to send on JSON error responses too.
- *
- * - `Cache-Control: no-store, no-cache` + `Pragma: no-cache` — the
- *   success page carries the raw Bearer; it must never land in a
- *   proxy/CDN cache. `Pragma` covers HTTP/1.0 proxies (uncommon but
- *   cheap to be defensive). Applied to deny paths too so a misbehaving
- *   proxy can't cache stale error pages keyed on `?state=`.
- * - `X-Frame-Options: DENY` + `frame-ancestors 'none'` — the Bearer is
- *   displayed in the DOM; without anti-framing, a same-site context
- *   (subdomain takeover, sibling-app XSS) could iframe the callback and
- *   read the token off the page. `SameSite=Lax` on the CSRF cookie does
- *   not protect against same-site framing. Applied to error pages too
- *   so the contract is uniform across paths (no surprise frame-able
- *   response).
- * - CSP `default-src 'none'; frame-ancestors 'none'` — the pages are
- *   fully self-contained: no JS, no external assets, and no inline
- *   styles (the success page's `<pre>` uses no `style=` attribute), so
- *   the CSP can be maximally strict with no `'unsafe-inline'`
- *   carve-out.
- */
-function setAntiFramingHeaders(event: H3Event): void {
-  setResponseHeader(event, 'cache-control', 'no-store, no-cache')
-  setResponseHeader(event, 'pragma', 'no-cache')
-  setResponseHeader(event, 'x-frame-options', 'DENY')
-  setResponseHeader(event, 'content-security-policy', 'default-src \'none\'; frame-ancestors \'none\'')
-}
+// Header / escape helpers live in `~/server/utils/oauth-html.ts` so this
+// route and `/api/oauth/install` share one source of truth (#232 review:
+// the two copies had started drifting on CSP directives). Callback omits
+// `formAction` — there's no <form> on the success or error pages.
 
-/**
- * HTML render paths additionally pin `content-type: text/html`. Always
- * preceded by (and additive to) `setAntiFramingHeaders` — call this
- * helper only on paths that return HTML body, not on `throw createError`
- * paths (h3 picks the content-type for those).
- */
-function setHtmlResponseHeaders(event: H3Event): void {
-  setAntiFramingHeaders(event)
-  setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
-}
-
-function htmlEscape(s: string): string {
-  // `?? c` rather than `!` — TS can't see that the regex character class
-  // and the lookup table are coupled, and `?? c` is a no-op fallback
-  // (returns the original char) that won't silently corrupt output if
-  // the two ever drift.
-  return String(s).replace(/[&<>"]/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
-  }[c] ?? c))
-}
 
 function callbackErrorPage(errorCode: string, detail: string): string {
   // Tiny HTML — no JS, no external assets, no styling that could pull
@@ -349,7 +304,7 @@ export default defineEventHandler(async (event) => {
       message: (err as Error).message,
     })
     setHtmlResponseHeaders(event)
-    event.node.res.statusCode = 502
+    setResponseStatus(event, 502)
     return callbackErrorPage('EXCHANGE-NETWORK', 'Failed to reach Bitrix24 OAuth token endpoint.')
   }
 
@@ -365,7 +320,7 @@ export default defineEventHandler(async (event) => {
       httpStatus: exchangeRes.status,
     })
     setHtmlResponseHeaders(event)
-    event.node.res.statusCode = 502
+    setResponseStatus(event, 502)
     return callbackErrorPage('EXCHANGE-NON-JSON', 'Bitrix24 returned a non-JSON response.')
   }
 
@@ -382,7 +337,7 @@ export default defineEventHandler(async (event) => {
     // A Bitrix24 5xx is an upstream outage → 503 (retryable); a 4xx /
     // explicit `{error}` is the caller's fault (reused code, wrong
     // client) → 502 (don't tell the client to retry blindly).
-    event.node.res.statusCode = exchangeRes.status >= 500 ? 503 : 502
+    setResponseStatus(event, exchangeRes.status >= 500 ? 503 : 502)
     return callbackErrorPage('EXCHANGE-FAIL', `Bitrix24 refused the token exchange (${errCode}).`)
   }
 
@@ -391,7 +346,7 @@ export default defineEventHandler(async (event) => {
   if (!Number.isFinite(userIdNum) || userIdNum <= 0) {
     void logger.error('oauth.callback.exchange.fail', { reason: 'bad-user-id', httpStatus: exchangeRes.status })
     setHtmlResponseHeaders(event)
-    event.node.res.statusCode = 502
+    setResponseStatus(event, 502)
     return callbackErrorPage('EXCHANGE-BAD-USER-ID', 'Bitrix24 returned an unexpected user_id.')
   }
 
@@ -402,7 +357,7 @@ export default defineEventHandler(async (event) => {
   if (typeof ok.member_id !== 'string' || !MEMBER_ID_RE.test(ok.member_id)) {
     void logger.error('oauth.callback.exchange.fail', { reason: 'bad-member-id', httpStatus: exchangeRes.status })
     setHtmlResponseHeaders(event)
-    event.node.res.statusCode = 502
+    setResponseStatus(event, 502)
     return callbackErrorPage('EXCHANGE-BAD-MEMBER-ID', 'Bitrix24 returned an unexpected member_id.')
   }
 
@@ -422,7 +377,7 @@ export default defineEventHandler(async (event) => {
       got: typeof ok.domain === 'string' ? ok.domain.slice(0, 253) : String(ok.domain).slice(0, 253),
     })
     setHtmlResponseHeaders(event)
-    event.node.res.statusCode = 502
+    setResponseStatus(event, 502)
     return callbackErrorPage('EXCHANGE-DOMAIN-MISMATCH', 'Bitrix24 returned a portal domain that does not match the install.')
   }
 

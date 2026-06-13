@@ -46,7 +46,13 @@ const mod = await import('../../../server/middleware/oauth-rate-limit')
 const middleware = mod.default as unknown as (event: FakeEvent) => void
 const { _resetOauthRateLimitForTests } = mod
 
-function hit(ip: string, url = '/api/oauth/install'): FakeEvent {
+function hit(ip: string, url = '/api/oauth/install?portal=acme.bitrix24.com'): FakeEvent {
+  // The default URL carries `?portal=` because #232 review (security) made
+  // the middleware skip landing-form hits on `/api/oauth/install` (no
+  // `?portal=` = pure HTML render, no DB write, no rate-limit threat).
+  // The threat model the middleware exists to cover is `oauth_state`-flood
+  // — that only happens when `?portal=` is present, so every test of the
+  // limit itself uses a populated query.
   const event: FakeEvent = { _url: url, _ip: ip }
   middleware(event)
   return event
@@ -86,7 +92,7 @@ describe('oauth-rate-limit middleware', () => {
     let caught: (Error & { statusCode?: number, data?: { errorCode?: string } }) | undefined
     let event: FakeEvent | undefined
     try {
-      event = { _url: '/api/oauth/install', _ip: '1.2.3.4' }
+      event = { _url: '/api/oauth/install?portal=acme.bitrix24.com', _ip: '1.2.3.4' }
       middleware(event)
     }
     catch (err) {
@@ -161,9 +167,9 @@ describe('oauth-rate-limit middleware', () => {
 
   it('missing source IP falls into a shared <unknown> bucket and is still limited', () => {
     for (let i = 0; i < 10; i++) {
-      expect(() => middleware({ _url: '/api/oauth/install' })).not.toThrow()
+      expect(() => middleware({ _url: '/api/oauth/install?portal=acme.bitrix24.com' })).not.toThrow()
     }
-    expect(() => middleware({ _url: '/api/oauth/install' })).toThrow(/Too many install attempts/)
+    expect(() => middleware({ _url: '/api/oauth/install?portal=acme.bitrix24.com' })).toThrow(/Too many install attempts/)
   })
 
   it('LRU eviction cannot be gamed: a continuously-active IP survives a 10k-IP churn and stays limited', () => {
@@ -229,8 +235,8 @@ describe('oauth-rate-limit middleware', () => {
 
   it('install and callback buckets are INDEPENDENT — flooding install does not lock out callback (and vice versa)', () => {
     // Same IP hits the install limit hard…
-    for (let i = 0; i < 10; i++) hit('9.9.9.9', '/api/oauth/install')
-    expect(() => hit('9.9.9.9', '/api/oauth/install')).toThrow(/install/)
+    for (let i = 0; i < 10; i++) hit('9.9.9.9', '/api/oauth/install?portal=acme.bitrix24.com')
+    expect(() => hit('9.9.9.9', '/api/oauth/install?portal=acme.bitrix24.com')).toThrow(/install/)
     // …but the callback bucket for the same IP is untouched.
     for (let i = 0; i < 30; i++) {
       expect(() => hit('9.9.9.9', '/api/oauth/callback')).not.toThrow()
@@ -238,7 +244,7 @@ describe('oauth-rate-limit middleware', () => {
     expect(() => hit('9.9.9.9', '/api/oauth/callback')).toThrow(/callback/)
     // The install bucket also stayed at its refused state — not extended
     // by the callback hits (per-route accounting).
-    expect(() => hit('9.9.9.9', '/api/oauth/install')).toThrow(/install/)
+    expect(() => hit('9.9.9.9', '/api/oauth/install?portal=acme.bitrix24.com')).toThrow(/install/)
   })
 
   it('callback path has 30/min headroom — 29 pass, 30 passes, 31 refused', () => {
@@ -248,5 +254,38 @@ describe('oauth-rate-limit middleware', () => {
       expect(() => hit('3.4.5.6', '/api/oauth/callback')).not.toThrow()
     }
     expect(() => hit('3.4.5.6', '/api/oauth/callback')).toThrow(/Too many callback attempts/)
+  })
+
+  // ---------------------------------------------------------------
+  // Landing-form skip on /api/oauth/install (#232 review — security)
+  // ---------------------------------------------------------------
+  // Threat model: `oauth_state` row flood. That only happens when the
+  // handler reaches Step 3 (mint state) — which requires `?portal=`.
+  // The landing-form render (no `?portal=`) writes nothing to the DB,
+  // so it MUST NOT consume a bucket slot. Otherwise a tab-F5-er would
+  // self-ban from the very form they're trying to use.
+
+  it('install path WITHOUT ?portal= (landing render) is NOT rate-limited — 200 hits in a row pass', () => {
+    for (let i = 0; i < 200; i++) {
+      expect(() => middleware({ _url: '/api/oauth/install', _ip: '7.7.7.7' })).not.toThrow()
+    }
+    // No deny event emitted on any of the 200 hits.
+    expect(loggerCalls.find(c => c.event === 'oauth.install.deny.rate-limited')).toBeUndefined()
+  })
+
+  it('install with empty ?portal= (`?portal=`) is still landing → also skipped', () => {
+    for (let i = 0; i < 50; i++) {
+      expect(() => middleware({ _url: '/api/oauth/install?portal=', _ip: '7.7.7.7' })).not.toThrow()
+    }
+  })
+
+  it('mixing landing renders and real submits — only the submits count toward the limit', () => {
+    // 100 landing renders (should all skip)…
+    for (let i = 0; i < 100; i++) hit('8.8.8.8', '/api/oauth/install')
+    // …then 10 real submits land in the bucket and the 11th 429s.
+    for (let i = 0; i < 10; i++) {
+      expect(() => hit('8.8.8.8', '/api/oauth/install?portal=acme.bitrix24.com')).not.toThrow()
+    }
+    expect(() => hit('8.8.8.8', '/api/oauth/install?portal=acme.bitrix24.com')).toThrow(/Too many install attempts/)
   })
 })
