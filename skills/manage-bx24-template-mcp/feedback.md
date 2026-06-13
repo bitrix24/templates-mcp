@@ -58,7 +58,7 @@ Default to omitting `severity` if you are uncertain — it signals "no opinion".
 
 ## Rate limit
 
-Five **attempts** per hour, server-wide — failed calls (auth, network, GitHub 5xx) consume a slot too. If you hit the limit, the tool returns a "rate limit reached" string with the seconds until reset. **Do not retry within the same conversation.** Continue the user's task and, if the problem persists across sessions, the next session can submit.
+Five **attempts** per hour — **per tenant** under OAuth (keyed on the caller's `memberId`, so one noisy tenant can't starve another), or server-wide in webhook / stdio deployments (single identity, one bucket). Failed calls (auth, network, GitHub 5xx) consume a slot too. If you hit the limit, the tool returns a "rate limit reached" string with the seconds until reset. **Do not retry within the same conversation.** Continue the user's task and, if the problem persists across sessions, the next session can submit.
 
 ## Expected return shape
 

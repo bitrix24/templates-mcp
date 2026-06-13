@@ -95,7 +95,9 @@ describe('oauth-rate-limit middleware', () => {
     expect(caught!.statusCode).toBe(429)
     expect(caught!.data?.errorCode).toBe('RATE-LIMITED')
     // Standard header so well-behaved clients back off without parsing JSON.
-    expect(Number(event!._responseHeaders?.['retry-after'])).toBeGreaterThanOrEqual(1)
+    // Pin the exact value: all 10 hits land at t=0 (fake timers frozen), so
+    // the oldest expires a full WINDOW_MS later → ceil(60_000/1000) = 60.
+    expect(Number(event!._responseHeaders?.['retry-after'])).toBe(60)
     // §11 event logged with the source ip.
     const logged = loggerCalls.find(c => c.event === 'oauth.install.deny.rate-limited')
     expect(logged).toBeDefined()
@@ -105,8 +107,10 @@ describe('oauth-rate-limit middleware', () => {
   it('leaves comfortable headroom over the 5 install probes the CI smoke script makes', () => {
     // Regression guard for the #227 docker-smoke coupling: the OAuth-on
     // gate runs manual-qa-pr2c.sh, which makes 5 /install probes from one
-    // IP. The limit must stay above that or CI flakes.
-    for (let i = 0; i < 5; i++) expect(() => hit('10.9.8.7')).not.toThrow()
+    // IP. The limit must stay above that or CI flakes. Assert the 6th also
+    // passes so there is provable headroom ABOVE the probe count — a future
+    // MAX_PER_WINDOW=5 (==probe count, zero margin) would fail here.
+    for (let i = 0; i < 6; i++) expect(() => hit('10.9.8.7')).not.toThrow()
   })
 
   it('buckets are per-IP — a second client is unaffected by the first one flooding', () => {

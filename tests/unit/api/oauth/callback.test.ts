@@ -293,6 +293,11 @@ describe('/api/oauth/callback — token exchange failure modes', () => {
     expect(fail!.ctx).toMatchObject({ error: 'invalid_grant' })
     // The error_description (potentially user-visible content) is NOT logged.
     expect(JSON.stringify(fail!.ctx)).not.toContain('code expired')
+    // Anti-framing headers on this error page too (#221) — pinned here so a
+    // refactor that bypasses setHtmlResponseHeaders on the EXCHANGE-FAIL
+    // path is caught (4 of the 7 HTML paths were previously unpinned).
+    expect(res.headers['x-frame-options']).toBe('DENY')
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'")
   })
 
   it('502 EXCHANGE-FAIL on Bitrix24 5xx', async () => {
@@ -328,6 +333,7 @@ describe('/api/oauth/callback — token exchange failure modes', () => {
     expect(res.body).toContain('EXCHANGE-NON-JSON')
     expect(res.headers['x-frame-options']).toBe('DENY')
     expect(res.headers['content-security-policy']).toContain("default-src 'none'")
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'")
   })
 
   it('502 EXCHANGE-BAD-USER-ID when Bitrix24 returns a non-numeric user_id', async () => {
@@ -338,6 +344,8 @@ describe('/api/oauth/callback — token exchange failure modes', () => {
     const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
     expect(res.statusCode).toBe(502)
     expect(res.body).toContain('EXCHANGE-BAD-USER-ID')
+    expect(res.headers['x-frame-options']).toBe('DENY')
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'")
   })
 })
 

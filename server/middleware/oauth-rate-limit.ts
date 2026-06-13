@@ -37,6 +37,12 @@ import { useLogger } from '~/server/utils/logger'
  *   - Flag-gated: with `NUXT_BITRIX24_OAUTH_ENABLED=false` the route
  *     refuses with 503 FLAG-OFF before any DB write, so webhook-only
  *     forks keep byte-identical behaviour (no new 429 surface).
+ *   - Unknown source IP: if `getRequestIP(event)` returns `undefined`
+ *     (rare — Node/Nitro resolves it for any direct TCP connection, but
+ *     some test harnesses or exotic transports may not), all such
+ *     requests share a single `<unknown>` bucket and are limited
+ *     together. Production behind nginx always has the proxy's IP, so
+ *     this is a test-only / defensive edge, not a real shared-fate channel.
  *
  * §11 taxonomy: `oauth.install.deny.rate-limited` (WARN) with errorCode
  * `RATE-LIMITED`; the 429 carries a standard `Retry-After` header.

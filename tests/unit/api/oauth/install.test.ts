@@ -192,6 +192,31 @@ describe('/api/oauth/install — portal allow-list', () => {
     expect(loggerCalls.find(c => c.event === 'oauth.install.deny.portal-format')).toBeDefined()
   })
 
+  it('strips C0/C1/DEL control chars from the logged raw portal value (issue #221 — no log-line injection)', async () => {
+    // A crafted `?portal=` carrying a newline / CR / ANSI escape must not
+    // reach the plain-text log verbatim — otherwise it could forge extra
+    // log lines or recolour the operator's terminal. The handler logs a
+    // sanitised copy (control chars → `?`) BEFORE the allow-list rejects it.
+    const evil = 'acme.bitrix24.com\r\n\x1b[31mFORGED\x1b[0m\x00\x7f\x9b'
+    const res = await callHandler({ portal: evil })
+    expect(res.statusCode).toBe(400)
+    expect(res.errorCode).toBe('PORTAL-FORMAT')
+    for (const event of ['oauth.install.start', 'oauth.install.deny.portal-format']) {
+      const call = loggerCalls.find(c => c.event === event)
+      expect(call).toBeDefined()
+      const logged = (call!.ctx as { portal: string }).portal
+      // No raw control character (C0 / DEL / C1) survived into the log
+      // payload — check by code point so this assertion carries no control
+      // bytes of its own (which a regex literal here would).
+      for (const ch of logged) {
+        const cp = ch.codePointAt(0)!
+        expect(cp >= 0x20 && cp !== 0x7f && !(cp >= 0x80 && cp <= 0x9f)).toBe(true)
+      }
+      // The visible hostname text is preserved; only the controls became `?`.
+      expect(logged).toContain('acme.bitrix24.com')
+    }
+  })
+
   it('caps the logged raw portal value at 253 chars (issue #221 — no unbounded log injection)', async () => {
     const evil = `${'a'.repeat(2000)}.example.com`
     const res = await callHandler({ portal: evil })

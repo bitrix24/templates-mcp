@@ -147,11 +147,29 @@ const MAX_REQUESTS_PER_WINDOW = 5
 // Bound on distinct tenant buckets. Matches the OAuth factory's LRU cap
 // order-of-magnitude; insertion-order eviction (Map iteration order) is
 // fine — an evicted bucket just resets that tenant's window early, which
-// fails OPEN for the tenant and never blocks anyone.
+// fails OPEN for the tenant and never blocks anyone. NOTE: unlike the IP
+// map in `oauth-rate-limit.ts` this is NOT true-LRU — no MRU promotion on
+// access — so an active tenant can be evicted early if 200 others
+// interleave. Intentional: the worst case is a premature quota reset
+// (fails open), never unfair blocking, and a feedback floodgate doesn't
+// warrant the extra delete-then-set on the hot path.
 const MAX_BUCKETS = 200
 
 const buckets = new Map<string, number[]>()
 
+/**
+ * Consume one feedback-quota slot for the current request's tenant.
+ *
+ * The window is keyed on the caller's `memberId` (from the ALS tenant
+ * context) under OAuth, or `__global__` outside a tenant scope (webhook /
+ * stdio). Counts ATTEMPTS, not successes — a failed `createGithubIssue`
+ * still consumes a slot (see the comment above + `FEEDBACK.md`).
+ *
+ * @param now — injectable clock for tests; defaults to `Date.now()`.
+ * @returns `{ ok }` — `false` when the per-tenant window is exhausted;
+ *   `remaining` slots left in the window; `resetInSeconds` until the
+ *   oldest slot frees up.
+ */
 export function consumeFeedbackQuota(now: number = Date.now()): {
   ok: boolean
   remaining: number

@@ -141,12 +141,16 @@ function callbackErrorPage(errorCode: string, detail: string): string {
 function bearerSuccessPage(bearer: string, portal: string): string {
   // Bearer is shown EXACTLY ONCE. No JS, no copy-to-clipboard helper
   // (would pull in a script-src dependency). Operator pastes manually.
+  // The Bearer is `randomBytes(...).toString('hex')` today (no HTML
+  // metacharacters), but escape it anyway — defence in depth if the token
+  // format ever changes, and the helper is already in scope.
   const safePortal = htmlEscape(portal)
+  const safeBearer = htmlEscape(bearer)
   return `<!doctype html><html><head><meta charset="utf-8"><title>Bitrix24 MCP — Bearer minted</title></head><body>
 <h1>Your Bitrix24 MCP Bearer</h1>
 <p>Portal: <code>${safePortal}</code></p>
 <p>Copy this token into your MCP client (Claude Desktop / Cursor / Windsurf) <strong>Authorization: Bearer</strong> setting:</p>
-<pre>${bearer}</pre>
+<pre>${safeBearer}</pre>
 <p><strong>This page is shown once.</strong> The token is hashed in the database; the raw value above cannot be re-displayed. Lost it? Re-authorize from <code>/api/oauth/install?portal=${safePortal}</code> — your old Bearer keeps working until you revoke it.</p>
 </body></html>`
 }

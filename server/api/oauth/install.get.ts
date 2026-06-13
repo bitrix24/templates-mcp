@@ -114,8 +114,8 @@ export default defineEventHandler(async (event) => {
   // would otherwise let a crafted portal inject extra log lines or recolour
   // the operator's terminal — then cap at 253 (max DNS hostname length,
   // the same cap the audit log applies via MAX_PORTAL_LEN).
-  // eslint-disable-next-line no-control-regex -- strip C0/C1 controls + DEL
-  const portalForLog = (portal || '<empty>').replace(/[\u0000-\u001f\u007f]/g, '?').slice(0, 253)
+  // eslint-disable-next-line no-control-regex -- strip C0 (U+0000-U+001F) + DEL (U+007F) + C1 (U+0080-U+009F)
+  const portalForLog = (portal || '<empty>').replace(/[\u0000-\u001f\u007f-\u009f]/g, '?').slice(0, 253)
   void logger.info('oauth.install.start', { portal: portalForLog, clientId })
 
   if (!portal || !PORTAL_ALLOW_LIST_RE.test(portal)) {
