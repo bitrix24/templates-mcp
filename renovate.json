@@ -54,6 +54,12 @@
       "automerge": true
     },
     {
+      "_comment": "esbuild has an active pnpm-workspace.yaml override (GHSA-gv7w-rqvm-qjhr, fix in 0.28.1) — patch bumps must NOT automerge so a human can drop the override once the transitive vite chain ships a fixed version on its own.",
+      "matchPackageNames": ["esbuild"],
+      "automerge": false,
+      "labels": ["dependencies", "needs-review", "security:overridden"]
+    },
+    {
       "matchUpdateTypes": ["major"],
       "automerge": false,
       "labels": ["dependencies", "needs-review"]

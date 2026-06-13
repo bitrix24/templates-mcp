@@ -356,7 +356,7 @@ The bar here is lower than for `@bitrix24/b24jssdk` (no webhook URL or auth head
 Renovate bumped `@bitrix24/b24ui-nuxt` from 2.7.1 → 2.8.0. The four mandatory checks below executed against the 2.8.0 build; clean to land.
 
 1. **New `runtimeConfig` keys**: none. `dist/module.mjs` registers the same Nuxt plugin shape as 2.7.1; no new `runtimeConfig.public` or `runtimeConfig` reads.
-2. **New install hooks**: none. `scripts` in the package manifest is unchanged from 2.7.1 (no `postinstall` / `preinstall` / `prepare`).
+2. **New install hooks**: none of `postinstall` / `preinstall` / `prepare` are declared in the published `package.json` — these are the only hooks npm/pnpm runs at consumer install time. The published manifest does carry build-time `scripts` (`build`, `dev`, `test`, …), but those are author-side conveniences that do not execute on consumers; flagged here so future auditors don't mistake their presence for an install-time surface.
 3. **New outbound calls**: none. Same `dist/` audit as 2.7.1 — no `fetch(` / `XMLHttpRequest` / hard-coded `https://` URLs against analytics or telemetry endpoints.
 4. **Transitive dep delta**: bounded (~140 packages in the sub-tree, unchanged in order of magnitude). The diff is internal Reka UI / tanstack churn at minor versions; no new top-level vendor crossed into the tree.
 
