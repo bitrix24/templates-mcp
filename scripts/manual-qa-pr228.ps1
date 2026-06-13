@@ -24,25 +24,31 @@ if (-not (Test-Path 'docs/OAUTH-DESIGN.md')) { Write-Host "ERROR: run from repo 
 $branch = (git branch --show-current) 2>$null
 Write-Host "Branch: $branch`n"
 
-Write-Host "1) Anti-framing on the /api/oauth/callback HTML pages"
+Write-Host "1) Anti-framing on EVERY /api/oauth/callback response path (round-3)"
+Has 'server/api/oauth/callback.get.ts' 'setAntiFramingHeaders'   'callback has the shared anti-framing helper (round-3)'
 Has 'server/api/oauth/callback.get.ts' 'X-Frame-Options'         'callback sets X-Frame-Options'
 Has 'server/api/oauth/callback.get.ts' 'DENY'                    'callback X-Frame-Options: DENY'
 Has 'server/api/oauth/callback.get.ts' "frame-ancestors 'none'"  'callback CSP frame-ancestors none'
 Has 'server/api/oauth/callback.get.ts' 'safeBearer'              'callback html-escapes the bearer (defence-in-depth)'
 Write-Host ""
 
-Write-Host "2) Per-IP install rate limiter (middleware)"
-Has 'server/middleware/oauth-rate-limit.ts' 'oauth.install.deny.rate-limited' 'middleware logs the section-11 deny event'
-Has 'server/middleware/oauth-rate-limit.ts' 'RATE-LIMITED'        'middleware emits errorCode RATE-LIMITED'
-Has 'server/middleware/oauth-rate-limit.ts' 'MAX_PER_WINDOW = 10' 'limit is 10/min (headroom over the 5 CI probes)'
+Write-Host "2) Per-IP rate limiter - install + callback (middleware)"
+Has 'server/middleware/oauth-rate-limit.ts' 'oauth.install.deny.rate-limited'  'middleware logs the install deny event'
+Has 'server/middleware/oauth-rate-limit.ts' 'oauth.callback.deny.rate-limited' 'middleware logs the callback deny event (round-3)'
+Has 'server/middleware/oauth-rate-limit.ts' 'RATE-LIMITED'        'middleware emits shared errorCode RATE-LIMITED'
+Has 'server/middleware/oauth-rate-limit.ts' 'maxPerWindow: 10'    'install limit is 10/min (headroom over the 5 CI probes)'
+Has 'server/middleware/oauth-rate-limit.ts' 'maxPerWindow: 30'    'callback limit is 30/min (round-3)'
 Has 'server/middleware/oauth-rate-limit.ts' 'retry-after'         'middleware sets Retry-After header'
 Has 'server/middleware/oauth-rate-limit.ts' '<unknown>'           'unknown source-IP bucket documented'
 Write-Host ""
 
-Write-Host "3) Install-route log sanitiser (control chars + length cap)"
-Has 'server/api/oauth/install.get.ts' 'U+0080-U+009F' 'install strips C1 controls (round-2)'
-Has 'server/api/oauth/install.get.ts' 'u009f'         'install regex includes the C1 range'
+Write-Host "3) Install-route log sanitiser (controls + Bidi + length cap)"
+Has 'server/api/oauth/install.get.ts' 'u009f' 'install regex strips C1 range'
+Has 'server/api/oauth/install.get.ts' 'u202e' 'install regex strips RTL bidi override (round-3)'
+Has 'server/api/oauth/install.get.ts' 'ufeff' 'install regex strips zero-width / BOM (round-3)'
+Has 'server/api/oauth/install.get.ts' 'Trojan Source' 'install comment cites Trojan Source threat (round-3)'
 Has 'server/api/oauth/install.get.ts' 'slice(0, 253)' 'install caps the logged portal at 253 chars'
+Has 'server/api/oauth/install.get.ts' "'cache-control', 'no-store'" 'install sets Cache-Control: no-store on every path (round-3)'
 Write-Host ""
 
 Write-Host "4) Per-tenant feedback quota (no cross-tenant starvation)"
@@ -54,17 +60,28 @@ Write-Host ""
 Write-Host "5) Docs / skills refreshed for the new surface"
 Has 'skills/manage-bx24-template-mcp/feedback.md' 'per tenant'    'feedback skill: quota is per-tenant'
 Has 'skills/manage-bx24-template-mcp/feedback.md' 'starve another' 'feedback skill: no cross-tenant starvation'
-Has 'docs/OAUTH-DESIGN.md' 'RATE-LIMITED'                    'OAUTH-DESIGN section-11: RATE-LIMITED registered'
-Has 'docs/SECURITY.md' 'HTTP-surface hardening (issue #221)' 'SECURITY: threat model updated'
-Has 'docs/SECURITY.md' 'except'                              'SECURITY: out-of-scope DoS carve-out'
-Has 'skills/run-manual-qa/references/issue-scaffold.md' 'oauth.install.deny.rate-limited' 'issue-scaffold: 429 deny branch'
+Has 'docs/OAUTH-DESIGN.md' 'RATE-LIMITED'                            'OAUTH-DESIGN section-11: RATE-LIMITED registered'
+Has 'docs/OAUTH-DESIGN.md' 'oauth.callback.deny.rate-limited'        'OAUTH-DESIGN section-11: callback deny event listed (round-3)'
+Has 'docs/OAUTH-DESIGN.md' 'SHARED by two distinct events'           'OAUTH-DESIGN section-11: shared errorCode note (round-3)'
+Has 'docs/SECURITY.md' 'HTTP-surface hardening (issue #221)'         'SECURITY: threat model updated'
+Has 'docs/SECURITY.md' 'on every response'                           'SECURITY: notes anti-framing on every path (round-3)'
+Has 'docs/SECURITY.md' '30/min'                                      'SECURITY: callback rate limit doc (round-3)'
+Has 'docs/SECURITY.md' 'observability--logging'                      'SECURITY: cross-references section-11 (round-3)'
+Has 'skills/run-manual-qa/references/issue-scaffold.md' 'oauth.install.deny.rate-limited'  'issue-scaffold: install 429 deny branch'
+Has 'skills/run-manual-qa/references/issue-scaffold.md' 'oauth.callback.deny.rate-limited' 'issue-scaffold: callback 429 deny branch (round-3)'
+Has 'skills/run-manual-qa/references/issue-scaffold.md' '60-second sliding window'         'issue-scaffold: window semantics (round-3)'
 Write-Host ""
 
-Write-Host "6) Round-2 test coverage added"
-Has 'tests/unit/api/oauth/install.test.ts' 'strips C0/C1/DEL control chars' 'install test: control-char strip'
-Has 'tests/unit/middleware/oauth-rate-limit.test.ts' 'toBe(60)' 'rate-limit test: exact Retry-After pinned'
-Has 'tests/unit/middleware/oauth-rate-limit.test.ts' 'i < 6'    'rate-limit test: 6th probe asserted (headroom)'
-Has 'tests/unit/api/oauth/callback.test.ts' 'x-frame-options'   'callback test: anti-framing header pins'
+Write-Host "6) Test coverage - round-2 + round-3"
+Has 'tests/unit/api/oauth/install.test.ts'  'strips C0/C1/DEL control chars'        'install test: control-char strip (round-2)'
+Has 'tests/unit/api/oauth/install.test.ts'  'Trojan Source defence'                 'install test: Bidi/zero-width strip (round-3)'
+Has 'tests/unit/middleware/oauth-rate-limit.test.ts' 'toBe(60)'                     'rate-limit test: exact Retry-After pinned'
+Has 'tests/unit/middleware/oauth-rate-limit.test.ts' 'i < 10'                       'rate-limit test: 11th refused (round-3 headroom upper bound)'
+Has 'tests/unit/middleware/oauth-rate-limit.test.ts' 'callback path is rate-limited at 30/min' 'rate-limit test: callback path also limited (round-3)'
+Has 'tests/unit/middleware/oauth-rate-limit.test.ts' 'INDEPENDENT'                  'rate-limit test: install + callback buckets independent (round-3)'
+Has 'tests/unit/api/oauth/callback.test.ts' 'x-frame-options'                       'callback test: anti-framing header pins'
+Has 'tests/unit/api/oauth/callback.test.ts' 'STATE-ROW-CORRUPT'                     'callback test: STATE-ROW-CORRUPT branch (round-3)'
+Has 'tests/unit/api/oauth/callback.test.ts' 'anti-framing on every deny path'       'callback test: anti-framing on all deny paths (round-3)'
 Write-Host ""
 
 Write-Host "7) (optional) run the affected test files + typecheck + lint"

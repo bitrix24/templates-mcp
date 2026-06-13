@@ -217,14 +217,53 @@ describe('/api/oauth/install — portal allow-list', () => {
     }
   })
 
-  it('caps the logged raw portal value at 253 chars (issue #221 — no unbounded log injection)', async () => {
+  it('caps the logged raw portal value at 253 chars AND keeps it control-char free (issue #221)', async () => {
+    // Combined assertion: the 253-cap and the control-char strip are two
+    // separate defences (one against log volume, one against log
+    // injection). A regression that removed `.replace(...)` would leave
+    // the length cap intact, so the length check ALONE would still pass
+    // and silently lose the strip — assert both here in the same test.
     const evil = `${'a'.repeat(2000)}.example.com`
     const res = await callHandler({ portal: evil })
     expect(res.statusCode).toBe(400)
     for (const event of ['oauth.install.start', 'oauth.install.deny.portal-format']) {
       const call = loggerCalls.find(c => c.event === event)
       expect(call).toBeDefined()
-      expect((call!.ctx as { portal: string }).portal.length).toBeLessThanOrEqual(253)
+      const logged = (call!.ctx as { portal: string }).portal
+      expect(logged.length).toBeLessThanOrEqual(253)
+      // No control code points survived (C0 / DEL / C1 / Bidi / ZW / BOM).
+      for (const ch of logged) {
+        const cp = ch.codePointAt(0)!
+        const isControl = cp < 0x20 || cp === 0x7f || (cp >= 0x80 && cp <= 0x9f)
+        const isBidi = (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069)
+        const isZeroWidth = (cp >= 0x200b && cp <= 0x200d) || cp === 0xfeff
+        expect(isControl || isBidi || isZeroWidth).toBe(false)
+      }
+    }
+  })
+
+  it('strips Unicode bidi overrides + zero-widths + BOM from the logged portal (issue #221 round-3 — Trojan Source defence)', async () => {
+    // A crafted `?portal=` with U+202E (RTL override) would visually
+    // reverse the logged hostname in a terminal-aware log viewer; ZWSP
+    // would silently split a grep target. Both are stripped before the
+    // value reaches the structured log. Built without literal control
+    // chars in the test source (using fromCodePoint) — see the same
+    // pattern in the C0/C1 test above.
+    const rtlOverride = String.fromCodePoint(0x202e) // RIGHT-TO-LEFT OVERRIDE
+    const zwsp = String.fromCodePoint(0x200b) // ZERO WIDTH SPACE
+    const bom = String.fromCodePoint(0xfeff) // ZERO WIDTH NO-BREAK SPACE / BOM
+    const evil = `evil.bitrix24${rtlOverride}${zwsp}${bom}.com`
+    const res = await callHandler({ portal: evil })
+    expect(res.statusCode).toBe(400) // allow-list rejects it (defence-in-depth — log strip is just to keep operators safe)
+    for (const event of ['oauth.install.start', 'oauth.install.deny.portal-format']) {
+      const call = loggerCalls.find(c => c.event === event)
+      expect(call).toBeDefined()
+      const logged = (call!.ctx as { portal: string }).portal
+      expect(logged).not.toContain(rtlOverride)
+      expect(logged).not.toContain(zwsp)
+      expect(logged).not.toContain(bom)
+      // Visible hostname text survives unchanged.
+      expect(logged).toContain('evil.bitrix24')
     }
   })
 
@@ -264,7 +303,13 @@ describe('/api/oauth/install — happy path', () => {
     expect(row).toBeDefined()
     expect(row!.portal).toBe('acme.bitrix24.com')
     expect(row!.clientId).toBe('app.cid.12345')
-    // 5-minute TTL (give some slack for timing).
+    // 5-minute TTL with a generous ±10s window. The window is wider than
+    // strictly needed (real wall-clock drift between createState and the
+    // `now` snapshot below is sub-second on any non-pathological runner)
+    // — bigger window costs us nothing in coverage and rules out flakes
+    // on slow / contended CI workers. If a future change tightens the
+    // assertion below 290..310, switch the suite to vi.useFakeTimers
+    // and pin the exact value instead.
     const now = Math.floor(Date.now() / 1000)
     expect(row!.expiresAt).toBeGreaterThanOrEqual(now + 290)
     expect(row!.expiresAt).toBeLessThanOrEqual(now + 310)

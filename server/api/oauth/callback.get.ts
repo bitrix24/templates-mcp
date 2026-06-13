@@ -93,31 +93,55 @@ interface TokenExchangeErr {
 }
 
 /**
- * Response headers for every HTML page this route renders (issue #221).
+ * Anti-framing + anti-cache response headers for EVERY path this route
+ * takes (issue #221) — including early `throw createError()` paths whose
+ * body h3 renders as JSON. The headers are content-agnostic (they don't
+ * set content-type), so they're safe to send on JSON error responses too.
  *
- * - `Cache-Control: no-store` — the success page carries the raw Bearer;
- *   it must never land in a proxy/CDN cache.
+ * - `Cache-Control: no-store, no-cache` + `Pragma: no-cache` — the
+ *   success page carries the raw Bearer; it must never land in a
+ *   proxy/CDN cache. `Pragma` covers HTTP/1.0 proxies (uncommon but
+ *   cheap to be defensive). Applied to deny paths too so a misbehaving
+ *   proxy can't cache stale error pages keyed on `?state=`.
  * - `X-Frame-Options: DENY` + `frame-ancestors 'none'` — the Bearer is
  *   displayed in the DOM; without anti-framing, a same-site context
  *   (subdomain takeover, sibling-app XSS) could iframe the callback and
  *   read the token off the page. `SameSite=Lax` on the CSRF cookie does
- *   not protect against same-site framing.
- * - CSP `default-src 'none'; frame-ancestors 'none'` — the pages are fully
- *   self-contained: no JS, no external assets, and no inline styles (the
- *   success page's <pre> uses no `style=` attribute), so the CSP can be
- *   maximally strict with no `'unsafe-inline'` carve-out.
+ *   not protect against same-site framing. Applied to error pages too
+ *   so the contract is uniform across paths (no surprise frame-able
+ *   response).
+ * - CSP `default-src 'none'; frame-ancestors 'none'` — the pages are
+ *   fully self-contained: no JS, no external assets, and no inline
+ *   styles (the success page's `<pre>` uses no `style=` attribute), so
+ *   the CSP can be maximally strict with no `'unsafe-inline'`
+ *   carve-out.
  */
-function setHtmlResponseHeaders(event: H3Event): void {
+function setAntiFramingHeaders(event: H3Event): void {
   setResponseHeader(event, 'cache-control', 'no-store, no-cache')
-  setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+  setResponseHeader(event, 'pragma', 'no-cache')
   setResponseHeader(event, 'x-frame-options', 'DENY')
   setResponseHeader(event, 'content-security-policy', 'default-src \'none\'; frame-ancestors \'none\'')
 }
 
+/**
+ * HTML render paths additionally pin `content-type: text/html`. Always
+ * preceded by (and additive to) `setAntiFramingHeaders` — call this
+ * helper only on paths that return HTML body, not on `throw createError`
+ * paths (h3 picks the content-type for those).
+ */
+function setHtmlResponseHeaders(event: H3Event): void {
+  setAntiFramingHeaders(event)
+  setResponseHeader(event, 'content-type', 'text/html; charset=utf-8')
+}
+
 function htmlEscape(s: string): string {
+  // `?? c` rather than `!` — TS can't see that the regex character class
+  // and the lookup table are coupled, and `?? c` is a no-op fallback
+  // (returns the original char) that won't silently corrupt output if
+  // the two ever drift.
   return String(s).replace(/[&<>"]/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
-  }[c]!))
+  }[c] ?? c))
 }
 
 function callbackErrorPage(errorCode: string, detail: string): string {
@@ -144,6 +168,11 @@ function bearerSuccessPage(bearer: string, portal: string): string {
   // The Bearer is `randomBytes(...).toString('hex')` today (no HTML
   // metacharacters), but escape it anyway — defence in depth if the token
   // format ever changes, and the helper is already in scope.
+  //
+  // NOTE on the `<pre>` below: NO `style=` attribute. The CSP set by
+  // `setAntiFramingHeaders` is `default-src 'none'; frame-ancestors 'none'`
+  // with no `'unsafe-inline'` carve-out — any inline style would be
+  // blocked and the page would render unstyled anyway. Don't add one back.
   const safePortal = htmlEscape(portal)
   const safeBearer = htmlEscape(bearer)
   return `<!doctype html><html><head><meta charset="utf-8"><title>Bitrix24 MCP — Bearer minted</title></head><body>
@@ -157,6 +186,12 @@ function bearerSuccessPage(bearer: string, portal: string): string {
 
 export default defineEventHandler(async (event) => {
   const logger = useLogger()
+  // Pin the anti-framing + no-cache headers BEFORE anything else (issue
+  // #221). h3 preserves headers across a thrown `createError`, so every
+  // deny path below — flag-off, not-configured, params-missing, the six
+  // state-* paths — carries `X-Frame-Options: DENY` + the strict CSP
+  // without each branch having to remember to call the helper.
+  setAntiFramingHeaders(event)
   const {
     bitrix24OauthEnabled,
     bitrix24OauthClientId,
@@ -414,11 +449,10 @@ export default defineEventHandler(async (event) => {
   })
 
   // Clean up: drop the CSRF cookie so subsequent traffic doesn't carry
-  // it around. `Cache-Control: no-store, no-cache` keeps the Bearer
-  // out of any proxy / CDN cache; `Pragma: no-cache` for HTTP/1.0
-  // proxies (uncommon but cheap to be defensive).
+  // it around. Anti-framing + Cache-Control + Pragma were pinned at the
+  // top of the handler; here we only need to flip on the HTML
+  // content-type for the success body.
   deleteCookie(event, 'bx24_oauth_csrf', { path: '/api/oauth/' })
   setHtmlResponseHeaders(event)
-  setResponseHeader(event, 'pragma', 'no-cache')
   return bearerSuccessPage(minted.bearer, stateRow.portal)
 })

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { createError, defineEventHandler, getQuery, sendRedirect, setCookie } from 'h3'
+import { createError, defineEventHandler, getQuery, sendRedirect, setCookie, setResponseHeader } from 'h3'
 import { useLogger } from '~/server/utils/logger'
 import { PORTAL_ALLOW_LIST_RE } from '~/server/utils/portal-validation'
 import { useTokenStore } from '~/server/utils/token-store'
@@ -62,6 +62,12 @@ function newNonce(): string {
 
 export default defineEventHandler(async (event) => {
   const logger = useLogger()
+  // Cache-Control on EVERY path (issue #221 follow-up from CTO review):
+  // a 400 PORTAL-FORMAT or 503 FLAG-OFF / NOT-CONFIGURED response could
+  // otherwise be cached by an upstream proxy / CDN and pinned to the IP
+  // of whoever first triggered it. Cheap defence; harmless on the 302
+  // success path (Set-Cookie isn't cached by well-behaved proxies anyway).
+  setResponseHeader(event, 'cache-control', 'no-store')
   const {
     bitrix24OauthEnabled,
     bitrix24OauthClientId,
@@ -109,13 +115,22 @@ export default defineEventHandler(async (event) => {
   // OAuth account on the target host).
   const portal = String((getQuery(event).portal ?? '')).trim().toLowerCase()
   // Log a SANITISED, CAPPED copy of the raw value (issue #221): `?portal=`
-  // is attacker-supplied and logged before validation. Strip C0/C1 control
-  // characters (newline / CR / ANSI escape) first — a plain-text log sink
-  // would otherwise let a crafted portal inject extra log lines or recolour
-  // the operator's terminal — then cap at 253 (max DNS hostname length,
-  // the same cap the audit log applies via MAX_PORTAL_LEN).
-  // eslint-disable-next-line no-control-regex -- strip C0 (U+0000-U+001F) + DEL (U+007F) + C1 (U+0080-U+009F)
-  const portalForLog = (portal || '<empty>').replace(/[\u0000-\u001f\u007f-\u009f]/g, '?').slice(0, 253)
+  // is attacker-supplied and logged before validation. The strip covers
+  // three threat classes (mirrors `HOSTILE_CHARS` in `github-feedback.ts`
+  // so the two ingress points apply the same defence):
+  //   - C0 controls + DEL + C1: a plain-text log sink would otherwise
+  //     let a crafted portal inject extra log lines or recolour the
+  //     operator's terminal (ANSI escapes).
+  //   - Unicode bidi overrides (U+202A-U+202E, U+2066-U+2069): visually
+  //     reverses the displayed log line, hiding the real portal — the
+  //     Trojan Source vector against the operator's log viewer.
+  //   - Zero-width / BOM (U+200B-U+200D, U+FEFF): silently splits a
+  //     hostname so a grep for `evil.bitrix24.com` misses a logged
+  //     `evil.bitrix24<ZWSP>.com`.
+  // Cap at 253 (max DNS hostname length, the same cap the audit log
+  // applies via MAX_PORTAL_LEN).
+  // eslint-disable-next-line no-control-regex -- strip C0 + DEL + C1 + Bidi overrides + zero-widths + BOM (mirrors HOSTILE_CHARS in github-feedback.ts)
+  const portalForLog = (portal || '<empty>').replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069\u200b-\u200d\ufeff]/g, '?').slice(0, 253)
   void logger.info('oauth.install.start', { portal: portalForLog, clientId })
 
   if (!portal || !PORTAL_ALLOW_LIST_RE.test(portal)) {

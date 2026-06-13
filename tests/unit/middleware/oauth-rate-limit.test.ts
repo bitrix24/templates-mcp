@@ -64,9 +64,10 @@ describe('oauth-rate-limit middleware', () => {
     vi.useRealTimers()
   })
 
-  it('skips paths other than /api/oauth/install (callback, health, mcp untouched)', () => {
-    for (let i = 0; i < 20; i++) {
-      expect(() => hit('1.2.3.4', '/api/oauth/callback')).not.toThrow()
+  it('skips paths outside the OAuth surface (_health, mcp untouched)', () => {
+    // Health + mcp aren't rate-limited here — `_health` is operator-only and
+    // `/mcp` has its own Bearer-based gate.
+    for (let i = 0; i < 50; i++) {
       expect(() => hit('1.2.3.4', '/api/oauth/_health')).not.toThrow()
       expect(() => hit('1.2.3.4', '/mcp')).not.toThrow()
     }
@@ -107,10 +108,14 @@ describe('oauth-rate-limit middleware', () => {
   it('leaves comfortable headroom over the 5 install probes the CI smoke script makes', () => {
     // Regression guard for the #227 docker-smoke coupling: the OAuth-on
     // gate runs manual-qa-pr2c.sh, which makes 5 /install probes from one
-    // IP. The limit must stay above that or CI flakes. Assert the 6th also
-    // passes so there is provable headroom ABOVE the probe count — a future
-    // MAX_PER_WINDOW=5 (==probe count, zero margin) would fail here.
+    // IP. The limit must stay above that or CI flakes. We also pin the
+    // OTHER side of the bound — the 11th must 429 — so a future change
+    // that bumped MAX_PER_WINDOW to 6 (relieving the CI gate but losing
+    // most of the flood-defence headroom) would fail this test too.
     for (let i = 0; i < 6; i++) expect(() => hit('10.9.8.7')).not.toThrow()
+    // Headroom over 5 probes is real, AND the limit is still tight at 10.
+    for (let i = 6; i < 10; i++) expect(() => hit('10.9.8.7')).not.toThrow()
+    expect(() => hit('10.9.8.7')).toThrow(/Too many install attempts/)
   })
 
   it('buckets are per-IP — a second client is unaffected by the first one flooding', () => {
@@ -183,5 +188,65 @@ describe('oauth-rate-limit middleware', () => {
     }
     // The attacker's window was never reset by the churn.
     expect(() => hit('1.1.1.1')).toThrow(/Too many install attempts/)
+  })
+
+  // ---------------------------------------------------------------
+  // /api/oauth/callback — same middleware, looser limit (#221 round-3)
+  // ---------------------------------------------------------------
+  // Security agent on PR #228 flagged that an unauthenticated junk-`state`
+  // flood at /callback runs `consumeState()` (SQLite DELETE) per hit —
+  // secondary to install (no row mint) but still a write-pressure DoS.
+  // Same middleware, higher cap (30/min — a legitimate flow only hits
+  // once per install, but operators retry / use browser back).
+
+  it('callback path is rate-limited at 30/min, refuses the 31st with 429 + Retry-After=60', () => {
+    for (let i = 0; i < 30; i++) {
+      expect(() => hit('2.3.4.5', '/api/oauth/callback')).not.toThrow()
+    }
+    let caught: (Error & { statusCode?: number, data?: { errorCode?: string } }) | undefined
+    let event: FakeEvent | undefined
+    try {
+      event = { _url: '/api/oauth/callback', _ip: '2.3.4.5' }
+      middleware(event)
+    }
+    catch (err) {
+      caught = err as typeof caught
+    }
+    expect(caught?.statusCode).toBe(429)
+    expect(caught?.data?.errorCode).toBe('RATE-LIMITED')
+    expect(Number(event!._responseHeaders?.['retry-after'])).toBe(60)
+    const logged = loggerCalls.find(c => c.event === 'oauth.callback.deny.rate-limited')
+    expect(logged).toBeDefined()
+    expect(logged!.ctx).toMatchObject({ ip: '2.3.4.5' })
+  })
+
+  it('callback skips entirely when the OAuth flag is off (webhook-only forks see no 429 surface)', () => {
+    runtimeConfig.bitrix24OauthEnabled = false
+    for (let i = 0; i < 60; i++) {
+      expect(() => hit('2.3.4.5', '/api/oauth/callback')).not.toThrow()
+    }
+  })
+
+  it('install and callback buckets are INDEPENDENT — flooding install does not lock out callback (and vice versa)', () => {
+    // Same IP hits the install limit hard…
+    for (let i = 0; i < 10; i++) hit('9.9.9.9', '/api/oauth/install')
+    expect(() => hit('9.9.9.9', '/api/oauth/install')).toThrow(/install/)
+    // …but the callback bucket for the same IP is untouched.
+    for (let i = 0; i < 30; i++) {
+      expect(() => hit('9.9.9.9', '/api/oauth/callback')).not.toThrow()
+    }
+    expect(() => hit('9.9.9.9', '/api/oauth/callback')).toThrow(/callback/)
+    // The install bucket also stayed at its refused state — not extended
+    // by the callback hits (per-route accounting).
+    expect(() => hit('9.9.9.9', '/api/oauth/install')).toThrow(/install/)
+  })
+
+  it('callback path has 30/min headroom — 29 pass, 30 passes, 31 refused', () => {
+    // Provable both-sides bound on the callback limit (mirrors the
+    // install 6th/11th test). If MAX changed to 25 or 35, this fails.
+    for (let i = 0; i < 30; i++) {
+      expect(() => hit('3.4.5.6', '/api/oauth/callback')).not.toThrow()
+    }
+    expect(() => hit('3.4.5.6', '/api/oauth/callback')).toThrow(/Too many callback attempts/)
   })
 })

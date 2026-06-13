@@ -143,16 +143,24 @@ export async function createGithubIssue(input: CreateIssueInput): Promise<Create
 // has a single identity, so a single bucket is correct there.
 
 const WINDOW_MS = 60 * 60 * 1000 // 1 hour
+// 5/hour/tenant. Sits well below GitHub's per-token REST limit (5000/hr)
+// even if a shared bot token serves hundreds of tenants — see FEEDBACK.md
+// for the trade-off rationale (anti-spam ≫ per-tenant generosity). Keep
+// in lockstep with the same constant doc'd in the agent-facing
+// `skills/manage-bx24-template-mcp/feedback.md` quota paragraph.
 const MAX_REQUESTS_PER_WINDOW = 5
 // Bound on distinct tenant buckets. Matches the OAuth factory's LRU cap
 // order-of-magnitude; insertion-order eviction (Map iteration order) is
 // fine — an evicted bucket just resets that tenant's window early, which
 // fails OPEN for the tenant and never blocks anyone. NOTE: unlike the IP
-// map in `oauth-rate-limit.ts` this is NOT true-LRU — no MRU promotion on
-// access — so an active tenant can be evicted early if 200 others
-// interleave. Intentional: the worst case is a premature quota reset
-// (fails open), never unfair blocking, and a feedback floodgate doesn't
-// warrant the extra delete-then-set on the hot path.
+// map in `oauth-rate-limit.ts` (which IS true-LRU — see the contrasting
+// rationale there) this is NOT true-LRU — no MRU promotion on access —
+// so an active tenant can be evicted early if 200 others interleave.
+// Intentional divergence: a feedback over-quota is a soft annoyance (the
+// user just submits next session), so a premature quota reset
+// (fails-open) is the right corner; the install rate limiter cannot
+// afford fails-open (it would let an attacker reset their own bucket
+// by rotating IPs), so it pays the delete-then-set cost.
 const MAX_BUCKETS = 200
 
 const buckets = new Map<string, number[]>()
@@ -164,6 +172,22 @@ const buckets = new Map<string, number[]>()
  * context) under OAuth, or `__global__` outside a tenant scope (webhook /
  * stdio). Counts ATTEMPTS, not successes — a failed `createGithubIssue`
  * still consumes a slot (see the comment above + `FEEDBACK.md`).
+ *
+ * **Fails-open under eviction.** At `MAX_BUCKETS` distinct tenants the
+ * OLDEST bucket is evicted (insertion order, NOT true-LRU). An evicted
+ * tenant's window resets early on its next call — the trade-off is
+ * intentional (worst case: an extra GitHub issue; never unfair
+ * blocking). See the `MAX_BUCKETS` comment above and the contrast with
+ * the true-LRU IP map in `server/middleware/oauth-rate-limit.ts`.
+ *
+ * **ALS-outside fall-through.** When called outside a `runWithTenant`
+ * scope (webhook mode, stdio bundle), all callers share the
+ * `__global__` bucket. This is deliberate — those deployments have a
+ * single identity — but means a misuse of this function from a new
+ * code path that forgets to wrap its caller in `runWithTenant` would
+ * silently land in the global bucket. The unit test
+ * `outside a tenant scope the global bucket behaves exactly as before`
+ * pins the fallback.
  *
  * @param now — injectable clock for tests; defaults to `Date.now()`.
  * @returns `{ ok }` — `false` when the per-tenant window is exhausted;
@@ -179,6 +203,10 @@ export function consumeFeedbackQuota(now: number = Date.now()): {
   let timestamps = buckets.get(key)
   if (!timestamps) {
     if (buckets.size >= MAX_BUCKETS) {
+      // Insertion-order eviction (fails open — see MAX_BUCKETS comment
+      // above): a Map iterates keys in insertion order, so `.next()`
+      // returns the oldest insertion, NOT the least-recently-used.
+      // Deliberate divergence from oauth-rate-limit.ts (true LRU).
       const oldest = buckets.keys().next().value
       if (oldest !== undefined) buckets.delete(oldest)
     }
