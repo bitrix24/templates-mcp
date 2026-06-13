@@ -3,12 +3,21 @@
 #
 # Run from the repo root. Reports PASS/FAIL for each round-1 + round-2 fix.
 # Linux/macOS/WSL: bash scripts/manual-qa-pr229.sh
+#
+# shellcheck disable=SC2016
+# (Single-quoted literals are intentional — they're the EXACT strings we grep
+# for in the project files, e.g. '`Last reviewed: 2026-06-13`'.)
 set -uo pipefail
-pass=0; fail=0
-ok()  { printf '  [PASS] %s\n' "$1"; pass=$((pass + 1)); }
-no()  { printf '  [FAIL] %s\n' "$1"; fail=$((fail + 1)); }
-has() { if grep -qF -- "$2" "$1" 2>/dev/null; then ok "$3"; else no "$3"; fi; }
-hasnt() { if grep -qF -- "$2" "$1" 2>/dev/null; then no "$3"; else ok "$3"; fi; }
+pass=0
+fail=0
+ok() { printf '  [PASS] %s\n' "$1"; pass=$((pass + 1)); }
+no() { printf '  [FAIL] %s\n' "$1"; fail=$((fail + 1)); }
+has() {
+  if grep -qF -- "$2" "$1" 2>/dev/null; then ok "$3"; else no "$3"; fi
+}
+hasnt() {
+  if grep -qF -- "$2" "$1" 2>/dev/null; then no "$3"; else ok "$3"; fi
+}
 
 echo "=================================================="
 echo " PR #229 round-2 verification"
@@ -47,9 +56,11 @@ done
 echo
 
 echo "4) New CI guard added"
-[ -f tests/unit/mcp-stdio/tools.tenant-guard.test.ts ] \
-  && ok "tools.tenant-guard.test.ts present" \
-  || no "tools.tenant-guard.test.ts MISSING"
+if [ -f tests/unit/mcp-stdio/tools.tenant-guard.test.ts ]; then
+  ok "tools.tenant-guard.test.ts present"
+else
+  no "tools.tenant-guard.test.ts MISSING"
+fi
 echo
 
 echo "5) Renovate carve-out for esbuild override"
@@ -64,11 +75,13 @@ echo
 
 echo "7) (optional) suite + typecheck + lint"
 if command -v pnpm >/dev/null 2>&1; then
-  pnpm exec vitest run tests/unit/mcp-stdio/tools.tenant-guard.test.ts >/dev/null 2>&1 \
-    && ok "guard test passes locally" \
-    || no "guard test FAILS locally"
-  pnpm typecheck >/dev/null 2>&1 && ok "typecheck clean" || no "typecheck FAILS"
-  pnpm lint      >/dev/null 2>&1 && ok "lint clean"      || no "lint FAILS"
+  if pnpm exec vitest run tests/unit/mcp-stdio/tools.tenant-guard.test.ts >/dev/null 2>&1; then
+    ok "guard test passes locally"
+  else
+    no "guard test FAILS locally"
+  fi
+  if pnpm typecheck >/dev/null 2>&1; then ok "typecheck clean"; else no "typecheck FAILS"; fi
+  if pnpm lint >/dev/null 2>&1; then ok "lint clean"; else no "lint FAILS"; fi
 else
   echo "  [SKIP] pnpm not installed — local checks skipped"
 fi
@@ -76,5 +89,10 @@ echo
 
 echo "=================================================="
 echo " SUMMARY: $pass passed, $fail failed"
-if [ "$fail" -eq 0 ]; then echo " RESULT: ALL GREEN  ✅"; exit 0
-else echo " RESULT: $fail problem(s) found  ❌"; exit 1; fi
+if [ "$fail" -eq 0 ]; then
+  echo " RESULT: ALL GREEN  ✅"
+  exit 0
+else
+  echo " RESULT: $fail problem(s) found  ❌"
+  exit 1
+fi
