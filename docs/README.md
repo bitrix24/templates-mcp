@@ -1,5 +1,7 @@
 # Documentation
 
+`Last reviewed: 2026-06-13`
+
 Welcome. Pick the door for your role.
 
 ## Contributor

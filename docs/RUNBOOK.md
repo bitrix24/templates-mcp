@@ -1,5 +1,7 @@
 # Runbook
 
+`Last reviewed: 2026-06-13`
+
 > **Placeholders:** every literal `prod.example.com` below is your production host — substitute your own domain. Every `/opt/bx24-template-mcp` is your deploy directory (the default shown; wherever you cloned the compose stack). These are host-side values only — CI holds no `PROD_HOST` / `DEPLOY_PATH` variables.
 
 Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.md`](./DEPLOYMENT.md) (how the system is set up) and [`SECURITY.md`](./SECURITY.md) (incidents that require disclosure).
@@ -30,7 +32,7 @@ Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.
 
 ## Rollback
 
-CI does **not** auto-rollback — there is no SSH deploy step. **Neither does Watchtower:** it applies a new `:latest` image (≈03:00 UTC after a `v*` tag) without a post-update health check, so a bad image keeps running until you act. After every release tag, watch `/api/health` for the first few minutes. Manual rollback:
+CI does **not** auto-rollback — there is no SSH deploy step. **Neither does Watchtower by default:** it ships in **monitor-only** mode (`WATCHTOWER_MONITOR_ONLY: "true"` in `docker-compose.watchtower.yml`), so it detects that a newer `:latest` exists (≈03:00 UTC after a `v*` tag) and notifies you, but does **not** restart the container — you promote with `make redeploy`. Operators who opt into **auto-apply** (by removing `WATCHTOWER_MONITOR_ONLY`) get the historic "applied without a health check" behaviour back; pair that with an external `/api/health` monitor (UptimeRobot / Healthchecks.io) to catch a crash-looping `:latest`. After every release tag, watch `/api/health` for the first few minutes either way. Manual rollback:
 
 ```bash
 # This is a manual operator step — CI does not SSH into production.

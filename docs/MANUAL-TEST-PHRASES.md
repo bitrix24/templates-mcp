@@ -1,6 +1,6 @@
 # Manual test phrases for the Bitrix24 MCP
 
-`Last reviewed: 2026-05-30`
+`Last reviewed: 2026-06-13`
 
 This is the operator's natural-language test pack for the MCP. Paste each phrase into Claude (or any MCP-connected LLM) with the connector enabled and observe:
 
@@ -54,7 +54,7 @@ Bitrix24 has two parallel REST API generations:
 
 All 8 task-mutating tools (`start` / `pause` / `complete` / `approve` / `disapprove` / `defer` / `renew` / `rate`) also accept `taskId: number[]` for batch mode (up to 25; `force: true` overrides). Batches go through the `batchV2` helper as one HTTP round-trip. The 3 checklist actions (`b24_task_checklist_item_complete` / `b24_task_checklist_item_renew` / `b24_task_checklist_item_delete`) likewise accept `itemId: number[]` for batch mode (up to 50; `force: true` overrides) and also go through `batchV2` as one round-trip.
 
-When you see a Bitrix24 method name in a tool's source, sanity-check it has the `tasks.` (with `s`) prefix or lives under a documented v3 URL. The phrase pack below assumes v3 throughout.
+When you see a Bitrix24 method name in a tool's source, sanity-check the transport against the table above — most tools use the classic v2 surface (UPPERCASE filter keys, no `/rest/api/` prefix). Only `tasks.task.get` and the `tasks.task.result.*` family currently go through v3; everything else is v2. Picking the wrong transport surfaces as `UNKNOWNDTOPROPERTYEXCEPTION` (calling a classic method on v3) or "restApi:v3 not support method" (calling a v3-only method through v2).
 
 ## Legend
 

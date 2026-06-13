@@ -1,5 +1,7 @@
 # Deployment
 
+`Last reviewed: 2026-06-13`
+
 How this MCP server ships to production: a Docker image built and pushed by GitHub Actions on a `v*` tag, then pulled onto a single Linux host where it runs under `docker compose` behind a reverse proxy that terminates TLS. There is no PaaS / serverless path — the server is a long-lived Nitro process that keeps the Bitrix24 `RestrictionManager` state warm, so it wants a real container, not a function.
 
 The shipped [`docker-compose.yml`](../docker-compose.yml) assumes an `nginx-proxy` + `acme-companion` stack on a shared `proxy-net` network. For other TLS terminators (Caddy / Traefik / plain nginx + certbot) see [`REVERSE-PROXY.md`](./REVERSE-PROXY.md).

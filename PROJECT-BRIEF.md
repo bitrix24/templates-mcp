@@ -18,16 +18,16 @@ Build a **starter template** for Model Context Protocol (MCP) servers on top of 
 | Layer | Choice | Rationale |
 |---|---|---|
 | Runtime | Node.js 22+ | LTS, native `fetch`, ESM. CI / Docker / `package.json#engines` all align on 22. |
-| Language | TypeScript 5.x (strict) | Type safety, IDE support |
-| Framework | Nuxt 3.x (Nitro) | Base for `@nuxtjs/mcp-toolkit`, h3 as HTTP layer, auto-imports |
-| MCP toolkit | `@nuxtjs/mcp-toolkit` ^0.15 | File-based discovery, Inspector, Evalite, Agent Skills, Code Mode |
-| MCP SDK | `@modelcontextprotocol/sdk` ^1.23 | Pulled in by the toolkit, current transport |
+| Language | TypeScript 6.x (strict) | Type safety, IDE support |
+| Framework | Nuxt 4.x (Nitro) | Base for `@nuxtjs/mcp-toolkit`, h3 as HTTP layer, auto-imports |
+| MCP toolkit | `@nuxtjs/mcp-toolkit` ^0.17 | File-based discovery, Inspector, Evalite, Agent Skills, Code Mode |
+| MCP SDK | `@modelcontextprotocol/sdk` ^1.29 | Pulled in by the toolkit, current transport |
 | Bitrix24 client | `@bitrix24/b24jssdk-nuxt` | Official Nuxt wrapper around `@bitrix24/b24jssdk` |
 | UI components | `@bitrix24/b24ui-nuxt` | Vue component system Bitrix24 uses internally (Reka UI + Tailwind + Tailwind Variants). Powers the landing page and any future client-facing surface (OAuth setup, admin panels). |
 | Icons | `@bitrix24/b24icons-vue` | Tree-shakeable icon set, subpath imports (`/social`, `/solid`, `/outline`, …) |
 | CSS engine | Tailwind CSS 4 | Required by `@bitrix24/b24ui-nuxt`. Use semantic tokens (`bg-elevated`, `text-description`, `air-primary`, `air-secondary-no-accent`) — never raw palette like `text-gray-500`. |
 | Validation | Zod | Used by toolkit for input schemas |
-| Package manager | pnpm 9.x | Idiomatic for Nuxt, fast, disk-efficient |
+| Package manager | pnpm 11.x (pinned via `packageManager`) | Idiomatic for Nuxt, fast, disk-efficient. The versions in this table track `package.json` — bump them together when Renovate lands a major. |
 | Tests | Vitest + Evalite + `@ai-sdk/mcp` | Unit + AI-evaluation, as recommended by the toolkit |
 | Eval LLM | DeepSeek (`deepseek-chat`) | OpenAI-compatible API, cheap, budget approved |
 | Lint | ESLint (Nuxt config, flat) | Nuxt ecosystem standard; formatting is delegated to `.editorconfig` |
