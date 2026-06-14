@@ -1,6 +1,11 @@
 import { createError, defineEventHandler, getHeader, getRequestURL, setResponseHeader } from 'h3'
 import { timingSafeEqualStr } from '~/server/utils/auth-helpers'
 
+// RFC 6750 §3 `realm` for the webhook-mode Bearer challenge. Identifies the
+// protection space in the `WWW-Authenticate` header so a spec-following MCP
+// client can present the right credential.
+const WWW_AUTH_REALM = 'bx24-template-mcp'
+
 export default defineEventHandler((event) => {
   const { pathname } = getRequestURL(event)
 
@@ -50,6 +55,14 @@ export default defineEventHandler((event) => {
 
   const header = getHeader(event, 'authorization')
   if (!header) {
+    // RFC 6750 §3: a 401 from a Bearer-protected resource MUST carry a
+    // `WWW-Authenticate: Bearer` challenge. When the request supplied NO
+    // credentials at all, the spec says NOT to include an `error` code —
+    // just the realm (and optionally `scope`). Spec-following MCP clients
+    // use this to discover the auth scheme. The OAuth-on branch above sets
+    // its own header with the §11 errorCode taxonomy; webhook mode uses
+    // the plain realm challenge.
+    setResponseHeader(event, 'www-authenticate', `Bearer realm="${WWW_AUTH_REALM}"`)
     throw createError({ statusCode: 401, statusMessage: 'Missing Authorization header' })
   }
 
@@ -57,6 +70,14 @@ export default defineEventHandler((event) => {
   const token = match?.[1]?.trim()
 
   if (!token || !timingSafeEqualStr(token, expected)) {
+    // RFC 6750 §3: credentials WERE supplied but are wrong → include
+    // `error="invalid_token"` so the client knows to stop retrying with
+    // the same value rather than re-prompting for a missing one.
+    setResponseHeader(
+      event,
+      'www-authenticate',
+      `Bearer realm="${WWW_AUTH_REALM}", error="invalid_token", error_description="Invalid bearer token"`,
+    )
     throw createError({ statusCode: 401, statusMessage: 'Invalid bearer token' })
   }
 })

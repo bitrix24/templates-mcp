@@ -132,9 +132,27 @@ describe('mcp-auth middleware', () => {
     )
   })
 
+  it('webhook-mode missing-header 401 carries WWW-Authenticate: Bearer realm (RFC 6750 §3, #196)', () => {
+    // No credentials supplied → realm-only challenge, NO error code per the
+    // RFC (an error code is for credentials that were sent but rejected).
+    const event: FakeEvent = { _url: '/mcp', _headers: {} }
+    expect(() => middleware(event)).toThrow(/Missing Authorization/)
+    expect(event._responseHeaders?.['www-authenticate']).toBe('Bearer realm="bx24-template-mcp"')
+  })
+
   it('rejects a malformed Authorization header with 401', () => {
     expect(callMiddleware('/mcp', { authorization: 'secret-token' })).toThrow(
       expect.objectContaining({ statusCode: 401, message: 'Invalid bearer token' }),
+    )
+  })
+
+  it('webhook-mode invalid-token 401 carries WWW-Authenticate with error="invalid_token" (RFC 6750 §3, #196)', () => {
+    // Credentials WERE supplied but rejected → include the error code so a
+    // spec-following client stops retrying the same value.
+    const event: FakeEvent = { _url: '/mcp', _headers: { authorization: 'Bearer wrong-token' } }
+    expect(() => middleware(event)).toThrow(/Invalid bearer token/)
+    expect(event._responseHeaders?.['www-authenticate']).toBe(
+      'Bearer realm="bx24-template-mcp", error="invalid_token", error_description="Invalid bearer token"',
     )
   })
 
