@@ -1,3 +1,11 @@
+# Project name (#189). Defaults to `bx24-mcp` so the stack's containers,
+# networks and volumes get a stable, directory-independent prefix; override
+# per environment via `COMPOSE_PROJECT_NAME` in `.env` (e.g. `bx24-mcp-staging`)
+# so a second environment on the same host can't collide with production.
+# NOTE: `COMPOSE_PROJECT_NAME` env (and `-p`) still take precedence over this
+# `name:` field — they resolve to the same value here by design.
+name: ${COMPOSE_PROJECT_NAME:-bx24-mcp}
+
 services:
   bx24-template-mcp:
     # BX24_IMAGE lets operators pin a specific tag/digest (e.g. for rollback).

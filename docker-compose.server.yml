@@ -19,6 +19,14 @@
 # trade-off required by the autodiscovery mechanism — keep this stack isolated
 # from untrusted workloads on the same host.
 
+# Fixed project name (#189). The reverse-proxy stack is a HOST SINGLETON —
+# one nginx-proxy + acme-companion serves every app environment on the box —
+# so it gets a stable explicit name rather than the directory-derived default
+# (which would drift per checkout path). Deliberately NOT parameterised by
+# `COMPOSE_PROJECT_NAME`: that variable isolates the *app* stacks (staging vs
+# prod), which must each be a distinct project, whereas this proxy is shared.
+name: bx24-mcp-proxy
+
 services:
   nginx-proxy:
     # Pin to a specific release to avoid unintended breaking changes on pull.
