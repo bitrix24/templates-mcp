@@ -289,10 +289,34 @@ export interface TokenStore {
    * each `COUNT(*)` is a constant-time index walk.
    */
   getHealthCounts: () => HealthCounts
-  // listMcpTokens — deferred to the follow-up "list my Bearers" operator
-  // tool (issue #212). The prepared statement exists internally (used by
-  // the bulk-revoke paths) but is intentionally absent from the public
-  // interface until the UI surface lands.
+  /**
+   * Active Bearers issued to a specific tenant (#212). Returns one row per
+   * Bearer that has NOT been revoked, newest-first. Used by the operator
+   * tool `bx24mcp_list_sessions` so a user can answer "which device am I
+   * still authorised on?" — the agent surfaces the labels + hash prefixes
+   * the user picked at mint time.
+   *
+   * **NEVER returns the raw Bearer** — that exists only at mint time and
+   * is never persisted. The hash prefix (first 8 hex chars of the SHA-256
+   * over the raw Bearer) is enough to identify a session against what the
+   * user pasted into Claude/Cursor (a 32-char Bearer's SHA-256 typically
+   * starts with a distinctive prefix), useless as a credential by itself.
+   */
+  listMcpTokens: (memberId: string, userId: number) => ListedMcpToken[]
+}
+
+/** Shape returned by {@link TokenStore.listMcpTokens}. */
+export interface ListedMcpToken {
+  /**
+   * First 8 hex characters of the SHA-256 over the raw Bearer — enough to
+   * disambiguate "the one I called Laptop" from other sessions, far short
+   * of a credential. NEVER use as an authentication signal.
+   */
+  readonly bearerHashPrefix: string
+  /** Operator-supplied label at mint time ("MacBook Claude", etc.) or null. */
+  readonly label: string | null
+  /** Unix seconds at mint. */
+  readonly createdAt: number
 }
 
 /** Shape returned by {@link TokenStore.getHealthCounts}. */
@@ -341,8 +365,12 @@ export function createTokenStore(db: Database.Database): TokenStore {
       `DELETE FROM oauth_tokens WHERE member_id = ? AND user_id = ?`,
     ),
     listMcpTokens: db.prepare<[string, number]>(
-      `SELECT bearer_hash AS bearerHash FROM mcp_tokens
-       WHERE member_id = ? AND user_id = ? AND revoked_at IS NULL`,
+      `SELECT bearer_hash AS bearerHash,
+              label,
+              created_at AS createdAt
+       FROM mcp_tokens
+       WHERE member_id = ? AND user_id = ? AND revoked_at IS NULL
+       ORDER BY created_at DESC`,
     ),
     markRefreshFailed: db.prepare<[number, string, number]>(
       `UPDATE mcp_tokens SET revoked_at = ?
@@ -511,6 +539,34 @@ export function createTokenStore(db: Database.Database): TokenStore {
         actor,
       })
       stmts.revokeMcpToken.run(nowSec(), bearerHash)
+    },
+
+    listMcpTokens: (memberId, userId) => {
+      // Hash → prefix at the boundary so the public surface NEVER carries
+      // the full hash (still useless as a credential, but less is less —
+      // an operator pasting the result into an issue / Slack / agent
+      // transcript can't reveal even the full digest by accident).
+      //
+      // `bearer_hash` is stored as `sha256-<64 hex>` (algo-prefixed —
+      // future-proofing for an algorithm bump). The issue #212 spec
+      // asks for "the first 8 hex chars of the SHA-256", so strip the
+      // `sha256-` literal before slicing; otherwise the prefix would be
+      // `sha256-X` (zero entropy, useless for disambiguation).
+      const rows = stmts.listMcpTokens.all(memberId, userId) as Array<{
+        bearerHash: string
+        label: string | null
+        createdAt: number
+      }>
+      return rows.map((r) => {
+        const hex = r.bearerHash.startsWith('sha256-')
+          ? r.bearerHash.slice('sha256-'.length)
+          : r.bearerHash
+        return {
+          bearerHashPrefix: hex.slice(0, 8),
+          label: r.label,
+          createdAt: r.createdAt,
+        }
+      })
     },
 
     createState: state => {

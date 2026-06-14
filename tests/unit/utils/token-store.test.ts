@@ -256,6 +256,87 @@ describe('token-store — OAuth + Bearer + state CRUD (PR-2b, docs/OAUTH-DESIGN.
     })
   })
 
+  describe('listMcpTokens — operator "list my sessions" surface (#212)', () => {
+    beforeEach(async () => {
+      await store.upsertTokens(sampleTokens, 'install')
+    })
+
+    it('returns active Bearers newest-first, with label + 8-hex hashPrefix, never the raw hash', async () => {
+      // Mint three Bearers a few seconds apart so the ORDER BY created_at
+      // DESC is observable. Real clock granularity is 1s; advance with
+      // fake timers to keep the test deterministic without sleeps.
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(1800000000 * 1000))
+      const first = await store.createMcpToken(sampleTokens.memberId, sampleTokens.userId, 'MacBook', 'install')
+      vi.setSystemTime(new Date(1800000010 * 1000))
+      const second = await store.createMcpToken(sampleTokens.memberId, sampleTokens.userId, null as unknown as undefined, 'install')
+      vi.setSystemTime(new Date(1800000020 * 1000))
+      const third = await store.createMcpToken(sampleTokens.memberId, sampleTokens.userId, 'iPad Cursor', 'install')
+      vi.useRealTimers()
+
+      // `bearerHash` is stored as `sha256-<64 hex>`; the public prefix is
+      // the first 8 hex chars OF THE SHA-256 (not of the prefixed string,
+      // which would start with the literal `sha256-` and carry zero
+      // entropy — see the strip in `token-store.ts:listMcpTokens`).
+      const hexOf = (h: string) => h.replace(/^sha256-/, '').slice(0, 8)
+
+      const listed = store.listMcpTokens(sampleTokens.memberId, sampleTokens.userId)
+      expect(listed).toHaveLength(3)
+      expect(listed[0]).toEqual({
+        bearerHashPrefix: hexOf(third.bearerHash),
+        label: 'iPad Cursor',
+        createdAt: 1800000020,
+      })
+      expect(listed[1]).toEqual({
+        bearerHashPrefix: hexOf(second.bearerHash),
+        label: null,
+        createdAt: 1800000010,
+      })
+      expect(listed[2]).toEqual({
+        bearerHashPrefix: hexOf(first.bearerHash),
+        label: 'MacBook',
+        createdAt: 1800000000,
+      })
+
+      // Defence-in-depth: the raw full hash must never appear in the
+      // returned shape. The prefix is bounded at 8 hex chars.
+      for (const row of listed) {
+        expect(row.bearerHashPrefix).toMatch(/^[a-f0-9]{8}$/)
+        expect(JSON.stringify(row)).not.toContain(first.bearerHash)
+        expect(JSON.stringify(row)).not.toContain(second.bearerHash)
+        expect(JSON.stringify(row)).not.toContain(third.bearerHash)
+      }
+    })
+
+    it('excludes revoked Bearers — once revoked, the row disappears from the list', async () => {
+      const minted = await store.createMcpToken(sampleTokens.memberId, sampleTokens.userId, 'Laptop', 'install')
+      expect(store.listMcpTokens(sampleTokens.memberId, sampleTokens.userId)).toHaveLength(1)
+      await store.revokeMcpToken(minted.bearerHash, 'install')
+      expect(store.listMcpTokens(sampleTokens.memberId, sampleTokens.userId)).toHaveLength(0)
+    })
+
+    it('scopes to one tenant — a Bearer minted under a different (memberId,userId) is invisible here', async () => {
+      // Seed a second tenant under the SAME memberId, different userId
+      // (the composite-PK case from the oauth_tokens block above).
+      await store.upsertTokens({ ...sampleTokens, userId: 99, accessToken: 'tok-99' }, 'install')
+      await store.createMcpToken(sampleTokens.memberId, sampleTokens.userId, 'mine', 'install')
+      await store.createMcpToken(sampleTokens.memberId, 99, 'theirs', 'install')
+
+      const mine = store.listMcpTokens(sampleTokens.memberId, sampleTokens.userId)
+      expect(mine).toHaveLength(1)
+      expect(mine[0]?.label).toBe('mine')
+
+      const theirs = store.listMcpTokens(sampleTokens.memberId, 99)
+      expect(theirs).toHaveLength(1)
+      expect(theirs[0]?.label).toBe('theirs')
+    })
+
+    it('returns an empty array for a tenant with no Bearers (not undefined, not throw)', () => {
+      const result = store.listMcpTokens(sampleTokens.memberId, sampleTokens.userId)
+      expect(result).toEqual([])
+    })
+  })
+
   describe('markRefreshFailed — only revokes the affected tenant', () => {
     beforeEach(async () => {
       await store.upsertTokens(sampleTokens, 'install')

@@ -50,6 +50,7 @@ import tasks_addTaskDependency from '~/server/mcp/tools/tasks/add-task-dependenc
 import tasks_removeTaskDependency from '~/server/mcp/tools/tasks/remove-task-dependency'
 
 import meta_submitFeedback from '~/server/mcp/tools/meta/submit-feedback'
+import meta_listSessions from '~/server/mcp/tools/meta/list-sessions'
 
 export const tools = [
   users_currentUser,
@@ -82,4 +83,5 @@ export const tools = [
   tasks_addTaskDependency,
   tasks_removeTaskDependency,
   meta_submitFeedback,
+  meta_listSessions,
 ] as const
