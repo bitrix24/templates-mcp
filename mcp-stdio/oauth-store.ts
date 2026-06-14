@@ -96,10 +96,28 @@ export class OAuthStore {
     renameSync(tmp, this.path)
   }
 
-  /** Stamp `refreshInvalid: true` without touching the rest of the row. */
-  markRefreshFailed(): void {
+  /**
+   * Stamp `refreshInvalid: true` without touching the rest of the row.
+   *
+   * Follow-up S2 (#239 /review): TOCTOU guard. The refresh handler holds
+   * a snapshot of the row from the START of the refresh attempt; by the
+   * time `invalid_grant` comes back, a concurrent successful re-onboarding
+   * (`exchangeOobCode` → `store.write`) could have replaced the row with
+   * a fresh refresh token. Without this guard we'd stamp invalid on the
+   * fresh row and lock the user out one second after they fixed it.
+   *
+   * Caller passes the `refreshToken` that the failing request used; we
+   * read the current row and only stamp if they still match. A mismatch
+   * means the row was rotated mid-flight — leave it alone.
+   *
+   * `expectedRefreshToken` is optional for the existing callers that don't
+   * need the guard (tests, future bulk paths); when omitted the legacy
+   * unconditional behaviour applies.
+   */
+  markRefreshFailed(expectedRefreshToken?: string): void {
     const row = this.read()
     if (!row) return
+    if (expectedRefreshToken !== undefined && row.refreshToken !== expectedRefreshToken) return
     this.write({ ...row, refreshInvalid: true })
   }
 

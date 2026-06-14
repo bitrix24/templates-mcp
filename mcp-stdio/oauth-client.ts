@@ -127,7 +127,25 @@ export function buildOAuthClient(args: {
   b24.setCustomRefreshAuth(async (): Promise<HandlerRefreshAuth> => {
     const log = useLogger()
     const current = args.store.read()
-    if (!current) throw new Error('OAuth tokens vanished mid-refresh')
+    if (!current) {
+      // Follow-up R3 (#239 /review): mirror the HTTP factory's
+      // `tenant-deleted` audit event. Single-tenant DXT can hit this
+      // when the user deletes `oauth.json` mid-flight (or another
+      // process truncates the file). Emit so the operator's `audit.log`
+      // shows the "tokens gone" timeline before the throw surfaces in
+      // their MCP client.
+      recordDxtAuditEvent(
+        { event: 'oauth.fail.transient', detail: 'tenant-deleted' },
+        args.dataDirOverride,
+      )
+      throw new Error('OAuth tokens vanished mid-refresh')
+    }
+
+    // Follow-up R2 (#239 /review): parity with HTTP factory's
+    // `oauth.refresh.start` info log (`server/utils/bitrix24-oauth.ts:208`).
+    // Operators correlating `.start` ↔ `.ok` / `.fail` in `audit.log`
+    // expect the same taxonomy on both transports.
+    void log.info('oauth.refresh.start', { memberId: current.memberId, userId: current.userId })
 
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
@@ -164,7 +182,11 @@ export function buildOAuthClient(args: {
 
     if (!res.ok || data.error) {
       if (data.error === 'invalid_grant') {
-        args.store.markRefreshFailed()
+        // Pass the refresh_token we USED for the failing request — the
+        // store compares before stamping invalid, so a concurrent
+        // successful re-onboarding that rotated the token between
+        // start-of-refresh and now isn't punished (follow-up S2).
+        args.store.markRefreshFailed(current.refreshToken)
         recordDxtAuditEvent(
           { event: 'oauth.fail.invalid-grant', memberId: current.memberId, userId: current.userId },
           args.dataDirOverride,

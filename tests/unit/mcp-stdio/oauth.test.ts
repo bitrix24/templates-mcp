@@ -378,4 +378,177 @@ describe('mcp-stdio OAuth foundations (#207)', () => {
       expect(url).not.toContain('redirect_uri')
     })
   })
+
+  /**
+   * Follow-up cluster from `/review` on #239 (issues R2 / R3 / S2 / T1).
+   * Small parity gaps + one defence-in-depth race fix + one missing test.
+   */
+  describe('refresh handler — follow-up audit + race coverage (#239 /review)', () => {
+    it('R3: emits oauth.fail.transient with detail "tenant-deleted" when tokens vanished mid-refresh', async () => {
+      const { buildOAuthClient } = await import('../../../mcp-stdio/oauth-client')
+      const { OAuthStore } = await import('../../../mcp-stdio/oauth-store')
+      const store = new OAuthStore(tmp)
+      store.write({
+        memberId: 'm', userId: 1, portalDomain: 'acme.bitrix24.ru',
+        accessToken: 'at', refreshToken: 'rt',
+        accessExpiresAt: Math.floor(Date.now() / 1000) - 1, // already expired
+        scope: 'user', refreshInvalid: false,
+      })
+      const b24 = buildOAuthClient({ clientId: 'cid', clientSecret: 'csec', store, dataDirOverride: tmp })
+      // Simulate the file being wiped between client construction and the
+      // first refresh attempt — the SDK reads `current = store.read()`
+      // each refresh, so unlinking now exercises the !current branch.
+      rmSync(store.filePath)
+
+      vi.stubGlobal('fetch', vi.fn()) // would-be call shouldn't happen
+      await expect(b24.auth.refreshAuth()).rejects.toThrow('vanished mid-refresh')
+
+      const audit = readFileSync(join(tmp, 'audit.log'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+      expect(audit.at(-1)).toMatchObject({ event: 'oauth.fail.transient', detail: 'tenant-deleted' })
+    })
+
+    it('R2: emits info "oauth.refresh.start" before hitting the token endpoint (parity with HTTP factory)', async () => {
+      const { buildOAuthClient } = await import('../../../mcp-stdio/oauth-client')
+      const { OAuthStore } = await import('../../../mcp-stdio/oauth-store')
+      const { useLogger } = await import('../../../server/utils/logger')
+      // `useLogger` returns a cached singleton (`server/utils/logger.ts:115`)
+      // so a direct spy on `.info` survives all subsequent calls within
+      // the same module-graph instance — no need for vi.doMock gymnastics.
+      const infoSpy = vi.spyOn(useLogger(), 'info').mockResolvedValue(undefined)
+
+      const store = new OAuthStore(tmp)
+      store.write({
+        memberId: 'm-start', userId: 9, portalDomain: 'acme.bitrix24.ru',
+        accessToken: 'at', refreshToken: 'rt',
+        accessExpiresAt: Math.floor(Date.now() / 1000) - 1,
+        scope: 'user', refreshInvalid: false,
+      })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        access_token: 'at2', refresh_token: 'rt2', expires_in: 3600,
+        domain: 'acme.bitrix24.ru', member_id: 'm-start', user_id: 9, scope: 'user',
+      }), { status: 200 })))
+
+      const b24 = buildOAuthClient({ clientId: 'cid', clientSecret: 'csec', store, dataDirOverride: tmp })
+      await b24.auth.refreshAuth()
+
+      const startCalls = infoSpy.mock.calls.filter(c => c[0] === 'oauth.refresh.start')
+      expect(startCalls).toHaveLength(1)
+      expect(startCalls[0]![1]).toMatchObject({ memberId: 'm-start', userId: 9 })
+      infoSpy.mockRestore()
+    })
+
+    it('S2: markRefreshFailed with expectedRefreshToken=mismatch leaves the row untouched (TOCTOU guard)', async () => {
+      // The handler held an old `current` snapshot; meanwhile a concurrent
+      // successful `exchangeOobCode` rewrote the row with a fresh token.
+      // Stamping invalid against the OLD token must be a no-op so the new
+      // session stays alive.
+      const { OAuthStore } = await import('../../../mcp-stdio/oauth-store')
+      const store = new OAuthStore(tmp)
+      store.write({
+        memberId: 'm', userId: 1, portalDomain: 'acme.bitrix24.ru',
+        accessToken: 'at_new', refreshToken: 'rt_new_after_reonboard',
+        accessExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'user', refreshInvalid: false,
+      })
+
+      store.markRefreshFailed('rt_OLD_before_reonboard')
+      expect(store.read()?.refreshInvalid).toBe(false)
+      expect(store.read()?.refreshToken).toBe('rt_new_after_reonboard')
+    })
+
+    it('S2: markRefreshFailed with expectedRefreshToken=match stamps invalid (the happy path of the guard)', async () => {
+      const { OAuthStore } = await import('../../../mcp-stdio/oauth-store')
+      const store = new OAuthStore(tmp)
+      store.write({
+        memberId: 'm', userId: 1, portalDomain: 'acme.bitrix24.ru',
+        accessToken: 'at', refreshToken: 'rt_current',
+        accessExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'user', refreshInvalid: false,
+      })
+
+      store.markRefreshFailed('rt_current')
+      expect(store.read()?.refreshInvalid).toBe(true)
+    })
+
+    it('S2: markRefreshFailed with no expectedRefreshToken keeps the legacy unconditional behaviour', async () => {
+      const { OAuthStore } = await import('../../../mcp-stdio/oauth-store')
+      const store = new OAuthStore(tmp)
+      store.write({
+        memberId: 'm', userId: 1, portalDomain: 'acme.bitrix24.ru',
+        accessToken: 'at', refreshToken: 'rt_any',
+        accessExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+        scope: 'user', refreshInvalid: false,
+      })
+
+      store.markRefreshFailed()
+      expect(store.read()?.refreshInvalid).toBe(true)
+    })
+  })
+
+  describe('buildPasteCodeTool (#239 /review T1)', () => {
+    it('exchanges the code, installs the live OAuth dispatcher override, and returns the friendly success payload', async () => {
+      const { buildPasteCodeTool } = await import('../../../mcp-stdio/tools-oauth')
+      const { _setStdioClientOverride, useBitrix24Tenant } = await import('../../../server/utils/bitrix24-tenant')
+
+      // Stage 1: register a SENTINEL throwing override (matches the
+      // onboarding-mode shape from `auth-mode.ts`). After the paste
+      // succeeds it must be replaced with the live OAuth dispatcher.
+      const sentinel = { mode: 'onboarding' } as never
+      _setStdioClientOverride(() => sentinel)
+      expect(useBitrix24Tenant()).toBe(sentinel)
+
+      // Stage 2: stub fetch for the OOB code exchange — same shape as
+      // the existing `exchangeOobCode` happy-path test.
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        access_token: 'at_oob', refresh_token: 'rt_oob', expires_in: 3600,
+        domain: 'acme.bitrix24.ru', member_id: 'm-oob', user_id: 42, scope: 'user',
+      }), { status: 200 })))
+
+      const tool = buildPasteCodeTool({
+        clientId: 'cid', clientSecret: 'csec', portalHost: 'acme.bitrix24.ru', dataDirOverride: tmp,
+      })
+
+      expect(tool.name).toBe('bx24mcp_oauth_paste_code')
+      const result = await tool.handler({ code: 'oob-code-xyz' })
+      expect(result).toMatchObject({
+        ok: true, portalDomain: 'acme.bitrix24.ru', userId: 42,
+        message: expect.stringContaining('OAuth onboarding complete'),
+      })
+
+      // Stage 3: the dispatcher override must no longer be the sentinel —
+      // a real OAuth client should answer `useBitrix24Tenant()` calls.
+      // We don't inspect the client's surface here (tested elsewhere),
+      // just confirm the swap happened.
+      expect(useBitrix24Tenant()).not.toBe(sentinel)
+
+      // Stage 4: tokens landed on disk through the exchange.
+      const { OAuthStore } = await import('../../../mcp-stdio/oauth-store')
+      const persisted = new OAuthStore(tmp).read()
+      expect(persisted).toMatchObject({ memberId: 'm-oob', userId: 42, accessToken: 'at_oob' })
+
+      _setStdioClientOverride(null)
+    })
+
+    it('surfaces a friendly error when the OOB code exchange fails (override left untouched)', async () => {
+      const { buildPasteCodeTool } = await import('../../../mcp-stdio/tools-oauth')
+      const { _setStdioClientOverride, useBitrix24Tenant } = await import('../../../server/utils/bitrix24-tenant')
+      const sentinel = { mode: 'onboarding-still' } as never
+      _setStdioClientOverride(() => sentinel)
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        error: 'invalid_grant', error_description: 'code expired',
+      }), { status: 400 })))
+
+      const tool = buildPasteCodeTool({
+        clientId: 'cid', clientSecret: 'csec', portalHost: 'acme.bitrix24.ru', dataDirOverride: tmp,
+      })
+      await expect(tool.handler({ code: 'stale-code' })).rejects.toThrow(/oauth code exchange failed/i)
+
+      // Dispatcher override must NOT have been replaced — onboarding mode
+      // sticks until the operator pastes a working code.
+      expect(useBitrix24Tenant()).toBe(sentinel)
+      _setStdioClientOverride(null)
+    })
+  })
 })
