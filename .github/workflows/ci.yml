@@ -116,31 +116,32 @@ jobs:
             docker buildx imagetools inspect "$ref" >/dev/null
           done
 
-  # Static analysers for the workflow files themselves. Advisory mode while
-  # the first runs settle and findings are triaged — the existing `lint` job
-  # below has a narrow regex guard ("Guard against expression-injection")
-  # that only catches `${{ github.event.*.(title|body|message) }}` inlined
-  # in `run:`. These two analysers close the class:
-  #   - actionlint: workflow syntax, expression validation, permissions
-  #     auditing, deprecated/mutable `uses:` refs, shellcheck integration.
-  #   - zizmor: security-focused — template injection across all event
+  # Static analysers for the workflow files themselves. BOTH now ENFORCING
+  # (issue #179 close-out): zizmor flipped at the v0.1.0 cut (#178), actionlint
+  # flips here after its first-run findings came back clean (verified against
+  # the pinned 1.6.24 binary + shellcheck integration on every `run:` block).
+  #
+  # ADR — why TWO workflow analysers, not one (do not delete one as "duplication"):
+  #   - actionlint: workflow *correctness* — YAML schema, `${{ }}` expression
+  #     validation, `permissions:` auditing, deprecated/mutable `uses:` refs,
+  #     and shellcheck integration on embedded `run:` scripts. Catches the
+  #     "this workflow is wrong" class.
+  #   - zizmor: workflow *security* — template injection across all event
   #     paths and `vars.*` / `secrets.*`, artifact poisoning, dangerous
-  #     triggers, excessive permissions, secrets exposure.
-  # See #175. Status (2026-06-14): zizmor is now ENFORCING (its
-  # `continue-on-error` is gone — see the job below). The original acceptance
-  # note said "flip once #178 closes AND no new findings on `main` for ≥2
-  # weeks"; that grace period was deliberately WAIVED to land the gate before
-  # the v0.1.0 cut — the findings ARE triaged (#178) and the pinned + offline
-  # config makes the gate deterministic, so the soak window bought little. The
-  # `lint`-job regex guard is KEPT (cheap defence-in-depth; not removed).
-  # actionlint stays advisory until its own findings are triaged (#179) — the
-  # asymmetry is intentional: security findings block, syntax findings warn.
+  #     triggers, excessive permissions, credential persistence. Catches the
+  #     "this workflow is exploitable" class.
+  # The two overlap only at the edges (both notice some injection shapes); each
+  # owns a class the other doesn't cover. Removing either reopens a gap. See
+  # #175 (gate added) → #178 (zizmor triage) → #179 (this close-out).
+  #
+  # The `lint`-job custom regex guard that used to backstop these two was
+  # DELETED in #179: with both analysers blocking, it became a strict subset of
+  # what they cover (it only caught single-line `github.event.*.(title|body|
+  # message)` interpolation; actionlint + zizmor cover the multi-line and
+  # `vars.*`/`secrets.*` cases too).
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
-    # Advisory (unlike zizmor below): actionlint's first-run findings aren't
-    # triaged yet (#179). Syntax/permission issues warn but don't block.
-    continue-on-error: true
     permissions:
       # Match `zizmor` job below: explicit read-only.
       contents: read
@@ -168,12 +169,11 @@ jobs:
           tar xzf "$tarball" actionlint
           ./actionlint -color
 
-  # zizmor is now ENFORCING (issue #178): all findings on the checked-in
+  # zizmor is ENFORCING (issue #178): all findings on the checked-in
   # workflows are either fixed (deploy.yml cache-poisoning — caching removed
   # from the publish pipeline) or annotated with an inline justification
   # (`# zizmor: ignore[...]`). The version is pinned so a CI run reproduces
   # exactly what was triaged locally; bump it deliberately and re-triage.
-  # actionlint (above) stays advisory until its own findings are triaged.
   zizmor:
     name: zizmor
     runs-on: ubuntu-latest
@@ -224,33 +224,14 @@ jobs:
             echo "If not, revert your change — widening invalidates the unit-suite isolation contract (see #144)."
             exit 1
           fi
-      - name: Guard against expression-injection in `run:` blocks (security #171)
-        # Catches the canonical single-line script-injection pattern: a
-        # `run` step that interpolates a user-controllable event field
-        # (title / body / message) directly inline. Those fields belong in
-        # `env:` (see the commitlint job above and CONTRIBUTING.md
-        # "CI authoring rule"). Hex-only fields (`.sha`, `.ref`, `.actor`)
-        # can't carry shell metacharacters and are not flagged.
-        #
-        # Self-match guard: the grep pipeline below filters out comment
-        # lines (lines whose first non-whitespace character is `#`) so the
-        # rule can describe itself without tripping itself.
-        #
-        # Known blind spot: multi-line `run: |` blocks where the
-        # interpolation lives on a later line escape this regex; same for
-        # `${{ vars.* }}` and `${{ secrets.* }}` inlined in scripts. The
-        # `actionlint` and `zizmor` jobs above (added by #175) close that
-        # gap. Once they flip from advisory to blocking, delete this
-        # guard — it becomes a strict subset of what they cover.
-        run: |
-          pattern='run:.*\$\{\{[^}]*github\.event\.[^}]*\.(title|body|message)[^}]*\}\}'
-          hits=$(grep -rnE "$pattern" .github/workflows/ | grep -vE ':[[:space:]]*#' || true)
-          if [ -n "$hits" ]; then
-            echo "::error::Direct interpolation of a user-controllable GitHub-event field into a run: block detected. Bind it through env: instead (see #171 and CONTRIBUTING.md 'CI authoring rule')."
-            echo "$hits"
-            exit 1
-          fi
-          echo "OK: no script-injection patterns in run: blocks."
+      # NOTE (#179): a custom "Guard against expression-injection in run:
+      # blocks" step lived here from #171 until the workflow-hardening series
+      # closed out. It was deleted once `actionlint` + `zizmor` both flipped
+      # to blocking (see the analyser-job comment above) — its single-line
+      # `github.event.*.(title|body|message)` regex was a strict subset of
+      # what those two analysers enforce, and keeping it risked a contributor
+      # "fixing" a false sense of two-layer coverage. The injection class is
+      # now owned by zizmor (template-injection audit) end-to-end.
       - uses: pnpm/action-setup@08c4be7e2e672a47d11bd04269e27e5f3e8529cb # v6.0.0
       - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
