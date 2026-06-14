@@ -1,6 +1,6 @@
 {
   "name": "bx24-template-mcp",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.0",
   "private": true,
   "description": "Starter template for building Model Context Protocol servers on Bitrix24 — example tools for tasks and users, plus the auth, throttling, and test scaffolding to fork and extend with your own.",
   "author": "Bitrix24",

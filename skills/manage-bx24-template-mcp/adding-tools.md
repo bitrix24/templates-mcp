@@ -14,7 +14,7 @@ server/mcp/tools/
 ```
 
 The template ships these three groups. If you're adding a tool for a different
-domain (CRM is the planned post-pilot expansion: deals / contacts / leads;
+domain (CRM is the demand-driven post-release expansion zone: deals / contacts / leads;
 calendars, disk, im, … are also fair game), create the directory yourself
 under `server/mcp/tools/` — that's the canonical "fork and extend" path this
 starter template is designed around.

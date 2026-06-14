@@ -4,6 +4,12 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-14
+
+> **Note on history bookkeeping.** This entry consolidates every change between `v0.1.0-alpha.1` (2026-05-19) and `v0.2.0`. Two intermediate tags were published in that window — **`v0.1.0` (2026-05-30, [GitHub Release](https://github.com/bitrix24/templates-mcp/releases/tag/v0.1.0))** for the Makefile / Watchtower-overlay / two-path deployment groundwork, and **`v0.1.1` (2026-05-31, [GitHub Release](https://github.com/bitrix24/templates-mcp/releases/tag/v0.1.1))** for the SSH-deploy drop + Dependabot remediation. Both tags were cut without a corresponding `CHANGELOG.md` section at the time; their GitHub Release pages remain the source-of-truth for those interim cuts, and their contents are folded into the bullets below rather than reconstructed as separate sections. From `v0.2.0` forward `CHANGELOG.md` is the canonical record again.
+>
+> **`v0.1.0` final tagged.** This release also retires the "README will be rewritten for end-users on the first non-alpha `v0.1.0` tag" promise — the rewrite shipped here, and the project is no longer pre-1.0-alpha. Pre-1.0 minor bumps may still break the API contract per Semantic Versioning.
+
 ### Documentation
 
 - **Docs — sweep of post-rollout audit drift (issue #225).** Eight findings resolved in `docs/`: ADDING-TOOLS walkthrough now teaches `useBitrix24Tenant()` (was `useBitrix24()` — every new contributor's first tool silently broke under OAuth); ARCHITECTURE Layers table grew the OAuth dispatcher / OAuth client / token-store rows and dropped the shipped-but-still-`TODO` parity-test note; PROJECT-BRIEF stack-table versions bumped to current (`TS 5→6`, `Nuxt 3→4`, `mcp-toolkit ^0.15→^0.17`, `mcp-sdk ^1.23→^1.29`, `pnpm 9→11`); RUNBOOK Watchtower paragraph now states monitor-only-by-default (was contradicting DEPLOYMENT.md); SECURITY-AUDIT gained a `b24ui-nuxt 2.8.0` audit pass; the localised DXT install guides (`mcp-stdio/INSTALL.{ru,pt-BR}.md`) reduced the recommended webhook scopes to `task` + `user` (had `crm` "for the future" while CRM tools were removed); MANUAL-TEST-PHRASES no longer claims "v3 throughout" (25 of 29 tools are v2); `Last reviewed: 2026-06-13` stamps inserted into ten previously-unstamped docs/skill files. Plus: closes the "no CI guard on the tenant-dispatcher invariant" gap that the docs themselves call out — new test `tests/unit/mcp-stdio/tools.tenant-guard.test.ts` fails the build if any tool under `server/mcp/tools/**` imports or calls `useBitrix24` directly instead of going through `useBitrix24Tenant()`.
@@ -127,8 +133,8 @@ The first tagged release. Cuts a baseline anchor that ships every tool, every co
 
 ### Notes
 
-- Pre-1.0 — the public contract (tool names, input schemas, response shapes) may shift before `v0.1.0` final. Subsequent alpha tags will document breaking shifts in their own changelog sections.
-- The README will be rewritten for end-users at `v0.1.0` (non-alpha). Until then it serves contributors and forkers.
+- Pre-1.0 — the public contract (tool names, input schemas, response shapes) may still shift between minor versions (e.g. `0.1` → `0.2` here ships breaking tool renames + a tool-error-protocol change; see the relevant **BREAKING** bullets above). A `1.0` cut will only happen once the contract has stabilised across a pilot cycle.
 
-[Unreleased]: https://github.com/bitrix24/templates-mcp/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/bitrix24/templates-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/bitrix24/templates-mcp/compare/v0.1.0-alpha.1...v0.2.0
 [0.1.0-alpha.1]: https://github.com/bitrix24/templates-mcp/releases/tag/v0.1.0-alpha.1

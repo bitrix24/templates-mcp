@@ -41,7 +41,7 @@ server/mcp/tools/
 ```
 
 One tool per file, named `kebab-case.ts`. Adding a tool for a domain that doesn't
-have a folder yet (CRM is the planned post-pilot expansion: deals / contacts /
+have a folder yet (CRM is the demand-driven post-release expansion zone: deals / contacts /
 leads; calendars, disk, im, … are also fair game)? Create the directory under
 `server/mcp/tools/` — extending into new Bitrix24 modules is exactly what this
 template is built for.

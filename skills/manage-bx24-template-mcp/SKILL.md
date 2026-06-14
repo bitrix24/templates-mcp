@@ -114,7 +114,7 @@ The bar here is lower than for the SDK (no credential-leak surface to defend), b
 
 ## When asked to add a new tool
 
-1. Identify the group: `tasks` / `users` / `meta` — or, if your tool covers a domain the template hasn't touched yet (CRM is the planned post-pilot expansion; calendars, disk, im, … are also fair game), create the directory yourself; that's the explicit "fork and extend" path.
+1. Identify the group: `tasks` / `users` / `meta` — or, if your tool covers a domain the template hasn't touched yet (CRM is the demand-driven post-release expansion zone; calendars, disk, im, … are also fair game), create the directory yourself; that's the explicit "fork and extend" path.
 2. Create `server/mcp/tools/<group>/<kebab-name>.ts`.
 3. Use `defineMcpTool({ name, description, inputSchema, handler })`.
 4. Name pattern: `b24_<domain>(_<entity>)*_<action>` for Bitrix24 tools (e.g. `b24_task_create`, `b24_task_checklist_item_add`, `b24_task_list`); `bx24mcp_<verb>` for meta-tools (use `bx24mcp_` ONLY for tools that don't call the Bitrix24 REST API). **Action is always the trailing token; all tokens are singular** — including before `_list`. Identity-style `b24_<domain>_me` (currently only `b24_user_me`) is an allowed shape where `me` covers both entity and action. The pattern + the singular-everywhere rule + the prefix split are enforced by `tests/unit/mcp-stdio/tool-naming-convention.test.ts`.
