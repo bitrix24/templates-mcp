@@ -1,7 +1,7 @@
-import { createError, defineEventHandler, deleteCookie, getCookie, getQuery, setResponseStatus } from 'h3'
+import { createError, defineEventHandler, deleteCookie, getCookie, getQuery, getRequestURL, setResponseStatus } from 'h3'
 import { timingSafeEqualStr } from '~/server/utils/auth-helpers'
 import { useLogger } from '~/server/utils/logger'
-import { htmlEscape, setAntiFramingHeaders, setHtmlResponseHeaders } from '~/server/utils/oauth-html'
+import { generateCspNonce, htmlEscape, renderBrandStylesTag, renderHostnameDisclosure, setAntiFramingHeaders, setHtmlResponseHeaders } from '~/server/utils/oauth-html'
 import { isAllowedPortalDomain } from '~/server/utils/portal-validation'
 import { useTokenStore } from '~/server/utils/token-store'
 
@@ -87,39 +87,49 @@ interface TokenExchangeErr {
 // `formAction` — there's no <form> on the success or error pages.
 
 
-function callbackErrorPage(errorCode: string, detail: string): string {
-  // Tiny HTML — no JS, no external assets, no styling that could pull
-  // in resources from another origin. The error code is also sent in
-  // the JSON `data.errorCode` field for non-browser callers. BOTH
-  // interpolated values are escaped: `errorCode` is always a code
+interface CallbackPageOpts {
+  /** Per-response nonce for brand-styled rendering (#233); falsy → strict-CSP unstyled. */
+  readonly cspNonce: string | undefined
+  /** Server's own hostname for the anti-phishing disclosure block. */
+  readonly host: string
+}
+
+function callbackErrorPage(errorCode: string, detail: string, opts: CallbackPageOpts): string {
+  // Tiny HTML — no JS, no external assets. Optional brand stylesheet
+  // (#233) is opt-in via the operator's `NUXT_BITRIX24_OAUTH_BRAND_STYLES`
+  // flag and ships under a fresh per-response CSP nonce; without it the
+  // strict-CSP baseline (`default-src 'none'`) blocks all styling.
+  // BOTH interpolated values are escaped: `errorCode` is always a code
   // literal today, but escaping it too is defence-in-depth against a
   // future refactor that passes a Bitrix24-controlled `exchange.error`
   // string into this slot.
   const safeCode = htmlEscape(errorCode)
   const safeDetail = htmlEscape(detail)
-  return `<!doctype html><html><head><meta charset="utf-8"><title>OAuth callback failed</title></head><body>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>OAuth callback failed</title>${renderBrandStylesTag(opts.cspNonce)}</head><body>
 <h1>OAuth callback failed</h1>
+${renderHostnameDisclosure(opts.host)}
 <p>Error code: <code>${safeCode}</code></p>
 <p>${safeDetail}</p>
 <p>Try again from <a href="/api/oauth/install?portal=&lt;your portal&gt;">/api/oauth/install</a> or contact your operator with the error code above.</p>
 </body></html>`
 }
 
-function bearerSuccessPage(bearer: string, portal: string): string {
+function bearerSuccessPage(bearer: string, portal: string, opts: CallbackPageOpts): string {
   // Bearer is shown EXACTLY ONCE. No JS, no copy-to-clipboard helper
   // (would pull in a script-src dependency). Operator pastes manually.
   // The Bearer is `randomBytes(...).toString('hex')` today (no HTML
   // metacharacters), but escape it anyway — defence in depth if the token
   // format ever changes, and the helper is already in scope.
   //
-  // NOTE on the `<pre>` below: NO `style=` attribute. The CSP set by
-  // `setAntiFramingHeaders` is `default-src 'none'; frame-ancestors 'none'`
-  // with no `'unsafe-inline'` carve-out — any inline style would be
-  // blocked and the page would render unstyled anyway. Don't add one back.
+  // NOTE on the `<pre>` below: NO `style=` attribute. Brand styling
+  // (#233) lands via the `<style nonce="…">` block in <head>, not via
+  // per-element attributes — keeps the strict baseline (no
+  // `'unsafe-inline'`) intact.
   const safePortal = htmlEscape(portal)
   const safeBearer = htmlEscape(bearer)
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Bitrix24 MCP — Bearer minted</title></head><body>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Bitrix24 MCP — Bearer minted</title>${renderBrandStylesTag(opts.cspNonce)}</head><body>
 <h1>Your Bitrix24 MCP Bearer</h1>
+${renderHostnameDisclosure(opts.host)}
 <p>Portal: <code>${safePortal}</code></p>
 <p>Copy this token into your MCP client (Claude Desktop / Cursor / Windsurf) <strong>Authorization: Bearer</strong> setting:</p>
 <pre>${safeBearer}</pre>
@@ -129,18 +139,27 @@ function bearerSuccessPage(bearer: string, portal: string): string {
 
 export default defineEventHandler(async (event) => {
   const logger = useLogger()
-  // Pin the anti-framing + no-cache headers BEFORE anything else (issue
-  // #221). h3 preserves headers across a thrown `createError`, so every
-  // deny path below — flag-off, not-configured, params-missing, the six
-  // state-* paths — carries `X-Frame-Options: DENY` + the strict CSP
-  // without each branch having to remember to call the helper.
-  setAntiFramingHeaders(event)
   const {
     bitrix24OauthEnabled,
     bitrix24OauthClientId,
     bitrix24OauthClientSecret,
     bitrix24OauthRedirectUrl,
+    bitrix24OauthBrandStyles,
   } = useRuntimeConfig()
+  // Brand-styled landing (#233): mirror the install handler — generate
+  // a per-response nonce up-front and pin it on EVERY header path and
+  // EVERY HTML render. Strict baseline is preserved when brand styles
+  // are off.
+  const cspNonce = bitrix24OauthBrandStyles ? generateCspNonce() : undefined
+  const host = getRequestURL(event).host
+  const headerOpts = { cspNonce }
+  const pageOpts = { cspNonce, host }
+  // Pin the anti-framing + no-cache headers BEFORE anything else (issue
+  // #221). h3 preserves headers across a thrown `createError`, so every
+  // deny path below — flag-off, not-configured, params-missing, the six
+  // state-* paths — carries `X-Frame-Options: DENY` + the strict CSP
+  // without each branch having to remember to call the helper.
+  setAntiFramingHeaders(event, headerOpts)
 
   if (!bitrix24OauthEnabled) {
     void logger.warning('oauth.callback.deny.flag-off')
@@ -292,9 +311,9 @@ export default defineEventHandler(async (event) => {
       reason: 'network',
       message: (err as Error).message,
     })
-    setHtmlResponseHeaders(event)
+    setHtmlResponseHeaders(event, headerOpts)
     setResponseStatus(event, 502)
-    return callbackErrorPage('EXCHANGE-NETWORK', 'Failed to reach Bitrix24 OAuth token endpoint.')
+    return callbackErrorPage('EXCHANGE-NETWORK', 'Failed to reach Bitrix24 OAuth token endpoint.', pageOpts)
   }
 
   // Parse defensively — error responses may be JSON or HTML depending
@@ -308,9 +327,9 @@ export default defineEventHandler(async (event) => {
       reason: 'non-json',
       httpStatus: exchangeRes.status,
     })
-    setHtmlResponseHeaders(event)
+    setHtmlResponseHeaders(event, headerOpts)
     setResponseStatus(event, 502)
-    return callbackErrorPage('EXCHANGE-NON-JSON', 'Bitrix24 returned a non-JSON response.')
+    return callbackErrorPage('EXCHANGE-NON-JSON', 'Bitrix24 returned a non-JSON response.', pageOpts)
   }
 
   if (!exchangeRes.ok || 'error' in exchange) {
@@ -322,21 +341,21 @@ export default defineEventHandler(async (event) => {
       // No description — could contain user-supplied or URL-shaped data.
       // Operator inspects the audit log + `_health` for the timeline.
     })
-    setHtmlResponseHeaders(event)
+    setHtmlResponseHeaders(event, headerOpts)
     // A Bitrix24 5xx is an upstream outage → 503 (retryable); a 4xx /
     // explicit `{error}` is the caller's fault (reused code, wrong
     // client) → 502 (don't tell the client to retry blindly).
     setResponseStatus(event, exchangeRes.status >= 500 ? 503 : 502)
-    return callbackErrorPage('EXCHANGE-FAIL', `Bitrix24 refused the token exchange (${errCode}).`)
+    return callbackErrorPage('EXCHANGE-FAIL', `Bitrix24 refused the token exchange (${errCode}).`, pageOpts)
   }
 
   const ok = exchange as TokenExchangeOk
   const userIdNum = typeof ok.user_id === 'string' ? Number.parseInt(ok.user_id, 10) : ok.user_id
   if (!Number.isFinite(userIdNum) || userIdNum <= 0) {
     void logger.error('oauth.callback.exchange.fail', { reason: 'bad-user-id', httpStatus: exchangeRes.status })
-    setHtmlResponseHeaders(event)
+    setHtmlResponseHeaders(event, headerOpts)
     setResponseStatus(event, 502)
-    return callbackErrorPage('EXCHANGE-BAD-USER-ID', 'Bitrix24 returned an unexpected user_id.')
+    return callbackErrorPage('EXCHANGE-BAD-USER-ID', 'Bitrix24 returned an unexpected user_id.', pageOpts)
   }
 
   // Validate member_id before it becomes a SQLite primary key + log
@@ -345,9 +364,9 @@ export default defineEventHandler(async (event) => {
   // Bitrix24 member_id shape.
   if (typeof ok.member_id !== 'string' || !MEMBER_ID_RE.test(ok.member_id)) {
     void logger.error('oauth.callback.exchange.fail', { reason: 'bad-member-id', httpStatus: exchangeRes.status })
-    setHtmlResponseHeaders(event)
+    setHtmlResponseHeaders(event, headerOpts)
     setResponseStatus(event, 502)
-    return callbackErrorPage('EXCHANGE-BAD-MEMBER-ID', 'Bitrix24 returned an unexpected member_id.')
+    return callbackErrorPage('EXCHANGE-BAD-MEMBER-ID', 'Bitrix24 returned an unexpected member_id.', pageOpts)
   }
 
   // Defence-in-depth (issue #220): the token-exchange response carries a
@@ -365,9 +384,9 @@ export default defineEventHandler(async (event) => {
       expected: stateRow.portal,
       got: typeof ok.domain === 'string' ? ok.domain.slice(0, 253) : String(ok.domain).slice(0, 253),
     })
-    setHtmlResponseHeaders(event)
+    setHtmlResponseHeaders(event, headerOpts)
     setResponseStatus(event, 502)
-    return callbackErrorPage('EXCHANGE-DOMAIN-MISMATCH', 'Bitrix24 returned a portal domain that does not match the install.')
+    return callbackErrorPage('EXCHANGE-DOMAIN-MISMATCH', 'Bitrix24 returned a portal domain that does not match the install.', pageOpts)
   }
 
   const accessExpiresAt = ok.expires
@@ -397,6 +416,6 @@ export default defineEventHandler(async (event) => {
   // top of the handler; here we only need to flip on the HTML
   // content-type for the success body.
   deleteCookie(event, 'bx24_oauth_csrf', { path: '/api/oauth/' })
-  setHtmlResponseHeaders(event)
-  return bearerSuccessPage(minted.bearer, stateRow.portal)
+  setHtmlResponseHeaders(event, headerOpts)
+  return bearerSuccessPage(minted.bearer, stateRow.portal, pageOpts)
 })

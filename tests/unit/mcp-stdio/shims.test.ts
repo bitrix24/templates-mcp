@@ -29,6 +29,8 @@ interface ShimRuntimeConfig {
   bitrix24OauthScope: string
   bitrix24OauthDbDir: string
   bitrix24OauthAdminToken: string
+  bitrix24OauthBrandStyles: boolean
+  bitrix24OauthAppDisplayName: string
   dxtOauthClientId: string
   dxtOauthClientSecret: string
   dxtPortalHost: string
@@ -120,6 +122,9 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
       bitrix24OauthScope: '',
       bitrix24OauthDbDir: '',
       bitrix24OauthAdminToken: '',
+      // Operator-UX brand styling (#233) — HTTP-only, always disabled in stdio.
+      bitrix24OauthBrandStyles: false,
+      bitrix24OauthAppDisplayName: '',
       // DXT-OAuth keys (#207). Defaults when no env vars are set and the
       // bundle was built without `BITRIX24_DXT_OAUTH_CLIENT_ID` (so the
       // esbuild `define` substitutes the empty-string fallback). Pinned so
@@ -151,6 +156,9 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
       bitrix24OauthScope: '',
       bitrix24OauthDbDir: '',
       bitrix24OauthAdminToken: '',
+      // Operator-UX brand styling (#233) — HTTP-only, always disabled in stdio.
+      bitrix24OauthBrandStyles: false,
+      bitrix24OauthAppDisplayName: '',
       // DXT-OAuth keys (#207). Defaults when no env vars are set and the
       // bundle was built without `BITRIX24_DXT_OAUTH_CLIENT_ID` (so the
       // esbuild `define` substitutes the empty-string fallback). Pinned so

@@ -87,6 +87,9 @@ beforeEach(() => {
   runtimeConfig.bitrix24OauthClientId = 'app.cid.12345'
   runtimeConfig.bitrix24OauthClientSecret = 'super-secret'
   runtimeConfig.bitrix24OauthRedirectUrl = 'https://mcp.example.com/api/oauth/callback'
+  // Brand-styled landing (#233) — defaults match production (off).
+  runtimeConfig.bitrix24OauthBrandStyles = false
+  runtimeConfig.bitrix24OauthAppDisplayName = ''
   vi.resetModules()
 })
 afterEach(() => {
@@ -656,5 +659,73 @@ describe('/api/oauth/callback — anti-framing on every deny path (#221)', () =>
     expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'")
     const logged = loggerCalls.find(c => c.event === 'oauth.callback.state-row-corrupt')
     expect(logged).toBeDefined()
+  })
+})
+
+/**
+ * Operator-UX brand-styled landing (#233). Callback shares the
+ * `oauth-html.ts` helpers with `/install` — these tests pin that the
+ * callback's two HTML paths (success + error) participate in the same
+ * opt-in styling and unconditional hostname disclosure.
+ */
+describe('/api/oauth/callback — operator UX (#233)', () => {
+  it('strict-CSP baseline preserved: no style-src directive, no <style> in body when brand styles are off', async () => {
+    seedState()
+    fetchMock.mockResolvedValue(fakeJsonResponse(200, {
+      access_token: 'a', refresh_token: 'r', expires_in: 3600,
+      member_id: 'p', user_id: 1, scope: '', domain: 'acme.bitrix24.com',
+    }))
+    const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
+    expect(res.statusCode).toBe(200)
+    const csp = String(res.headers['content-security-policy'])
+    expect(csp).not.toContain('style-src')
+    expect(res.body).not.toContain('<style')
+  })
+
+  it('brand styles opt-in: success page CSP gets style-src nonce + body emits matching <style nonce>', async () => {
+    runtimeConfig.bitrix24OauthBrandStyles = true
+    seedState()
+    fetchMock.mockResolvedValue(fakeJsonResponse(200, {
+      access_token: 'a', refresh_token: 'r', expires_in: 3600,
+      member_id: 'p', user_id: 1, scope: '', domain: 'acme.bitrix24.com',
+    }))
+    const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
+    expect(res.statusCode).toBe(200)
+    const csp = String(res.headers['content-security-policy'])
+    expect(csp).toContain("default-src 'none'")
+    expect(csp).not.toContain("'unsafe-inline'")
+    const m = csp.match(/style-src 'nonce-([A-Za-z0-9+/=]+)'/)
+    expect(m).not.toBeNull()
+    const nonce = m![1]!
+    expect(res.body).toContain(`<style nonce="${nonce}">`)
+    runtimeConfig.bitrix24OauthBrandStyles = false
+  })
+
+  it('brand styles opt-in: error page (EXCHANGE-FAIL) also carries the nonce + <style> tag', async () => {
+    runtimeConfig.bitrix24OauthBrandStyles = true
+    seedState()
+    fetchMock.mockResolvedValue(fakeJsonResponse(400, { error: 'invalid_grant' }))
+    const res = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
+    expect(res.body).toContain('EXCHANGE-FAIL')
+    const csp = String(res.headers['content-security-policy'])
+    const m = csp.match(/style-src 'nonce-([A-Za-z0-9+/=]+)'/)
+    expect(m, 'error page should also carry the nonce so a styled error is rendered uniformly with success').not.toBeNull()
+    expect(res.body).toContain(`<style nonce="${m![1]!}">`)
+    runtimeConfig.bitrix24OauthBrandStyles = false
+  })
+
+  it('anti-phishing hostname disclosure is rendered on the success page and on error pages, regardless of the brand-styles flag', async () => {
+    seedState()
+    fetchMock.mockResolvedValue(fakeJsonResponse(200, {
+      access_token: 'a', refresh_token: 'r', expires_in: 3600,
+      member_id: 'p', user_id: 1, scope: '', domain: 'acme.bitrix24.com',
+    }))
+    const ok = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
+    expect(ok.body).toContain('You are connecting to:')
+
+    seedState()
+    fetchMock.mockResolvedValue(fakeJsonResponse(400, { error: 'invalid_grant' }))
+    const err = await callCallback({ code: 'c', state: '0'.repeat(64), cookie: '1'.repeat(64) })
+    expect(err.body).toContain('You are connecting to:')
   })
 })

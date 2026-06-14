@@ -41,6 +41,10 @@ interface RuntimeConfig {
   bitrix24OauthScope: string
   bitrix24OauthDbDir: string
   bitrix24OauthAdminToken: string
+  // Operator-UX brand-styled landing (#233) — HTTP-only, hard-coded
+  // disabled in stdio (no /install or /callback HTML to style).
+  bitrix24OauthBrandStyles: boolean
+  bitrix24OauthAppDisplayName: string
   // DXT-specific OAuth surface (#207, OOB code-paste). These are read by
   // stdio-only modules (`mcp-stdio/oauth-*.ts`) and are never used by HTTP-
   // server code. `dxtOauthClientId` / `_ClientSecret` are baked at build
@@ -90,6 +94,9 @@ const runtimeConfig: RuntimeConfig = {
   bitrix24OauthScope: '',
   bitrix24OauthDbDir: '',
   bitrix24OauthAdminToken: '',
+  // Operator-UX brand-styled landing — HTTP-only feature.
+  bitrix24OauthBrandStyles: false,
+  bitrix24OauthAppDisplayName: '',
   // DXT-OAuth surface. `__DXT_*__` is replaced literally by esbuild at build
   // time. The `typeof` guard keeps the shim importable in `vitest`/`pnpm dev`
   // (where esbuild's `define` hasn't run and the identifier is undefined) —

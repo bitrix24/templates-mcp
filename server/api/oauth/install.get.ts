@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { createError, defineEventHandler, getQuery, getRequestHeader, getRequestIP, sendRedirect, setCookie, setResponseStatus } from 'h3'
+import { createError, defineEventHandler, getQuery, getRequestHeader, getRequestIP, getRequestURL, sendRedirect, setCookie, setResponseStatus } from 'h3'
 import type { H3Event } from 'h3'
 import { useLogger } from '~/server/utils/logger'
-import { htmlEscape, setAntiFramingHeaders, setHtmlResponseHeaders } from '~/server/utils/oauth-html'
+import { generateCspNonce, htmlEscape, renderBrandStylesTag, renderHostnameDisclosure, setAntiFramingHeaders, setHtmlResponseHeaders } from '~/server/utils/oauth-html'
 import { PORTAL_ALLOW_LIST_RE } from '~/server/utils/portal-validation'
 import { useTokenStore } from '~/server/utils/token-store'
 
@@ -116,7 +116,16 @@ function wantsHtml(event: H3Event): boolean {
  * follow-up: optional `style-src` carve-out for an in-page brand — see
  * the open issue linked from `docs/OAUTH-DESIGN.md` §3.)
  */
-function installLandingPage(clientId: string, scope: string): string {
+interface LandingOpts {
+  /** When set, emits brand styles under this nonce + uses display name in heading (#233). */
+  readonly cspNonce: string | undefined
+  /** Operator-supplied via `NUXT_BITRIX24_OAUTH_APP_DISPLAY_NAME`; replaces the default heading when non-empty. */
+  readonly displayName: string
+  /** Server's own hostname for the anti-phishing disclosure. Always rendered, escape applied in the helper. */
+  readonly host: string
+}
+
+function installLandingPage(clientId: string, scope: string, opts: LandingOpts): string {
   // Strip the regex anchors for the HTML pattern attribute. The source
   // is `^…$`; HTML5 `pattern` is implicitly anchored so we drop both.
   // `safePattern` is interpolated into a DOUBLE-quoted attribute and
@@ -130,8 +139,19 @@ function installLandingPage(clientId: string, scope: string): string {
     .filter(s => s.length > 0)
     .map(s => `<li><code>${htmlEscape(s)}</code></li>`)
     .join('')
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Bitrix24 MCP — Connect your portal</title></head><body>
-<h1>Connect your Bitrix24 portal</h1>
+  // Fork branding (#233): if `NUXT_BITRIX24_OAUTH_APP_DISPLAY_NAME` is
+  // set, the heading reflects it ("Connect your Acme Bitrix24"). The
+  // fallback "Connect your Bitrix24 portal" matches the v0.2.0 wording.
+  const safeDisplayName = opts.displayName.trim() ? htmlEscape(opts.displayName.trim()) : ''
+  const heading = safeDisplayName
+    ? `Connect your ${safeDisplayName}`
+    : 'Connect your Bitrix24 portal'
+  const identityLine = safeDisplayName
+    ? `This server identifies as <strong>${safeDisplayName}</strong> (Bitrix24 application <code>${safeClientId}</code>).`
+    : `This server identifies as Bitrix24 application <code>${safeClientId}</code>.`
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Bitrix24 MCP — Connect your portal</title>${renderBrandStylesTag(opts.cspNonce)}</head><body>
+<h1>${heading}</h1>
+${renderHostnameDisclosure(opts.host)}
 <p>This MCP server will act on your behalf in your Bitrix24 portal. You'll be redirected to your portal to confirm, then back to this server to copy a Bearer token into your MCP client.</p>
 <form action="/api/oauth/install" method="get" autocomplete="off">
 <label for="portal">Portal hostname</label>
@@ -146,7 +166,7 @@ function installLandingPage(clientId: string, scope: string): string {
 </ol>
 <h2>Scopes the server will request</h2>
 <ul>${scopeItems}</ul>
-<p><small>This server identifies as Bitrix24 application <code>${safeClientId}</code>. If that's not the application your operator told you to expect, stop and check with them before continuing.</small></p>
+<p><small>${identityLine} If that's not what your operator told you to expect, stop and check with them before continuing.</small></p>
 </body></html>`
 }
 
@@ -161,14 +181,15 @@ function installLandingPage(clientId: string, scope: string): string {
  * the user can retype) and clear it on operator-recoverable ones
  * (FLAG-OFF, NOT-CONFIGURED — retrying loops on the same error).
  */
-function installErrorPage(errorCode: string, detail: string, retry: boolean): string {
+function installErrorPage(errorCode: string, detail: string, retry: boolean, opts: { cspNonce: string | undefined, host: string }): string {
   const safeCode = htmlEscape(errorCode)
   const safeDetail = htmlEscape(detail)
   const retryLink = retry
     ? '<p><a href="/api/oauth/install">&larr; Start over</a></p>'
     : '<p>This needs an operator to fix on the server side — contact them with the error code above.</p>'
-  return `<!doctype html><html><head><meta charset="utf-8"><title>OAuth install failed</title></head><body>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>OAuth install failed</title>${renderBrandStylesTag(opts.cspNonce)}</head><body>
 <h1>OAuth install failed</h1>
+${renderHostnameDisclosure(opts.host)}
 <p>Error code: <code>${safeCode}</code></p>
 <p>${safeDetail}</p>
 ${retryLink}
@@ -177,6 +198,28 @@ ${retryLink}
 
 export default defineEventHandler(async (event) => {
   const logger = useLogger()
+  const wantHtml = wantsHtml(event)
+  const {
+    bitrix24OauthEnabled,
+    bitrix24OauthClientId,
+    bitrix24OauthRedirectUrl,
+    bitrix24OauthScope,
+    bitrix24OauthBrandStyles,
+    bitrix24OauthAppDisplayName,
+  } = useRuntimeConfig()
+  // Brand-styled landing (#233): generate a 128-bit nonce up-front so
+  // the SAME value lands in (a) the CSP `style-src 'nonce-X'`
+  // directive set on EVERY response path (302 / landing form / HTML
+  // deny pages / JSON `throw createError`), and (b) the
+  // `<style nonce="X">` tag emitted only on HTML render paths. The
+  // strict baseline (`default-src 'none'; frame-ancestors 'none'`) is
+  // preserved either way — brand styles are opt-in and external scripts
+  // / inline JS / external CSS stay blocked.
+  const cspNonce = bitrix24OauthBrandStyles ? generateCspNonce() : undefined
+  const host = getRequestURL(event).host
+  const displayName = String(bitrix24OauthAppDisplayName ?? '')
+  const headerOpts = { formAction: INSTALL_PATH, cspNonce }
+  const pageOpts = { cspNonce, host }
   // Pin anti-framing + no-cache on EVERY path: 302 success, the landing
   // form, HTML deny pages, and the JSON `throw createError` throws. h3
   // preserves headers across throws, so the JSON deny responses carry
@@ -184,14 +227,7 @@ export default defineEventHandler(async (event) => {
   // `form-action` directive is pinned to the install path itself —
   // even on JSON deny paths it's harmless (no <form> in JSON bodies)
   // and tightens the uniform CSP without per-branch divergence.
-  setAntiFramingHeaders(event, { formAction: INSTALL_PATH })
-  const wantHtml = wantsHtml(event)
-  const {
-    bitrix24OauthEnabled,
-    bitrix24OauthClientId,
-    bitrix24OauthRedirectUrl,
-    bitrix24OauthScope,
-  } = useRuntimeConfig()
+  setAntiFramingHeaders(event, headerOpts)
 
   // Step 1: flag gate. Even browsers get this — the install link should
   // not be reachable on a webhook-only deploy. The HTML page tells them
@@ -199,12 +235,13 @@ export default defineEventHandler(async (event) => {
   if (!bitrix24OauthEnabled) {
     void logger.warning('oauth.install.deny.flag-off', { reason: 'OAuth disabled at runtime' })
     if (wantHtml) {
-      setHtmlResponseHeaders(event, { formAction: INSTALL_PATH })
+      setHtmlResponseHeaders(event, headerOpts)
       setResponseStatus(event, 503)
       return installErrorPage(
         'FLAG-OFF',
         'OAuth installation is disabled on this server. The operator needs to enable it before anyone can install.',
         false,
+        pageOpts,
       )
     }
     throw createError({
@@ -226,12 +263,13 @@ export default defineEventHandler(async (event) => {
       hasRedirectUrl: !!redirectUrl,
     })
     if (wantHtml) {
-      setHtmlResponseHeaders(event, { formAction: INSTALL_PATH })
+      setHtmlResponseHeaders(event, headerOpts)
       setResponseStatus(event, 503)
       return installErrorPage(
         'NOT-CONFIGURED',
         'The operator enabled OAuth but did not finish configuring it. Required environment variables are missing on the server.',
         false,
+        pageOpts,
       )
     }
     throw createError({
@@ -265,8 +303,8 @@ export default defineEventHandler(async (event) => {
       clientId,
       ip: getRequestIP(event) ?? '<unknown>',
     })
-    setHtmlResponseHeaders(event, { formAction: INSTALL_PATH })
-    return installLandingPage(clientId, scope)
+    setHtmlResponseHeaders(event, headerOpts)
+    return installLandingPage(clientId, scope, { cspNonce, displayName, host })
   }
 
   // Log a SANITISED, CAPPED copy of the raw value (issue #221): `?portal=`
@@ -291,12 +329,13 @@ export default defineEventHandler(async (event) => {
   if (!portal || !PORTAL_ALLOW_LIST_RE.test(portal)) {
     void logger.warning('oauth.install.deny.portal-format', { portal: portalForLog })
     if (wantHtml) {
-      setHtmlResponseHeaders(event, { formAction: INSTALL_PATH })
+      setHtmlResponseHeaders(event, headerOpts)
       setResponseStatus(event, 400)
       return installErrorPage(
         'PORTAL-FORMAT',
         'The portal hostname you entered is not in the accepted format. It must look like "acme.bitrix24.com" (TLDs allowed: com, ru, eu, de, by, kz, ua).',
         true,
+        pageOpts,
       )
     }
     throw createError({

@@ -46,6 +46,17 @@ export default defineNuxtConfig({
     // NEVER fall back to `bitrix24OauthEnabled` or `mcpAuthToken` here —
     // the privilege levels differ (agent token vs operator token).
     bitrix24OauthAdminToken: '',
+    // Operator-UX brand-styled landing (#233). Both default empty/false
+    // → identical to v0.2.0 strict-CSP unstyled output. When
+    // `bitrix24OauthBrandStyles=true` the install + callback HTML pages
+    // ship a minimal inline stylesheet under a per-response CSP nonce
+    // (`style-src 'nonce-<base64>'`) — the strict baseline (`default-src
+    // 'none'; frame-ancestors 'none'`) is preserved for everything else.
+    // `bitrix24OauthAppDisplayName` lets fork operators rebrand the
+    // landing heading from "Connect your Bitrix24 portal" to e.g.
+    // "Connect your Acme Bitrix24" without forking the template.
+    bitrix24OauthBrandStyles: false,
+    bitrix24OauthAppDisplayName: '',
     // DXT-only OAuth surface (#207, OOB code-paste). Always empty on the
     // HTTP server — the stdio shim populates them from build-time defines
     // and `user_config`. Declared here so the `runtimeConfig` type

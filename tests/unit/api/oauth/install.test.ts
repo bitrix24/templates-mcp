@@ -77,6 +77,11 @@ beforeEach(() => {
   runtimeConfig.bitrix24OauthClientId = 'app.cid.12345'
   runtimeConfig.bitrix24OauthRedirectUrl = 'https://mcp.example.com/api/oauth/callback'
   runtimeConfig.bitrix24OauthScope = 'user,task'
+  // Brand-styled landing (#233) — defaults match production (off) so
+  // the strict-CSP baseline tests keep their meaning. Individual cases
+  // flip these locally and restore.
+  runtimeConfig.bitrix24OauthBrandStyles = false
+  runtimeConfig.bitrix24OauthAppDisplayName = ''
   vi.resetModules()
 })
 
@@ -513,6 +518,77 @@ describe('/api/oauth/install — operator UX (browser landing form)', () => {
     expect(csp).toContain("default-src 'none'")
     expect(csp).toContain("frame-ancestors 'none'")
     expect(csp).toContain('form-action /api/oauth/install')
+  })
+
+  it('strict-CSP baseline: NO style-src directive when brand styles are off (the v0.2.0 contract)', async () => {
+    const res = await callHandler({}, { acceptHtml: true })
+    const csp = String(res.headers['content-security-policy'])
+    expect(csp).not.toContain('style-src')
+    expect(res.body).not.toContain('<style')
+  })
+
+  it('brand styles opt-in (#233): CSP gets style-src nonce + body emits <style nonce> with the SAME value', async () => {
+    runtimeConfig.bitrix24OauthBrandStyles = true
+    const res = await callHandler({}, { acceptHtml: true })
+    const csp = String(res.headers['content-security-policy'])
+    // Strict baseline preserved: `default-src 'none'` still there, no
+    // 'unsafe-inline', no relaxed script-src.
+    expect(csp).toContain("default-src 'none'")
+    expect(csp).not.toContain("'unsafe-inline'")
+    // The added directive carries a fresh nonce. Capture it and pin
+    // that the same value appears in the rendered `<style nonce="…">`
+    // — a mismatch would silently render the page unstyled in a real
+    // browser, which is exactly what this test catches.
+    const m = csp.match(/style-src 'nonce-([A-Za-z0-9+/=]+)'/)
+    expect(m, 'CSP should add a style-src nonce directive').not.toBeNull()
+    const nonce = m![1]!
+    expect(nonce.length).toBeGreaterThanOrEqual(16) // base64 of 16 random bytes is >=22 chars
+    expect(res.body).toContain(`<style nonce="${nonce}">`)
+    // The <script> still must NOT appear (script-src was never relaxed).
+    expect(res.body).not.toMatch(/<script/i)
+    runtimeConfig.bitrix24OauthBrandStyles = false
+  })
+
+  it('brand-styles per-response nonce is fresh: two GETs produce different nonces (no static literal regression)', async () => {
+    runtimeConfig.bitrix24OauthBrandStyles = true
+    const a = await callHandler({}, { acceptHtml: true })
+    const b = await callHandler({}, { acceptHtml: true })
+    const nonceA = String(a.headers['content-security-policy']).match(/style-src 'nonce-([A-Za-z0-9+/=]+)'/)?.[1]
+    const nonceB = String(b.headers['content-security-policy']).match(/style-src 'nonce-([A-Za-z0-9+/=]+)'/)?.[1]
+    expect(nonceA).toBeTruthy()
+    expect(nonceB).toBeTruthy()
+    expect(nonceA).not.toBe(nonceB)
+    runtimeConfig.bitrix24OauthBrandStyles = false
+  })
+
+  it('anti-phishing hostname disclosure is rendered on EVERY landing — even without brand styles', async () => {
+    // The Host the test app sees is the default the h3 IncomingMessage
+    // produces; we don't pin a specific literal here because that's
+    // brittle, just that SOMETHING resembling the disclosure block is
+    // emitted and the literal "You are connecting to:" anchor is there.
+    const res = await callHandler({}, { acceptHtml: true })
+    expect(res.body).toContain('You are connecting to:')
+  })
+
+  it('fork branding via NUXT_BITRIX24_OAUTH_APP_DISPLAY_NAME: heading + identity line both reflect the override; defaults restored when empty', async () => {
+    runtimeConfig.bitrix24OauthAppDisplayName = 'Acme Bitrix24'
+    let res = await callHandler({}, { acceptHtml: true })
+    expect(res.body).toContain('<h1>Connect your Acme Bitrix24</h1>')
+    expect(res.body).toContain('<strong>Acme Bitrix24</strong>')
+
+    runtimeConfig.bitrix24OauthAppDisplayName = ''
+    res = await callHandler({}, { acceptHtml: true })
+    expect(res.body).toContain('<h1>Connect your Bitrix24 portal</h1>')
+    // The identity line falls back to "Bitrix24 application <clientId>"
+    expect(res.body).toContain('This server identifies as Bitrix24 application')
+  })
+
+  it('display name is HTML-escaped — a hostile env value cannot inject script tags', async () => {
+    runtimeConfig.bitrix24OauthAppDisplayName = '<script>alert(1)</script>'
+    const res = await callHandler({}, { acceptHtml: true })
+    expect(res.body).not.toContain('<script>alert(1)</script>')
+    expect(res.body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    runtimeConfig.bitrix24OauthAppDisplayName = ''
   })
 
   it('FLAG-OFF + Accept: text/html renders the HTML 503 (no retry link — operator-fixable, not user-fixable)', async () => {
