@@ -136,5 +136,13 @@ The first tagged release. Cuts a baseline anchor that ships every tool, every co
 - Pre-1.0 — the public contract (tool names, input schemas, response shapes) may still shift between minor versions (e.g. `0.1` → `0.2` here ships breaking tool renames + a tool-error-protocol change; see the relevant **BREAKING** bullets above). A `1.0` cut will only happen once the contract has stabilised across a pilot cycle.
 
 [Unreleased]: https://github.com/bitrix24/templates-mcp/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/bitrix24/templates-mcp/compare/v0.1.0-alpha.1...v0.2.0
-[0.1.0-alpha.1]: https://github.com/bitrix24/templates-mcp/releases/tag/v0.1.0-alpha.1
+[0.2.0]: https://github.com/bitrix24/templates-mcp/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/bitrix24/templates-mcp/releases/tag/v0.1.1
+[0.1.0]: https://github.com/bitrix24/templates-mcp/releases/tag/v0.1.0
+
+<!-- NOTE: there is no `[0.1.0-alpha.1]` link target — that label was used as a
+     CHANGELOG section heading on 2026-05-19, but no `v0.1.0-alpha.1` git tag or
+     GitHub Release was ever cut, so any compare/release URL pointing at it 404s.
+     The first real tag is `v0.1.0` (2026-05-30); see the Notes-on-history
+     bookkeeping block at the top of `[0.2.0]` for the reconstruction. -->
+
