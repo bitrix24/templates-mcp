@@ -98,6 +98,9 @@ OAuth multi-tenant (opt-in, landed and off by default — webhook-only manual QA
 `NUXT_BITRIX24_OAUTH_DB_DIR` (directory that holds the SQLite token store; default `/data`, filename `oauth.sqlite` is fixed in code),
 `NUXT_BITRIX24_OAUTH_ADMIN_TOKEN` (operator-only token gating `GET /api/oauth/_health`; deliberately separate from `NUXT_MCP_AUTH_TOKEN`. Leave empty for localhost-only access via nginx allow/deny; the route fails closed (`503 NOT-CONFIGURED`) for a non-localhost request when unset. Once set, the Bearer is required uniformly — even a localhost request needs it).
 
+Docker-only (not consumed by the Nuxt server, no `process.env` exposure under Vitest because `envPrefix` excludes it):
+`COMPOSE_PROJECT_NAME` (#189; default `bx24-mcp` in `.env.example`. Prefixes both the named volume `bx24_data` and the parameterised `container_name: ${COMPOSE_PROJECT_NAME:-bx24-mcp}-app`. Set distinct values per environment to run multiple stacks on one host. **⚠ Upgrading from a pre-#189 stack with OAuth data**: orphan-ing the volume silently loses `oauth.sqlite` AND the audit log — see CHANGELOG and `docs/RUNBOOK.md` § "Container naming after #189" for the migration recipe).
+
 ### 4. On the Bitrix24 portal — seed upfront
 
 Derive this list from the generated checks (Step 2): a check needs pre-existing data when it can't create that data itself (a record owned by *someone else*, an over-cap volume, a pre-known id). Example seeds from a whole-project run:
