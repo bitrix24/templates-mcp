@@ -172,16 +172,17 @@ Infrastructure:
 - **Client-side rate limiting** on Bitrix24 (2 req/sec, queue) — ✅ **provided by the SDK out of the box**. `@bitrix24/b24jssdk` 1.1+ ships `RestrictionManager` (leaky-bucket, default burst 50 / drain 2 req/sec, adaptive delay on `QUERY_LIMIT_EXCEEDED`, retry × 3 with backoff), initialised in `B24Hook`'s constructor via `ParamsFactory.getDefault()`. No project-side wrapper. Configurable per-tariff (`getEnterprise`, `getBatchProcessing`, `getRealtime`). Issue #7's bulk input on the 8 mutation tools shipped on top of this.
   - **Temporary local fix awaiting an SDK update** (issue #127, upstream [`bitrix24/b24jssdk#46`](https://github.com/bitrix24/b24jssdk/issues/46)): the `RestrictionManager` retries the permanent tasks rejection `1048582` ("action not available", returned on invalid lifecycle transitions like pausing an already-paused task) 3× before failing, instead of failing fast. As a stopgap, `server/utils/bitrix24.ts` registers `1048582` as a `hardErrorCode` so it is treated as non-retryable. **Once the SDK ships the upstream fix (#46), remove this local override** and rely on the SDK's built-in classification.
 
-### Post-pilot expansion (after the pilot launch — incremental, via the new-tool process)
+### Bitrix24 surface expansion (post-release — incremental, via the new-tool process)
 
-Once the pilot is in production, the toolset grows entity by entity rather than as one big committed block. Every addition follows [`docs/ADDING-TOOLS.md`](./docs/ADDING-TOOLS.md) (mirror for agents: [`skills/manage-bx24-template-mcp/adding-tools.md`](./skills/manage-bx24-template-mcp/adding-tools.md)) — one tool per PR with Zod schema, unit tests, eval cases, and a description tightened against the persona walk.
+**Out of scope until after the `v0.1.0` pilot tag.** The pre-release roadmap intentionally stops at the tasks domain — see resolved question #7 below. Once `v0.1.0` is in production and the pilot is generating signal, the toolset grows entity by entity rather than as one big committed block. Every addition follows [`docs/ADDING-TOOLS.md`](./docs/ADDING-TOOLS.md) (mirror for agents: [`skills/manage-bx24-template-mcp/adding-tools.md`](./skills/manage-bx24-template-mcp/adding-tools.md)) — one tool per PR with Zod schema, unit tests, eval cases, and a description tightened against the persona walk.
 
-CRM coverage we expect to ship this way:
+First expansion zone is CRM:
 
 - **Deals**: create, list, move through stages
 - **Contacts**: create, list, search by phone/email
+- Further CRM entities (companies, leads, invoices, …) when the pilot asks for them
 
-No fixed delivery order — driven by pilot feedback and `bx24mcp_submit_feedback` signal. Further CRM entities (companies, leads, invoices, etc.) come in the same way when demand appears.
+After CRM, the same process covers whatever Bitrix24 surface area `bx24mcp_submit_feedback` signal points at — no fixed delivery order, demand-driven only.
 
 ### Phase 3
 
@@ -830,8 +831,9 @@ Sections:
 |---|---|---|
 | MVP | 5 base tools + `bx24mcp_submit_feedback`, webhook auth, HTTP transport, Inspector, Docker, nginx-proxy, GH Actions, Renovate, docs, tests | Claude.ai creates/reads tasks in prod; agent can submit feedback as an issue; Renovate is active |
 | Phase 2 | Task comments and checklists, rate limiting, resources, prompts, caching. Starts **immediately** after MVP | Infrastructure ready for entity expansion, error rate < 1% over 100 calls |
-| Post-pilot expansion | CRM (Deals, Contacts, …) added incrementally via [`docs/ADDING-TOOLS.md`](./docs/ADDING-TOOLS.md) — one tool per PR, driven by pilot feedback | All major Bitrix24 entities reachable through tools shipped via the new-tool process |
+| Pilot release (`v0.1.0`) | Cut the tag, run on the production portal, collect agent feedback. **Scope locked to the tasks domain** — no new Bitrix24 surfaces between here and the tag | Tag pushed; CI deploy green; `bx24mcp_submit_feedback` issues start flowing |
 | Phase 3 | OAuth, multi-tenant, batch, Code Mode | Multiple users connect their own portals, LLM orchestrates via JS code |
+| Bitrix24 surface expansion | CRM first (Deals, Contacts, …), then whatever the pilot signal asks for. One tool per PR via [`docs/ADDING-TOOLS.md`](./docs/ADDING-TOOLS.md) | All major Bitrix24 entities reachable through tools shipped via the new-tool process |
 
 ## Resolved open questions
 
@@ -841,6 +843,7 @@ Sections:
 4. **Phase 2 starts immediately** after MVP, no waiting for feedback
 5. **Eval tests on DeepSeek** (budget approved), OpenAI-compatible client
 6. **`@nuxtjs/mcp-toolkit`** is the foundation — 0.15.x stability accepted as a deliberate risk
+7. **Release before expansion** — the pre-release scope is **locked to the tasks domain**. CRM and any broader Bitrix24 surface area land **after** the `v0.1.0` pilot tag, one tool per PR, demand-driven by `bx24mcp_submit_feedback`. The pre-release roadmap stops at tasks; the `Pilot release` milestone row above is the cut line.
 
 ---
 
