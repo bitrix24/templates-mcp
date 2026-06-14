@@ -8,7 +8,7 @@
 # Each `has` / `hasnt` check fails fast with a one-line reason if the
 # anchor drifts. Exit code 0 == ALL GREEN.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 pass=0
 fail=0
@@ -82,7 +82,7 @@ has tests/unit/middleware/oauth-rate-limit.test.ts 'mixing landing renders and r
 echo
 
 echo "4) install.get.ts JSDoc + CSP carve-out tightened"
-has server/api/oauth/install.get.ts 'not-configured` (ERROR' 'JSDoc says ERROR for not-configured (#232 docs I4a)'
+has server/api/oauth/install.get.ts 'ERROR — clientId/redirect missing' 'JSDoc says ERROR for not-configured (#232 docs I4a)'
 has server/api/oauth/install.get.ts 'INSTALL_PATH'                          'INSTALL_PATH constant used'
 has server/api/oauth/install.get.ts "formAction: INSTALL_PATH"               'form-action sized down from self to install path'
 hasnt server/api/oauth/install.get.ts "form-action 'self'"                  'no form-action self in install handler'
@@ -90,13 +90,13 @@ echo
 
 echo "5) Landing event payload now includes ip (#232 docs I4b)"
 has server/api/oauth/install.get.ts "ip: getRequestIP(event)"                'landing log carries ip'
-has docs/OAUTH-DESIGN.md 'Carries `ip` and `clientId`'                   '§11 docs the new payload field'
+has docs/OAUTH-DESIGN.md 'marketplace app id — public, not a secret'    '§11 docs the new payload field'
 has docs/OAUTH-DESIGN.md '**excluded from the per-IP rate-limit**'           '§11 docs the rate-limit skip'
 echo
 
 echo "6) Headers contract: §3 + §6 docs reflect that JSON throws ALSO carry anti-framing (#232 docs I4c)"
 has docs/OAUTH-DESIGN.md 'byte-identical JSON **body and status code**' '§3 calls out the body+status guarantee'
-has docs/OAUTH-DESIGN.md 'X-Frame-Options: DENY` and a strict CSP' '§3 mentions the extra response headers'
+has docs/OAUTH-DESIGN.md 'and a strict CSP, even on JSON throws' '§3 mentions the extra response headers'
 has docs/DEPLOYMENT.md   'now shows a small HTML landing form instead of redirecting' 'DEPLOYMENT step 5 warns operator'
 has docs/SECURITY.md     'form-action /api/oauth/install'             'SECURITY notes the tightened directive'
 echo

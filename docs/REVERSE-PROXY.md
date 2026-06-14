@@ -1,6 +1,6 @@
 # Reverse-proxy variants for production
 
-`Last reviewed: 2026-06-13`
+`Last reviewed: 2026-06-14`
 
 The shipped `docker-compose.yml` assumes the [`nginx-proxy`](https://github.com/nginx-proxy/nginx-proxy) + [`acme-companion`](https://github.com/nginx-proxy/acme-companion) duo. That works, but it's a **specific shop's taste** — not the default in most regions:
 

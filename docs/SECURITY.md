@@ -1,6 +1,6 @@
 # Security policy
 
-`Last reviewed: 2026-06-13`
+`Last reviewed: 2026-06-14`
 
 Policy and process. The dependency-level audit (what the SDK logs, what the redactor catches) lives in [`SECURITY-AUDIT.md`](./SECURITY-AUDIT.md).
 

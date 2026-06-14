@@ -1,6 +1,6 @@
 # Issue scaffold
 
-`Last reviewed: 2026-06-13`
+`Last reviewed: 2026-06-14`
 
 Canonical English source for the non-block parts of the tracking issue: preamble, the "how to work" section (GitHub Convert-to-issue flow), the preparation/access section, and the placeholder data table. Render these into the test repo at issue-creation time. Operator-facing phrasing may be translated into the chosen language; structure and labels stay English.
 

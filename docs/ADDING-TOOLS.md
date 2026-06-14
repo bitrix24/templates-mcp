@@ -1,6 +1,6 @@
 # Adding a tool
 
-`Last reviewed: 2026-06-13`
+`Last reviewed: 2026-06-14`
 
 A human-facing walkthrough for forking this template and adding your own Bitrix24
 MCP tool. It covers the mental model, where files go, the two registrations you

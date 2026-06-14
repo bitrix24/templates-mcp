@@ -1,6 +1,6 @@
 # Deployment
 
-`Last reviewed: 2026-06-13`
+`Last reviewed: 2026-06-14`
 
 How this MCP server ships to production: a Docker image built and pushed by GitHub Actions on a `v*` tag, then pulled onto a single Linux host where it runs under `docker compose` behind a reverse proxy that terminates TLS. There is no PaaS / serverless path — the server is a long-lived Nitro process that keeps the Bitrix24 `RestrictionManager` state warm, so it wants a real container, not a function.
 

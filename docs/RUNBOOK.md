@@ -1,6 +1,6 @@
 # Runbook
 
-`Last reviewed: 2026-06-13`
+`Last reviewed: 2026-06-14`
 
 > **Placeholders:** every literal `prod.example.com` below is your production host — substitute your own domain. Every `/opt/bx24-template-mcp` is your deploy directory (the default shown; wherever you cloned the compose stack). These are host-side values only — CI holds no `PROD_HOST` / `DEPLOY_PATH` variables.
 

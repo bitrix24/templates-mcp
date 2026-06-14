@@ -1,6 +1,6 @@
 # Security audit
 
-`Last reviewed: 2026-06-13`
+`Last reviewed: 2026-06-14`
 
 Track-record of security audits performed against the dependencies and surfaces
 that handle credentials in this MCP. Update on every dependency bump that
