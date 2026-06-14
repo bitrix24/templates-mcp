@@ -20,6 +20,12 @@ import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
  * calling this — see the `STATE-ROW-CORRUPT` guard there. This helper does
  * not special-case empty input because some callers legitimately compare
  * empty-vs-nonempty (which returns false on the length check anyway).
+ *
+ * SCOPE: use this ONLY for fixed-length tokens whose length is a public
+ * constant (Bearers, admin tokens, CSRF nonces). The early length check leaks
+ * the operand length — harmless for those, but a leak for a variable-length
+ * secret (e.g. a user password). Do NOT use this for variable-length secrets;
+ * reach for a constant-time primitive that pads instead of short-circuiting.
  */
 export function timingSafeEqualStr(a: string, b: string): boolean {
   if (a.length !== b.length) return false

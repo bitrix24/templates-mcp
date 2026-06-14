@@ -131,12 +131,15 @@ describe('b24_user_find', () => {
 
   it('throws INVALID_INPUT (not a soft message) and does not call Bitrix24 when no filter is supplied', async () => {
     // Semantic-validation failures throw so the agent sees isError:true,
-    // consistent with every other tool (issue #222).
-    await expect(tool.handler({})).rejects.toMatchObject({
+    // consistent with every other tool (issue #222). Reject ONE invocation's
+    // promise twice — a rejected promise can be awaited repeatedly — so we
+    // don't double-invoke the handler.
+    const rejection = tool.handler({})
+    await expect(rejection).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: Bitrix24ErrorCode.INVALID_INPUT,
     })
-    await expect(tool.handler({})).rejects.toThrow(/Provide at least one of/i)
+    await expect(rejection).rejects.toThrow(/Provide at least one of/i)
     expect(fake.v2Call).not.toHaveBeenCalled()
   })
 
@@ -167,11 +170,12 @@ describe('b24_user_find', () => {
   })
 
   it('throws INVALID_INPUT when free-text query is mixed with structured filters', async () => {
-    await expect(tool.handler({ query: 'Игорь', lastName: 'Шевченко' })).rejects.toMatchObject({
+    const rejection = tool.handler({ query: 'Игорь', lastName: 'Шевченко' })
+    await expect(rejection).rejects.toMatchObject({
       name: 'Bitrix24ToolError',
       code: Bitrix24ErrorCode.INVALID_INPUT,
     })
-    await expect(tool.handler({ query: 'Игорь', lastName: 'Шевченко' })).rejects.toThrow(/Use either `query`/i)
+    await expect(rejection).rejects.toThrow(/Use either `query`/i)
     expect(fake.v2Call).not.toHaveBeenCalled()
   })
 

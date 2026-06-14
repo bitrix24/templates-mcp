@@ -126,13 +126,20 @@ jobs:
   #   - zizmor: security-focused — template injection across all event
   #     paths and `vars.*` / `secrets.*`, artifact poisoning, dangerous
   #     triggers, excessive permissions, secrets exposure.
-  # See #175. Acceptance (concrete): flip `continue-on-error: false` and
-  # remove the regex guard in the `lint` job once issue #178 closes (all
-  # zizmor findings either fixed or annotated) AND no new findings have
-  # appeared on `main` for one release cycle (≥ 2 weeks of merged PRs).
+  # See #175. Status (2026-06-14): zizmor is now ENFORCING (its
+  # `continue-on-error` is gone — see the job below). The original acceptance
+  # note said "flip once #178 closes AND no new findings on `main` for ≥2
+  # weeks"; that grace period was deliberately WAIVED to land the gate before
+  # the v0.1.0 cut — the findings ARE triaged (#178) and the pinned + offline
+  # config makes the gate deterministic, so the soak window bought little. The
+  # `lint`-job regex guard is KEPT (cheap defence-in-depth; not removed).
+  # actionlint stays advisory until its own findings are triaged (#179) — the
+  # asymmetry is intentional: security findings block, syntax findings warn.
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
+    # Advisory (unlike zizmor below): actionlint's first-run findings aren't
+    # triaged yet (#179). Syntax/permission issues warn but don't block.
     continue-on-error: true
     permissions:
       # Match `zizmor` job below: explicit read-only.
@@ -180,11 +187,19 @@ jobs:
           persist-credentials: false
       - uses: zizmorcore/zizmor-action@e639db99335bc9038abc0e066dfcd72e23d26fb4 # v0.3.0
         with:
-          # Pin the zizmor binary to the version findings were triaged against
-          # (offline audit, see deploy.yml inline ignores). Determinism: a
-          # floating `latest` could surface a new audit mid-PR and break an
-          # unrelated branch's gate.
+          # Pin the zizmor binary to the version findings were triaged against.
+          # Determinism: a floating `latest` could surface a new audit mid-PR
+          # and break an unrelated branch's gate.
           version: "1.25.2"
+          # OFFLINE only. The action defaults `online-audits: true`, which runs
+          # GitHub-API-backed checks (e.g. known-vulnerable-actions against a
+          # live advisory DB). For a BLOCKING gate that's a footgun: a new
+          # upstream advisory could fail a PR that didn't touch any workflow,
+          # and it makes the gate non-reproducible against the local
+          # `zizmor --offline` triage. Keep it offline so CI == local; the
+          # advisory-DB sweep belongs in a separate, non-blocking scheduled job
+          # if we want it later.
+          online-audits: false
 
   lint:
     name: Lint

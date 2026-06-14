@@ -25,4 +25,8 @@ export default defineConfig({
   //   3. Wire `pnpm test:evals` into a CI job gated on DEEPSEEK_API_KEY
   //      (tracked separately) so the threshold actually enforces.
   // Until step 1 is done the eval just reports a score; nothing gates on it.
+  //
+  // Target: land steps 1-2 by v0.1.1 (a baseline can only be recorded once the
+  // pilot has a DEEPSEEK_API_KEY available); step 3 rides with #194 (coverage
+  // gate in CI). Tracked so "deferred" doesn't quietly become permanent.
 })

@@ -357,6 +357,12 @@ describe('useBitrix24OAuth — refresh flow', () => {
       expect(loggerCalls.find(c => c.event === 'oauth.refresh.fail.tenant-deleted')).toBeDefined()
       expect(loggerCalls.find(c => c.event === 'oauth.refresh.fail.invalid-grant')).toBeUndefined()
 
+      // health signal stays CLEAN (#223 review): a benign uninstall race must
+      // not bump lastRefreshFail, or it re-creates the false-alarm at the
+      // health-endpoint level that the distinct event exists to avoid.
+      const { _readRefreshStatus } = await loadFactory()
+      expect(_readRefreshStatus().lastRefreshFail).toBeNull()
+
       // fetch never happened — we bailed before the network call.
       expect(fetchMock).not.toHaveBeenCalled()
     }

@@ -217,7 +217,14 @@ export function useBitrix24OAuth(memberId: string, userId: number): B24OAuth {
       // alerting on that event would wrongly think a credential was revoked.
       // It's a benign uninstall race: NO `markRefreshFailed` (nothing to
       // revoke — the CASCADE already dropped the Bearers), its own event.
-      refreshStatus.lastRefreshFail = Math.floor(Date.now() / 1000)
+      //
+      // Deliberately does NOT touch `refreshStatus.lastRefreshFail` (#223
+      // review): that field feeds `/api/oauth/_health` and is the signal for
+      // "credential refresh is failing". A benign uninstall race is NOT a
+      // credential failure — bumping it here would re-introduce, at the
+      // health-endpoint level, the exact false-alarm this distinct event was
+      // created to avoid. The ERROR log + event are the record; health stays
+      // clean.
       void log.error('oauth.refresh.fail.tenant-deleted', { memberId, userId })
       throw new Error('oauth_tokens row vanished during refresh')
     }

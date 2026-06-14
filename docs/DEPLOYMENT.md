@@ -49,6 +49,8 @@ GitHub Actions (deploy.yml → "Build & publish")
 
 CI builds and pushes the image to GHCR. **CI does not SSH into your server.** Pulling the image to production is the operator's responsibility — via Watchtower (detects updates; applies them only if you opt into auto-apply) or `make redeploy` (manual). No SSH secrets are needed in GitHub Actions.
 
+> **Note (security, #178):** the publish jobs (`test`, `dxt-build`) run `pnpm install --frozen-lockfile` from a **clean store — no pnpm cache**. A shared pnpm cache key, populated by a lower-privilege branch push, could otherwise be restored by a tag/dispatch build and poison the published image / DXT (zizmor `cache-poisoning`). The trade-off is a slightly slower install on the rare release run; the PR-CI workflow (`ci.yml`) keeps its cache since it never publishes artifacts.
+
 ### Option A — Watchtower (update detection; monitor-only by default)
 
 [`docker-compose.watchtower.yml`](../docker-compose.watchtower.yml) is a Compose overlay. Run `make watchtower-up` instead of `make up` to start the app with Watchtower alongside it. Watchtower watches only the app container (via label). It ships **monitor-only by default** (`WATCHTOWER_MONITOR_ONLY: "true"`): it detects that a newer `:latest` exists and notifies you, but does **not** restart the container — you promote the update with the health-gated `make redeploy` (Option B), by hand or from a cron / systemd timer.
