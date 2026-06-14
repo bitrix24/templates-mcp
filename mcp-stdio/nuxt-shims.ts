@@ -104,6 +104,15 @@ const runtimeConfig: RuntimeConfig = {
 ;(globalThis as unknown as { useRuntimeConfig: () => RuntimeConfig }).useRuntimeConfig = () =>
   runtimeConfig
 
+// Stdio-mode marker (#207 /review O1). `server/utils/bitrix24-tenant.ts`
+// auto-exports `_setStdioClientOverride` and Nitro's auto-imports glob
+// surfaces it as a top-level identifier in every h3 handler — making
+// it accidentally callable on the HTTP server. The setter guards on
+// this flag and refuses the override when it's absent (i.e. when the
+// dispatcher is being called from a real HTTP context that never
+// imported the stdio shim).
+;(globalThis as unknown as { __DXT_STDIO_MODE__: boolean }).__DXT_STDIO_MODE__ = true
+
 // Re-bind stdout-writing console methods (`log`/`info`/`debug`) to stderr so
 // the SDK logger or any stray `console.log` cannot corrupt the JSON-RPC frame
 // stream. `console.warn` already writes to stderr in Node — re-binding it

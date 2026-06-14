@@ -1,6 +1,7 @@
 import { B24OAuth, type B24OAuthParams, type B24OAuthSecret, type HandlerRefreshAuth } from '@bitrix24/b24jssdk'
 import { useLogger } from '~/server/utils/logger'
 import { makeRedactingLogger } from '~/server/utils/logger-redactor'
+import { validateClientEndpoint, validateServerEndpoint } from '~/server/utils/portal-validation'
 import { recordDxtAuditEvent } from './audit-log'
 import type { OAuthStore, OAuthTokens } from './oauth-store'
 
@@ -178,15 +179,44 @@ export function buildOAuthClient(args: {
       throw new Error(`refresh failed: ${data.error ?? `http-${res.status}`}`)
     }
 
-    // Defence-in-depth: refuse a refresh response that swaps portals
-    // mid-flow (matches the HTTP factory's `domain-mismatch` guard).
+    // Defence-in-depth (parity with HTTP factory in
+    // `server/utils/bitrix24-oauth.ts:290-320`): we never let an
+    // upstream-supplied value silently mutate the stored portal or the
+    // SDK's HTTP target.
+    //
+    // - `data.domain` cross-check: a refresh is bound to the tenant the
+    //   user originally authorised against; swapping mid-flow is a bug
+    //   or attack. Refuse without writing. NOTE: we intentionally do
+    //   NOT gate this through `isAllowedPortalDomain` (cloud-only allow-
+    //   list) because Self-Hosted DXT installs are explicitly supported
+    //   here — the stored portal IS the trust anchor.
+    // - `data.client_endpoint` / `data.server_endpoint`: validated via
+    //   the shared helpers, which substitute the safe canonical URL and
+    //   log `oauth.endpoint.reject` on mismatch (no throw). The SDK
+    //   uses `client_endpoint` for REST routing; an upstream-injected
+    //   `https://evil.com/rest/` would otherwise route every subsequent
+    //   call through evil.com.
     if (data.domain != null && data.domain !== current.portalDomain) {
       recordDxtAuditEvent(
-        { event: 'oauth.fail.transient', memberId: current.memberId, userId: current.userId, detail: 'domain-mismatch' },
+        {
+          event: 'oauth.fail.transient',
+          memberId: current.memberId,
+          userId: current.userId,
+          detail: `domain-mismatch:${String(data.domain).slice(0, 253)}`,
+        },
         args.dataDirOverride,
       )
       throw new Error('refresh failed: domain-mismatch')
     }
+    const validatedClientEndpoint = validateClientEndpoint(
+      data.client_endpoint,
+      current.portalDomain,
+      { memberId: current.memberId, userId: current.userId, reason: 'refresh' },
+    )
+    const validatedServerEndpoint = validateServerEndpoint(
+      data.server_endpoint,
+      { memberId: current.memberId, userId: current.userId, reason: 'refresh' },
+    )
 
     const accessExpiresAt = data.expires ?? Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600)
     const next: OAuthTokens = {
@@ -209,8 +239,8 @@ export function buildOAuthClient(args: {
       refresh_token: data.refresh_token,
       expires: String(accessExpiresAt),
       expires_in: String(data.expires_in ?? 3600),
-      client_endpoint: data.client_endpoint ?? `https://${next.portalDomain}/rest/`,
-      server_endpoint: data.server_endpoint ?? 'https://oauth.bitrix.info/rest/',
+      client_endpoint: validatedClientEndpoint,
+      server_endpoint: validatedServerEndpoint,
       member_id: data.member_id ?? next.memberId,
       scope: data.scope ?? next.scope,
       status: data.status ?? 'L',

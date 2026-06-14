@@ -28,12 +28,19 @@ describe('mcp-stdio OAuth foundations (#207)', () => {
     tmp = mkdtempSync(join(tmpdir(), 'dxt-oauth-test-'))
     vi.resetModules()
     vi.unstubAllGlobals()
+    // In production `mcp-stdio/server.ts` imports `./nuxt-shims.js` first,
+    // which sets this marker. The setter in `bitrix24-tenant.ts` then
+    // accepts overrides (#207 /review O1 guard). Tests here drive the
+    // setter directly without going through nuxt-shims, so the marker
+    // must be set explicitly before each case.
+    ;(globalThis as { __DXT_STDIO_MODE__?: boolean }).__DXT_STDIO_MODE__ = true
   })
 
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true })
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    delete (globalThis as { __DXT_STDIO_MODE__?: boolean }).__DXT_STDIO_MODE__
   })
 
   describe('user-data-dir', () => {
@@ -329,6 +336,35 @@ describe('mcp-stdio OAuth foundations (#207)', () => {
       })
       expect(mode).toBe('oauth-onboarding')
       expect(() => useBitrix24Tenant()).toThrow(/revoked|paste_code/)
+    })
+  })
+
+  describe('_setStdioClientOverride guard (#207 /review O1)', () => {
+    it('refuses to mutate the override when the DXT stdio-mode marker is absent (HTTP-context misuse)', async () => {
+      const { _setStdioClientOverride, useBitrix24Tenant } = await import('../../../server/utils/bitrix24-tenant')
+
+      // Two distinguishable sentinel client instances so we can tell which
+      // override the dispatcher is actually carrying. `TypeB24` is the SDK
+      // contract; the dispatcher just returns whatever the registered
+      // getter produces — we don't exercise its surface here.
+      const first = { sentinel: 'first' } as never
+      const second = { sentinel: 'second' } as never
+
+      // Install `first` under the active marker — happy path.
+      _setStdioClientOverride(() => first)
+      expect(useBitrix24Tenant()).toBe(first)
+
+      // Simulate an HTTP-server boot: the stdio shim was never imported, so
+      // the marker is absent. Any attempt to install `second` must be a
+      // no-op; the dispatcher should still carry `first`.
+      delete (globalThis as { __DXT_STDIO_MODE__?: boolean }).__DXT_STDIO_MODE__
+      _setStdioClientOverride(() => second)
+      ;(globalThis as { __DXT_STDIO_MODE__?: boolean }).__DXT_STDIO_MODE__ = true
+      expect(useBitrix24Tenant()).toBe(first)
+
+      // Reset state for the rest of the suite (and so this test doesn't
+      // leak its `first` override into the next case).
+      _setStdioClientOverride(null)
     })
   })
 

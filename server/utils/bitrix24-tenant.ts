@@ -18,10 +18,27 @@ import { getTenantContext } from '~/server/utils/request-context'
  * flag-gated webhook / OAuth-tenant dispatch runs as before. The DXT
  * webhook path also stays null (it falls through to the existing
  * `bitrix24OauthEnabled === false → useBitrix24()` branch).
+ *
+ * Defence-in-depth (#207 /review O1): Nitro's auto-imports glob picks up
+ * every export from `server/utils/` and surfaces it as a top-level
+ * identifier in every h3 handler — making `_setStdioClientOverride`
+ * accidentally callable from any HTTP route. The setter therefore guards
+ * on the stdio-mode marker the DXT shim sets on `globalThis` and
+ * refuses (logs + returns) when invoked outside an active stdio bundle.
+ * Real callers (`mcp-stdio/auth-mode.ts`, `mcp-stdio/tools-oauth.ts`)
+ * always import `nuxt-shims.js` first, so the marker is set before any
+ * setter call runs.
  */
 let stdioClientOverride: (() => TypeB24) | null = null
 
 export function _setStdioClientOverride(g: (() => TypeB24) | null): void {
+  const stdioActive = (globalThis as { __DXT_STDIO_MODE__?: boolean }).__DXT_STDIO_MODE__ === true
+  if (!stdioActive) {
+    void useLogger().error('oauth.stdio-override.refused', {
+      reason: '_setStdioClientOverride called outside an active DXT stdio bundle — refusing to mutate the HTTP dispatcher',
+    })
+    return
+  }
   stdioClientOverride = g
 }
 
