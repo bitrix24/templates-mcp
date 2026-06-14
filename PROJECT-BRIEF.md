@@ -680,10 +680,11 @@ CMD ["node", ".output/server/index.mjs"]
 ## `docker-compose.yml`
 
 ```yaml
+name: ${COMPOSE_PROJECT_NAME:-bx24-mcp}
 services:
   bx24-template-mcp:
     image: ghcr.io/bitrix24/templates-mcp:latest
-    container_name: bx24-template-mcp
+    container_name: ${COMPOSE_PROJECT_NAME:-bx24-mcp}-app
     restart: always
     deploy:
       resources:

@@ -10,7 +10,7 @@ Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.
 
 - **Service:** `bx24-template-mcp` Docker container on `prod.example.com`.
 - **Healthcheck URL:** `https://prod.example.com/api/health` (and `http://localhost:3000/api/health` from the host).
-- **Logs:** `docker logs --since=15m bx24-template-mcp` on the host. SDK logs are URL-redacted via `makeRedactingLogger`.
+- **Logs:** `docker logs --since=15m $(docker compose ps -q bx24-template-mcp)` on the host (the container name now resolves from `COMPOSE_PROJECT_NAME` — default `bx24-mcp-app` — so use the service-name lookup, not the raw container name; see [Container naming after #189](#container-naming-after-189) below). SDK logs are URL-redacted via `makeRedactingLogger`.
 - **Compose dir:** `/opt/bx24-template-mcp` (or wherever you deployed the compose stack).
 - **On-call:** pre-GA this is a single maintainer on a best-effort basis — no formal rotation, paging channel, or RTO yet.
 
@@ -18,7 +18,7 @@ Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| `/api/health` returns non-2xx for ≥3 minutes | Container crash-looped or stuck | `docker logs --tail=200 bx24-template-mcp`; if recent deploy, [rollback](#rollback) |
+| `/api/health` returns non-2xx for ≥3 minutes | Container crash-looped or stuck | `docker logs --tail=200 $(docker compose ps -q bx24-template-mcp)`; if recent deploy, [rollback](#rollback) |
 | 503 "MCP endpoint is not available" on `/mcp` | `NUXT_MCP_AUTH_TOKEN` missing/empty in `.env` | Edit `/opt/bx24-template-mcp/.env`, `docker compose up -d` |
 | 401 "Invalid bearer token" from clients that worked yesterday | Token rotated, or client config drift | Diff client header against `.env` value; if intentional rotation, update clients |
 | GitHub Actions build job failed at "Build & push" | CI test fail, GHCR permission, or buildx error | Re-read job output; common: `pnpm test:unit` regression, GHCR rate limit |
@@ -31,6 +31,27 @@ Incident response for `bx24-template-mcp` in production. Pair with [`DEPLOYMENT.
 | TLS cert expired / "first certificate" errors from clients | acme-companion stalled, or DNS changed | `docker logs nginx-proxy-acme`; restart the companion container. For Self-Hosted Bitrix24 with a private CA see `NODE_EXTRA_CA_CERTS` in `.env.example`. |
 | `docker compose pull` hangs or fails | GHCR auth lost, or registry unreachable | `docker login ghcr.io` on the host; check egress to `ghcr.io:443` |
 | Container reports `out of memory` | Compose limit `512M` exceeded (raised by Bitrix24 SDK retry storm or large batch) | Inspect `docker stats`; if legitimate, raise `deploy.resources.limits.memory` in `docker-compose.yml`. Otherwise dig into a leak. |
+
+## Container naming after #189
+
+The container name is now parameterised: `${COMPOSE_PROJECT_NAME:-bx24-mcp}-app`. With the default `COMPOSE_PROJECT_NAME=bx24-mcp` (from `.env.example`) the container is **`bx24-mcp-app`**. With `COMPOSE_PROJECT_NAME=bx24-mcp-staging` it becomes `bx24-mcp-staging-app`.
+
+Don't hardcode the literal `bx24-template-mcp` in alerts, scripts, or shell aliases — that name is gone. Use one of:
+
+```bash
+# Compose-aware lookup (works regardless of COMPOSE_PROJECT_NAME):
+docker logs --tail=200 $(docker compose ps -q bx24-template-mcp)
+docker exec -it $(docker compose ps -q bx24-template-mcp) sh
+
+# Direct name (only if you know your COMPOSE_PROJECT_NAME):
+docker logs --tail=200 bx24-mcp-app                # default
+docker logs --tail=200 bx24-mcp-staging-app        # staging
+
+# Discover the name on the host:
+docker compose ps --format json | jq -r '.[].Name'
+```
+
+`bx24-template-mcp` stays as the Compose **service name** (the key under `services:` in `docker-compose.yml`), so `docker compose ps bx24-template-mcp` and `docker compose logs bx24-template-mcp` keep working — those operate on the service, not the container.
 
 ## Rollback
 

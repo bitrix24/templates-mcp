@@ -104,6 +104,35 @@ jobs:
           docker compose -f docker-compose.server.yml config --quiet
           docker compose -f docker-compose.example.yml config --quiet
           docker compose -f docker-compose.yml -f docker-compose.watchtower.yml config --quiet
+      - name: Assert project + container name plumbing (#189)
+        # `config --quiet` catches YAML syntax and unresolvable substitutions,
+        # but happily accepts a typo'd default (`bx24_mcp` vs `bx24-mcp`) or a
+        # removed `name:` field. Pin the resolved values so a future PR that
+        # silently drops either fails CI loud. Also confirms the
+        # `COMPOSE_PROJECT_NAME` override path that the v0.3.0 migration depends
+        # on (set it to your current dir-name to keep the named volume bound).
+        run: |
+          set -euo pipefail
+          # Default project name resolves to `bx24-mcp`.
+          name=$(docker compose -f docker-compose.yml config | awk '/^name:/{print $2; exit}')
+          test "$name" = "bx24-mcp" \
+            || { echo "::error::docker-compose.yml resolved name=$name, expected bx24-mcp"; exit 1; }
+          # Default container name resolves to `bx24-mcp-app` (parameterised, not the legacy literal).
+          cname=$(docker compose -f docker-compose.yml config | awk -F': *' '/container_name:/{print $2; exit}')
+          test "$cname" = "bx24-mcp-app" \
+            || { echo "::error::docker-compose.yml resolved container_name=$cname, expected bx24-mcp-app"; exit 1; }
+          # COMPOSE_PROJECT_NAME override flows through to BOTH name AND container_name.
+          override_name=$(COMPOSE_PROJECT_NAME=bx24-mcp-staging docker compose -f docker-compose.yml config | awk '/^name:/{print $2; exit}')
+          test "$override_name" = "bx24-mcp-staging" \
+            || { echo "::error::COMPOSE_PROJECT_NAME override broken at the project level"; exit 1; }
+          override_cname=$(COMPOSE_PROJECT_NAME=bx24-mcp-staging docker compose -f docker-compose.yml config | awk -F': *' '/container_name:/{print $2; exit}')
+          test "$override_cname" = "bx24-mcp-staging-app" \
+            || { echo "::error::COMPOSE_PROJECT_NAME override broken at the container level"; exit 1; }
+          # Reverse-proxy stack stays fixed (host singleton — see compose comment + #189 design).
+          proxy_name=$(docker compose -f docker-compose.server.yml config | awk '/^name:/{print $2; exit}')
+          test "$proxy_name" = "bx24-mcp-proxy" \
+            || { echo "::error::docker-compose.server.yml resolved name=$proxy_name, expected bx24-mcp-proxy (fixed singleton)"; exit 1; }
+          echo "OK — project, container, and proxy names plumb correctly."
       - name: Verify pinned infra image digests resolve in the registry
         run: |
           # Catch a typo'd or nonexistent @sha256 pin at PR time, instead of on a

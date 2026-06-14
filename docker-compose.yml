@@ -2,8 +2,11 @@
 # networks and volumes get a stable, directory-independent prefix; override
 # per environment via `COMPOSE_PROJECT_NAME` in `.env` (e.g. `bx24-mcp-staging`)
 # so a second environment on the same host can't collide with production.
-# NOTE: `COMPOSE_PROJECT_NAME` env (and `-p`) still take precedence over this
-# `name:` field — they resolve to the same value here by design.
+# Mechanics: the `${COMPOSE_PROJECT_NAME:-bx24-mcp}` substitution is resolved
+# BEFORE Compose reads this file, so an env value of `bx24-mcp-staging`
+# becomes the literal `name:` here. The Compose `-p` flag and the
+# `COMPOSE_PROJECT_NAME` env separately also override at the Compose layer —
+# all three converge on the same value by design.
 name: ${COMPOSE_PROJECT_NAME:-bx24-mcp}
 
 services:
@@ -11,7 +14,15 @@ services:
     # BX24_IMAGE lets operators pin a specific tag/digest (e.g. for rollback).
     # Default is :latest, which is what GH Actions pushes on every v* tag.
     image: ${BX24_IMAGE:-ghcr.io/bitrix24/templates-mcp:latest}
-    container_name: bx24-template-mcp
+    # Container name (#189). Parameterised against `COMPOSE_PROJECT_NAME` so
+    # a second environment on the same host doesn't hit
+    # `Conflict. The container name "/<name>" is already in use`. Default
+    # resolves to `bx24-mcp-app`; staging becomes `bx24-mcp-staging-app`.
+    # Operators reaching for the container by name (`docker logs <name>`,
+    # `docker exec <name>`, `docker cp <name>:/data/audit …`) use the
+    # resolved value — check yours with `docker compose ps` or
+    # `docker inspect $(docker compose ps -q) --format '{{.Name}}'`.
+    container_name: ${COMPOSE_PROJECT_NAME:-bx24-mcp}-app
     restart: always
     # Hardening: drop all Linux capabilities (the Node server binds an
     # unprivileged port and runs as USER node, so it needs none) and forbid
@@ -67,7 +78,7 @@ services:
     # `/data/audit/`. After `docker compose pull && up -d`, the named
     # volume mounts over `/data` and those files become invisible — for
     # compliance you MUST copy them out first:
-    #     docker cp bx24-template-mcp:/data/audit ./audit-backup-$(date +%F)
+    #     docker cp $(docker compose ps -q bx24-template-mcp):/data/audit ./audit-backup-$(date +%F)
     # Then `docker compose pull && docker compose up -d`. If you have no
     # earlier audit history (fresh install, or a webhook-only deploy where
     # the audit logger never ran), no action needed.
