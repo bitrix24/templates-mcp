@@ -161,10 +161,15 @@ jobs:
           tar xzf "$tarball" actionlint
           ./actionlint -color
 
+  # zizmor is now ENFORCING (issue #178): all findings on the checked-in
+  # workflows are either fixed (deploy.yml cache-poisoning — caching removed
+  # from the publish pipeline) or annotated with an inline justification
+  # (`# zizmor: ignore[...]`). The version is pinned so a CI run reproduces
+  # exactly what was triaged locally; bump it deliberately and re-triage.
+  # actionlint (above) stays advisory until its own findings are triaged.
   zizmor:
     name: zizmor
     runs-on: ubuntu-latest
-    continue-on-error: true
     permissions:
       # zizmor reads workflow files from the checkout only.
       contents: read
@@ -174,6 +179,12 @@ jobs:
           # Same hygiene as the actionlint job above.
           persist-credentials: false
       - uses: zizmorcore/zizmor-action@e639db99335bc9038abc0e066dfcd72e23d26fb4 # v0.3.0
+        with:
+          # Pin the zizmor binary to the version findings were triaged against
+          # (offline audit, see deploy.yml inline ignores). Determinism: a
+          # floating `latest` could surface a new audit mid-PR and break an
+          # unrelated branch's gate.
+          version: "1.25.2"
 
   lint:
     name: Lint
