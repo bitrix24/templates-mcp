@@ -214,9 +214,19 @@ export interface TokenStore {
    */
   createMcpToken: (memberId: string, userId: number, label: string | undefined, actor: AuditActor) => Promise<MintedMcpToken>
   /**
-   * Bearer → tenant lookup used by the MCP auth middleware (PR-2c). Returns
-   * `undefined` for unknown or revoked Bearers — callers MUST treat that
-   * uniformly as 401, NOT as "fall back to webhook".
+   * Active-only Bearer → tenant lookup. Returns `undefined` for unknown OR
+   * revoked Bearers — callers MUST treat that uniformly as 401, NOT as
+   * "fall back to webhook".
+   *
+   * RETENTION NOTE (issue #222): the MCP auth middleware (#218) resolves via
+   * `inspectBearer` instead (it needs the unknown/revoked/orphan
+   * distinction), so this verb has no production caller TODAY. It is kept
+   * deliberately as (a) the natural active-only primitive for the planned
+   * "list / validate my Bearers" operator tool (#212), and (b) the canonical
+   * is-this-Bearer-active probe used throughout the token-store test suite —
+   * its active-only filter is exactly the assertion those tests want, where
+   * `inspectBearer` would return a revoked row rather than `undefined`. Don't
+   * route new production lookups through it without revisiting that contract.
    */
   findByBearerHash: (bearerHash: string) => BearerLookup | undefined
   /**
@@ -225,9 +235,8 @@ export interface TokenStore {
    * (the three §11 `mcp.auth.deny.bearer-*` event suffixes). A revoked
    * row still resolves to a tenant pair so the audit log can record
    * "who tried to use this dead Bearer"; the middleware then refuses.
-   * `findByBearerHash` is the hot path for the no-distinction case and
-   * stays the right choice when the caller already treats unknown +
-   * revoked uniformly.
+   * `findByBearerHash` is the active-only counterpart and stays the right
+   * choice when the caller already treats unknown + revoked uniformly.
    */
   inspectBearer: (bearerHash: string) => BearerInspection | undefined
   /** Stamps `revoked_at` on a Bearer (idempotent — re-revoking a revoked row is a no-op). */
@@ -548,7 +557,10 @@ export function createTokenStore(db: Database.Database): TokenStore {
 function resolveDbDir(): string {
   const fromEnv = useRuntimeConfig().bitrix24OauthDbDir?.trim()
   if (!fromEnv) return '/data'
-  if (fromEnv.split(path.sep).includes('..')) {
+  // Split on BOTH separators (issue #222): `path.sep` is `/` on Linux, so a
+  // Windows-style `C:\data\..` would split to a single element and the `..`
+  // would slip through. Mirror `resolveAuditDir` (`audit-log.ts`) exactly.
+  if (fromEnv.split(/[/\\]/).some(seg => seg === '..')) {
     throw new Error(`NUXT_BITRIX24_OAUTH_DB_DIR rejected: path-traversal segment "..": ${fromEnv}`)
   }
   if (!path.isAbsolute(fromEnv)) {

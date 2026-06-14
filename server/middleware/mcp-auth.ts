@@ -1,6 +1,5 @@
-import { Buffer } from 'node:buffer'
-import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
 import { createError, defineEventHandler, getHeader, getRequestURL, setResponseHeader } from 'h3'
+import { timingSafeEqualStr } from '~/server/utils/auth-helpers'
 
 export default defineEventHandler((event) => {
   const { pathname } = getRequestURL(event)
@@ -57,15 +56,7 @@ export default defineEventHandler((event) => {
   const match = header.match(/^Bearer\s+(.+)$/i)
   const token = match?.[1]?.trim()
 
-  if (!token || !timingSafeEqual(token, expected)) {
+  if (!token || !timingSafeEqualStr(token, expected)) {
     throw createError({ statusCode: 401, statusMessage: 'Invalid bearer token' })
   }
 })
-
-function timingSafeEqual(a: string, b: string): boolean {
-  // crypto.timingSafeEqual throws if the buffers differ in length, so length
-  // is checked first. Length leak is acceptable: our tokens are fixed-length
-  // hex from `openssl rand -hex 32`.
-  if (a.length !== b.length) return false
-  return cryptoTimingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'))
-}

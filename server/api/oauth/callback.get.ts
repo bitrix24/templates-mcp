@@ -1,21 +1,9 @@
-import { Buffer } from 'node:buffer'
-import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
 import { createError, defineEventHandler, deleteCookie, getCookie, getQuery, setResponseStatus } from 'h3'
+import { timingSafeEqualStr } from '~/server/utils/auth-helpers'
 import { useLogger } from '~/server/utils/logger'
 import { htmlEscape, setAntiFramingHeaders, setHtmlResponseHeaders } from '~/server/utils/oauth-html'
 import { isAllowedPortalDomain } from '~/server/utils/portal-validation'
 import { useTokenStore } from '~/server/utils/token-store'
-
-/**
- * Constant-time string compare for the CSRF cookie ↔ persisted-state
- * binding. Both values are fixed-length 64-hex nonces, so the length
- * check leaks nothing. Mirrors the pattern in `_health.get.ts` /
- * `mcp-auth.ts` — secrets are never compared with `===`.
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false
-  return cryptoTimingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'))
-}
 
 /** Bitrix24 `member_id` is an opaque alnum token; reject anything that
  * isn't, so a compromised upstream can't smuggle a path-traversal or an
@@ -225,9 +213,10 @@ export default defineEventHandler(async (event) => {
   const cookieValue = getCookie(event, 'bx24_oauth_csrf') ?? ''
   // Defend against a corrupt-DB row with an empty csrf_cookie: install
   // always writes a 64-hex nonce, but the type doesn't guarantee it.
-  // Without this guard, `timingSafeEqual('', '')` would return true and
-  // accept a request that presented NO cookie. Treat an empty persisted
-  // value as a hard server error, not a 400.
+  // Without this guard, `timingSafeEqualStr('', '')` would return true and
+  // accept a request that presented NO cookie (the shared helper does not
+  // special-case empty input — see its doc comment). Treat an empty
+  // persisted value as a hard server error, not a 400.
   if (!stateRow.csrfCookie) {
     void logger.error('oauth.callback.state-row-corrupt', { statePrefix: state.slice(0, 8) })
     throw createError({
@@ -236,7 +225,7 @@ export default defineEventHandler(async (event) => {
       data: { errorCode: 'STATE-ROW-CORRUPT' },
     })
   }
-  if (!timingSafeEqual(cookieValue, stateRow.csrfCookie)) {
+  if (!timingSafeEqualStr(cookieValue, stateRow.csrfCookie)) {
     void logger.warning('oauth.callback.deny.state-cookie-mismatch', { statePrefix: state.slice(0, 8) })
     throw createError({
       statusCode: 400,

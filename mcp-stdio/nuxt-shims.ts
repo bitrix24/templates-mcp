@@ -29,6 +29,22 @@ interface RuntimeConfig {
   githubFeedbackToken: string
   githubFeedbackRepo: string
   logLevel: string
+  // OAuth multi-tenant is an HTTP-server-only feature (install/callback
+  // routes, Bearer middleware) — it never runs in the stdio/DXT bundle, where
+  // Claude Desktop provides transport-level trust. These 7 keys are declared
+  // anyway (issue #222) so the shim's shape matches `nuxt.config.ts`
+  // `runtimeConfig`: server utils that destructure `bitrix24Oauth*` (e.g.
+  // `token-store.ts`, `bitrix24-tenant.ts`) type-check against the shim and
+  // read the same falsy defaults they would on an OAuth-off HTTP deploy, so
+  // every OAuth branch is skipped. Keep this list in sync with
+  // `nuxt.config.ts` — a future key added there must be mirrored here.
+  bitrix24OauthEnabled: boolean
+  bitrix24OauthClientId: string
+  bitrix24OauthClientSecret: string
+  bitrix24OauthRedirectUrl: string
+  bitrix24OauthScope: string
+  bitrix24OauthDbDir: string
+  bitrix24OauthAdminToken: string
 }
 
 // Canonical env names are `NUXT_`-prefixed — identical to what the Nuxt HTTP
@@ -49,6 +65,17 @@ const runtimeConfig: RuntimeConfig = {
     ?? process.env.GITHUB_FEEDBACK_REPO
     ?? 'bitrix24/templates-mcp',
   logLevel: process.env.NUXT_LOG_LEVEL ?? process.env.LOG_LEVEL ?? 'info',
+  // OAuth is always OFF in stdio (see the interface comment). Hard-code the
+  // disabled shape rather than reading env, so a stray NUXT_BITRIX24_OAUTH_*
+  // in the host environment can't half-activate an HTTP-only code path inside
+  // the bundle.
+  bitrix24OauthEnabled: false,
+  bitrix24OauthClientId: '',
+  bitrix24OauthClientSecret: '',
+  bitrix24OauthRedirectUrl: '',
+  bitrix24OauthScope: '',
+  bitrix24OauthDbDir: '',
+  bitrix24OauthAdminToken: '',
 }
 
 ;(globalThis as unknown as { useRuntimeConfig: () => RuntimeConfig }).useRuntimeConfig = () =>

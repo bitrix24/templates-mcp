@@ -2,6 +2,7 @@ import type { TypeCallParams } from '@bitrix24/b24jssdk'
 import { z } from 'zod'
 import { defineMcpTool } from '@nuxtjs/mcp-toolkit/server'
 import { useBitrix24Tenant } from '~/server/utils/bitrix24-tenant'
+import { Bitrix24ErrorCode, Bitrix24ToolError } from '~/server/utils/errors'
 import { callV2 } from '~/server/utils/sdk-helpers'
 
 /** Subset of the `user.search` row shape we surface back to the agent. */
@@ -78,17 +79,17 @@ export default defineMcpTool({
   handler: async ({ query, firstName, secondName, lastName, position, limit }) => {
     const hasStructured = Boolean(firstName || secondName || lastName || position)
     if (query && hasStructured) {
-      // Bitrix24's user.search rejects FIND combined with named-field filters,
-      // and silently picking one over the other would surprise the caller.
-      // Surface this as an inline error so the agent can retry cleanly.
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: 'Use either `query` (free-text FIND) OR the structured filters (firstName / secondName / lastName / position), not both.',
-          },
-        ],
-      }
+      // Bitrix24's user.search rejects FIND combined with named-field filters.
+      // Throw (not a soft inline message) so the agent sees `isError: true` —
+      // consistent with every other tool's semantic-validation failure
+      // (issue #222; cf. update-task.ts / add-task-dependency.ts). A soft
+      // `{ content }` here would surface `isError: false` + error text, which
+      // is protocol-ambiguous.
+      throw new Bitrix24ToolError(
+        'Use either `query` (free-text FIND) OR the structured filters '
+        + '(firstName / secondName / lastName / position), not both.',
+        Bitrix24ErrorCode.INVALID_INPUT,
+      )
     }
 
     const filter: Record<string, unknown> = {}
@@ -102,14 +103,11 @@ export default defineMcpTool({
     }
 
     if (Object.keys(filter).length === 0) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: 'Provide at least one of: query, firstName, secondName, lastName, position. Without a filter the API returns all users on the portal — not useful for resolving a name.',
-          },
-        ],
-      }
+      throw new Bitrix24ToolError(
+        'Provide at least one of: query, firstName, secondName, lastName, position. '
+        + 'Without a filter the API returns all users on the portal — not useful for resolving a name.',
+        Bitrix24ErrorCode.INVALID_INPUT,
+      )
     }
 
     const b24 = useBitrix24Tenant()

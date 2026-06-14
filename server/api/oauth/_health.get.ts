@@ -1,6 +1,5 @@
-import { Buffer } from 'node:buffer'
-import { timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto'
 import { createError, defineEventHandler, getHeader, getRequestIP } from 'h3'
+import { timingSafeEqualStr } from '~/server/utils/auth-helpers'
 import { _readRefreshStatus } from '~/server/utils/bitrix24-oauth'
 import { useLogger } from '~/server/utils/logger'
 import { useTokenStore } from '~/server/utils/token-store'
@@ -75,13 +74,6 @@ function isLoopback(ip: string): boolean {
 // both would otherwise be indistinguishable nulls.
 const PROCESS_STARTED_AT = Math.floor(Date.now() / 1000)
 
-function timingSafeEqual(a: string, b: string): boolean {
-  // Same pattern as mcp-auth.ts: length leak is acceptable for
-  // fixed-length tokens (operator generates with `openssl rand -hex 32`).
-  if (a.length !== b.length) return false
-  return cryptoTimingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'))
-}
-
 export default defineEventHandler((event) => {
   const logger = useLogger()
   const { bitrix24OauthEnabled, bitrix24OauthAdminToken } = useRuntimeConfig()
@@ -137,7 +129,7 @@ export default defineEventHandler((event) => {
         data: { errorCode: 'ADMIN-TOKEN-MISSING' },
       })
     }
-    if (!timingSafeEqual(token, adminToken)) {
+    if (!timingSafeEqualStr(token, adminToken)) {
       void logger.warning('oauth.health.deny.admin-token-invalid', { clientIp: clientIp || '<unknown>' })
       throw createError({
         statusCode: 401,

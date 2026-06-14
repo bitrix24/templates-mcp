@@ -22,6 +22,13 @@ interface ShimRuntimeConfig {
   githubFeedbackToken: string
   githubFeedbackRepo: string
   logLevel: string
+  bitrix24OauthEnabled: boolean
+  bitrix24OauthClientId: string
+  bitrix24OauthClientSecret: string
+  bitrix24OauthRedirectUrl: string
+  bitrix24OauthScope: string
+  bitrix24OauthDbDir: string
+  bitrix24OauthAdminToken: string
 }
 
 const ENV_VARS = [
@@ -94,6 +101,17 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
       githubFeedbackToken: 'ghp_test123',
       githubFeedbackRepo: 'acme/forked',
       logLevel: 'debug',
+      // OAuth is HTTP-server-only — the shim hard-codes the disabled shape
+      // (issue #222) so server utils that destructure `bitrix24Oauth*`
+      // type-check and read falsy in the stdio bundle. Pinned here so a drift
+      // from `nuxt.config.ts` is caught.
+      bitrix24OauthEnabled: false,
+      bitrix24OauthClientId: '',
+      bitrix24OauthClientSecret: '',
+      bitrix24OauthRedirectUrl: '',
+      bitrix24OauthScope: '',
+      bitrix24OauthDbDir: '',
+      bitrix24OauthAdminToken: '',
     })
   })
 
@@ -110,6 +128,13 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
       githubFeedbackToken: 'ghp_test123',
       githubFeedbackRepo: 'acme/forked',
       logLevel: 'debug',
+      bitrix24OauthEnabled: false,
+      bitrix24OauthClientId: '',
+      bitrix24OauthClientSecret: '',
+      bitrix24OauthRedirectUrl: '',
+      bitrix24OauthScope: '',
+      bitrix24OauthDbDir: '',
+      bitrix24OauthAdminToken: '',
     })
   })
 
