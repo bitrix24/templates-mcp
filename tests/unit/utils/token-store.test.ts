@@ -68,6 +68,12 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // Defensive (issue #223): the `upsert ... bumps updated_at` test below calls
+  // vi.useFakeTimers()/useRealTimers() inline. If anything between them throws,
+  // frozen time would leak into later tests in this file that read Date.now()
+  // at runtime (state-TTL cases). Restoring real timers here unconditionally
+  // closes that flaky window — it's a no-op when timers are already real.
+  vi.useRealTimers()
   db.close()
 })
 

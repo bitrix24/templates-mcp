@@ -71,6 +71,48 @@ assert_fails "Invalid --resolve host"                         "${base[@]}" --res
 assert_fails "Missing --url"                                  --token x
 assert_fails "Missing token"                                  --url https://example.com
 
+# --- issue #223: stdin / header-injection / unknown-arg guards ---
+
+# assert_fails_stdin <stdin-content> <expected-substring> <args...>
+# Like assert_fails but feeds <stdin-content> on the script's stdin — the
+# --token-stdin path reads one line from stdin, so the empty-stdin case can
+# only be exercised deterministically by piping a known (empty) value in.
+assert_fails_stdin() {
+  local stdin_content="$1"; local want="$2"; shift 2
+  local out rc
+  out="$(printf '%s' "$stdin_content" | "$script" "$@" 2>&1 1>/dev/null)"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "FAIL: expected non-zero exit for [$*] (stdin='$stdin_content'), got 0"
+    fail=$((fail + 1))
+    return
+  fi
+  case "$out" in
+    *"$want"*) pass=$((pass + 1)) ;;
+    *)
+      echo "FAIL: for [$*] (stdin='$stdin_content')"
+      echo "      expected stderr to contain: $want"
+      echo "      got:                        $out"
+      fail=$((fail + 1))
+      ;;
+  esac
+}
+
+# (a) --token-stdin with EMPTY stdin → usage error (EX_USAGE/64). Without this
+# the operator gets a later, opaque "missing token" much further down.
+assert_fails_stdin "" "--token-stdin: stdin was empty"        --url https://example.com --token-stdin
+
+# (b) token carrying an embedded CR/LF → rejected (EX_USAGE/64). This is the
+# header-injection guard (security-relevant): a line-wrapped paste would
+# otherwise split the `Authorization:` header on some curl builds. The newline
+# must sit in the token BODY — surrounding whitespace is stripped first — so a
+# mid-token CRLF is used here.
+assert_fails "token contains an embedded newline"             --url https://example.com --token "$(printf 'abc\r\nX-Injected: yes')"
+
+# (c) unknown flag → usage error (EX_USAGE/64); a typo'd option must not be
+# silently ignored and fall through to a default.
+assert_fails "Unknown argument: --bogus"                      "${base[@]}" --bogus
+
 echo "----"
 echo "passed: $pass, failed: $fail"
 [ "$fail" -eq 0 ]

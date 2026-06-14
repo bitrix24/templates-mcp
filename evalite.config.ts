@@ -9,7 +9,20 @@ export default defineConfig({
   // hammer the free-tier quota on a flaky network.
   maxConcurrency: 4,
 
-  // No scoreThreshold yet. Once we have a baseline from a few real runs we'll
-  // turn this on at ~80% — until then the eval just reports a score; CI can
-  // gate on it explicitly when desired.
+  // No scoreThreshold yet (issue #223 item 4 — DEFERRED, blocked on a baseline).
+  // Setting a floor is the goal: without it a description rewrite that drops
+  // tool-disambiguation accuracy (e.g. 95% → 60%) still passes silently. But
+  // the floor MUST be calibrated against a real baseline first — picking a
+  // number blind risks either a false CI failure (floor above the true
+  // baseline) or a useless gate (floor below the regression it should catch).
+  //
+  // To land this:
+  //   1. Run `pnpm test:evals` a few times with DEEPSEEK_API_KEY set, record
+  //      the steady-state score for the "Bitrix24 tool selection" suite.
+  //   2. Set `scoreThreshold: { 'Bitrix24 tool selection': <baseline - margin> }`
+  //      (the issue suggests ~0.80 on the assumption the baseline sits well
+  //      above it — confirm against the recorded number before committing).
+  //   3. Wire `pnpm test:evals` into a CI job gated on DEEPSEEK_API_KEY
+  //      (tracked separately) so the threshold actually enforces.
+  // Until step 1 is done the eval just reports a score; nothing gates on it.
 })

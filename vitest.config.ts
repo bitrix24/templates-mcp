@@ -44,7 +44,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: ['server/**/*.ts'],
+      // `mcp-stdio/**` included (issue #223): the shims / register / toolkit-shim
+      // are exercised by `tests/unit/mcp-stdio/*` but were invisible to the 80%
+      // gate. `server.ts` (the stdio entrypoint — wires stdin/stdout transport,
+      // not unit-testable without spawning a process) and `build.mjs` (esbuild
+      // bundler script, not shipped code) are excluded.
+      include: ['server/**/*.ts', 'mcp-stdio/**/*.ts'],
+      exclude: ['mcp-stdio/server.ts', 'mcp-stdio/build.mjs'],
       thresholds: {
         lines: 80,
         functions: 80,

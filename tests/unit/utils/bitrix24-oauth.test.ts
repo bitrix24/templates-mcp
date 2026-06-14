@@ -317,6 +317,110 @@ describe('useBitrix24OAuth — refresh flow', () => {
     }
   })
 
+  it('refresh: oauth_tokens row deleted mid-flight (uninstall race) → distinct tenant-deleted event, NO markRefreshFailed', async () => {
+    // Issue #223 item 1: a concurrent deleteTenant() between the SDK's expiry
+    // check and the store read makes `current` null. This MUST NOT be confused
+    // with a genuine invalid_grant (revoked refresh token): it's a benign
+    // uninstall race, so no Bearer revocation fires and it gets its own event.
+    const originalSet = (await import('@bitrix24/b24jssdk')).B24OAuth.prototype.setCustomRefreshAuth
+    let factoryCb: CustomRefreshAuth | undefined
+    const spy = vi.fn(function (this: never, cb: CustomRefreshAuth) {
+      factoryCb = cb
+      return originalSet.call(this, cb)
+    })
+    Object.defineProperty(
+      (await import('@bitrix24/b24jssdk')).B24OAuth.prototype,
+      'setCustomRefreshAuth',
+      { value: spy, configurable: true },
+    )
+
+    try {
+      await store.upsertTokens(SAMPLE_TENANT, 'install')
+      await store.createMcpToken(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId, 'laptop', 'install')
+      const { useBitrix24OAuth } = await loadFactory()
+      await useBitrix24OAuth(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId)
+      expect(factoryCb).toBeDefined()
+
+      // The uninstall happens AFTER the instance is built/cached but BEFORE
+      // the refresh callback reads the row — the race the guard defends.
+      const markSpy = vi.spyOn(store, 'markRefreshFailed')
+      await store.deleteTenant(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId, 'user')
+
+      await expect(factoryCb!()).rejects.toThrow(/vanished/)
+
+      // markRefreshFailed NOT called — there is nothing to revoke (the CASCADE
+      // already dropped this tenant's Bearers on deleteTenant).
+      expect(markSpy).not.toHaveBeenCalled()
+
+      // Distinct event — and NOT the invalid-grant event that would mislead
+      // a "refresh token revoked" alert.
+      expect(loggerCalls.find(c => c.event === 'oauth.refresh.fail.tenant-deleted')).toBeDefined()
+      expect(loggerCalls.find(c => c.event === 'oauth.refresh.fail.invalid-grant')).toBeUndefined()
+
+      // fetch never happened — we bailed before the network call.
+      expect(fetchMock).not.toHaveBeenCalled()
+    }
+    finally {
+      Object.defineProperty(
+        (await import('@bitrix24/b24jssdk')).B24OAuth.prototype,
+        'setCustomRefreshAuth',
+        { value: originalSet, configurable: true },
+      )
+    }
+  })
+
+  it('refresh: response with `expires` (unix ts) and no `expires_in` → accessExpiresAt = expires', async () => {
+    // Issue #223 item 2: Bitrix24 prod sends `expires` (absolute unix seconds)
+    // as the primary field. All other refresh tests pass only `expires_in`, so
+    // the `data.expires ?? …` branch was uncovered. If Bitrix24 ever drops
+    // `expires_in`, expiry must still come from `expires`, not the +3600
+    // fallback.
+    const originalSet = (await import('@bitrix24/b24jssdk')).B24OAuth.prototype.setCustomRefreshAuth
+    let factoryCb: CustomRefreshAuth | undefined
+    const spy = vi.fn(function (this: never, cb: CustomRefreshAuth) {
+      factoryCb = cb
+      return originalSet.call(this, cb)
+    })
+    Object.defineProperty(
+      (await import('@bitrix24/b24jssdk')).B24OAuth.prototype,
+      'setCustomRefreshAuth',
+      { value: spy, configurable: true },
+    )
+
+    try {
+      await store.upsertTokens(SAMPLE_TENANT, 'install')
+      const { useBitrix24OAuth } = await loadFactory()
+      await useBitrix24OAuth(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId)
+      expect(factoryCb).toBeDefined()
+
+      const expiresAt = Math.floor(Date.now() / 1000) + 7200
+      fetchMock.mockResolvedValue(jsonResp(200, {
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        // NOTE: `expires` present, `expires_in` deliberately ABSENT.
+        expires: expiresAt,
+        scope: 'user,task',
+        domain: 'acme.bitrix24.com',
+      }))
+
+      await factoryCb!()
+
+      // Persisted expiry comes from `expires`, NOT the +3600 fallback.
+      const row = store.getTokens(SAMPLE_TENANT.memberId, SAMPLE_TENANT.userId)!
+      expect(row.accessExpiresAt).toBe(expiresAt)
+
+      const okLog = loggerCalls.find(c => c.event === 'oauth.refresh.ok')
+      expect(okLog?.ctx).toMatchObject({ accessExpiresAt: expiresAt })
+    }
+    finally {
+      Object.defineProperty(
+        (await import('@bitrix24/b24jssdk')).B24OAuth.prototype,
+        'setCustomRefreshAuth',
+        { value: originalSet, configurable: true },
+      )
+    }
+  })
+
   it('refresh: transient 5xx → throws WITHOUT markRefreshFailed (Bearers stay active)', async () => {
     const originalSet = (await import('@bitrix24/b24jssdk')).B24OAuth.prototype.setCustomRefreshAuth
     let factoryCb: CustomRefreshAuth | undefined

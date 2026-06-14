@@ -210,10 +210,15 @@ export function useBitrix24OAuth(memberId: string, userId: number): B24OAuth {
     const store = useTokenStore()
     const current = store.getTokens(memberId, userId)
     if (!current) {
+      // Distinct event (issue #223): a concurrent `deleteTenant()` (operator
+      // uninstall) between the SDK's expiry check and this read makes the row
+      // vanish. Previously this logged `oauth.refresh.fail.invalid-grant`,
+      // indistinguishable from a genuine revoked refresh token — an operator
+      // alerting on that event would wrongly think a credential was revoked.
+      // It's a benign uninstall race: NO `markRefreshFailed` (nothing to
+      // revoke — the CASCADE already dropped the Bearers), its own event.
       refreshStatus.lastRefreshFail = Math.floor(Date.now() / 1000)
-      void log.error('oauth.refresh.fail.invalid-grant', {
-        memberId, userId, reason: 'tenant-deleted',
-      })
+      void log.error('oauth.refresh.fail.tenant-deleted', { memberId, userId })
       throw new Error('oauth_tokens row vanished during refresh')
     }
 
