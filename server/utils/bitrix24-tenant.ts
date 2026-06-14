@@ -5,6 +5,27 @@ import { useLogger } from '~/server/utils/logger'
 import { getTenantContext } from '~/server/utils/request-context'
 
 /**
+ * Stdio bundle override (#207). The DXT bundle has neither HTTP middleware
+ * nor a tenant ALS to populate via `runWithTenant`. When it boots in
+ * OAuth mode it registers a getter here that returns either:
+ *
+ *   - the live `B24OAuth` instance bound to the OOB-onboarded tokens
+ *     (active mode), or
+ *   - a throwing closure that surfaces the "run `bx24mcp_oauth_paste_code`
+ *     first" message to the agent (onboarding mode).
+ *
+ * HTTP server boots never touch this — the override stays null and the
+ * flag-gated webhook / OAuth-tenant dispatch runs as before. The DXT
+ * webhook path also stays null (it falls through to the existing
+ * `bitrix24OauthEnabled === false → useBitrix24()` branch).
+ */
+let stdioClientOverride: (() => TypeB24) | null = null
+
+export function _setStdioClientOverride(g: (() => TypeB24) | null): void {
+  stdioClientOverride = g
+}
+
+/**
  * Tenant-aware Bitrix24 client dispatcher — the single seam every tool
  * calls. PR-2d swapped every tool from `useBitrix24()` to this dispatcher;
  * PR-2c (this commit) wires the OAuth-on branch to the real `B24OAuth`
@@ -40,6 +61,11 @@ import { getTenantContext } from '~/server/utils/request-context'
  * take `b24: TypeB24` so they don't care which concrete class is underneath.
  */
 export function useBitrix24Tenant(): TypeB24 {
+  // Stdio override wins over every other path — it's only set when the
+  // DXT bundle has determined it's in OAuth mode, and it shortcuts the
+  // tenant/ALS plumbing the HTTP server needs but stdio doesn't have.
+  if (stdioClientOverride) return stdioClientOverride()
+
   const { bitrix24OauthEnabled } = useRuntimeConfig()
 
   if (!bitrix24OauthEnabled) {

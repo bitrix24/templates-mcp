@@ -51,12 +51,30 @@ Reinicie o Claude Desktop para a variável ser herdada pelo processo da extensã
 - O `.dxt` descompactado fica no diretório de extensões do Claude Desktop como arquivos comuns — se for um ambiente sensível à LGPD, considere cifrar o disco (FileVault / BitLocker / LUKS).
 - Nenhuma telemetria sai do projeto. As únicas chamadas externas são: (a) o seu portal Bitrix24 e (b) a API do GitHub Issues — esta última *apenas* quando o assistente decide invocar `bx24mcp_submit_feedback` E você forneceu o PAT.
 
+## OAuth em vez de webhook (opcional, para bundles pré-configurados)
+
+Útil quando a empresa proíbe credenciais de serviço compartilhadas e de longa duração (SOC2, auditorias) ou quando cada chamada precisa rodar sob a identidade real do usuário, não de uma conta de serviço.
+
+Disponível apenas em bundles `.dxt` compilados com credenciais OAuth do Marketplace (release oficial do bx24-template-mcp no Bitrix24 Marketplace, ou seu fork com `BITRIX24_DXT_OAUTH_CLIENT_ID` / `_SECRET` próprios). Sem essas credenciais o campo «portal host» é ignorado e o bundle continua no modo webhook.
+
+**Como ativar:**
+
+1. No Claude Desktop, **deixe o campo «Bitrix24 webhook URL» vazio** e preencha o campo **«Bitrix24 portal host (OAuth only)»**: apenas o hostname do portal, sem `https://` nem barras — ex. `minhaempresa.bitrix24.com.br` ou seu domínio Self-Hosted.
+2. Ative a extensão. No log (Settings → Extensions → bx24-template-mcp → View logs) aparecerá uma linha do tipo: `Bitrix24 OAuth onboarding required. Open: https://minhaempresa.bitrix24.com.br/oauth/authorize/?client_id=...`
+3. Abra a URL no navegador, faça login no seu portal e clique em «Permitir». O Bitrix24 mostra um código curto na própria página de consentimento — ele tem **TTL ~30 segundos**, copie rápido.
+4. No Claude, peça ao assistente: *«conclua o setup do OAuth com o código XXXXXX»*. Ele chama a ferramenta `bx24mcp_oauth_paste_code`, e os tokens são gravados localmente em `<diretório-de-dados>/bx24-template-mcp/oauth.json` (modo 0o600).
+5. A partir daí, todas as ferramentas Bitrix24 rodam sob a sua identidade pessoal e suas permissões. Se o refresh-token for revogado do lado do portal, as ferramentas retornam «re-onboarding required» — repita os passos 2-4.
+
+O `client_secret` do Marketplace está embutido no bundle (o Bitrix24 ainda não oferece PKCE). Esse é o trade-off documentado do fluxo OOB: o segredo protege a **identidade do aplicativo**, não os seus tokens (que são por usuário e ficam apenas no dispositivo).
+
 ## Problemas comuns
 
 - Claude Desktop: **Configurações → Extensions → bx24-template-mcp → View logs** — mostra o stderr do processo.
 - Erros mais frequentes:
-  - `NUXT_BITRIX24_WEBHOOK_URL is not set` — o campo obrigatório do passo 3 ficou em branco.
+  - `No Bitrix24 credentials configured` — nem o webhook nem o «portal host» (para bundle OAuth) foram preenchidos.
   - `Request failed with status code 401/403` — webhook revogado ou sem permissão para o método chamado.
+  - `OAuth onboarding has not been completed yet` — modo OAuth ainda sem paste-code (veja a seção acima).
+  - `OAuth refresh token has been revoked` — alguém desinstalou o app no portal; rode `bx24mcp_oauth_paste_code` de novo.
   - `unable to verify the first certificate` — Self-Hosted com CA interna sem `NODE_EXTRA_CA_CERTS` configurado.
 
 Issues e dúvidas: <https://github.com/bitrix24/templates-mcp/issues>.

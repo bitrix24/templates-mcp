@@ -23,6 +23,7 @@
       "args": ["${__dirname}/server/index.mjs"],
       "env": {
         "NUXT_BITRIX24_WEBHOOK_URL": "${user_config.webhook_url}",
+        "NUXT_BITRIX24_DXT_PORTAL_HOST": "${user_config.bitrix24_portal_host}",
         "NUXT_GITHUB_FEEDBACK_TOKEN": "${user_config.github_feedback_token}",
         "NUXT_GITHUB_FEEDBACK_REPO": "${user_config.github_feedback_repo}",
         "NUXT_LOG_LEVEL": "${user_config.log_level}",
@@ -34,9 +35,18 @@
     "webhook_url": {
       "type": "string",
       "title": "Bitrix24 webhook URL · URL вебхука Bitrix24 · URL do webhook Bitrix24",
-      "description": "EN: Full incoming-webhook URL. Bitrix24 Cloud: https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/ (any TLD — .com / .ru / .com.br / .es / .de / …). Bitrix24 Self-Hosted: any internal domain, same URL shape. Create one under Developer resources → Other → Inbound webhook. The secret stays on your device.\n\nRU: Полный URL входящего вебхука. Bitrix24 Cloud: https://<портал>.bitrix24.<tld>/rest/<user_id>/<secret>/ (любая зона — .ru / .com / .by / …). Self-Hosted: любой внутренний домен с такой же структурой. Создаётся в портале: «Разработчикам → Другое → Входящий вебхук». Секрет хранится у вас на устройстве.\n\nPT-BR: URL completa do webhook de entrada. Bitrix24 Cloud: https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/ (qualquer TLD — .com.br / .com / .es / …). Self-Hosted: qualquer domínio interno com a mesma estrutura. Crie em «Recursos para desenvolvedores → Outros → Webhook de entrada». O segredo fica no seu dispositivo.",
+      "description": "EN: Full incoming-webhook URL. Bitrix24 Cloud: https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/ (any TLD — .com / .ru / .com.br / .es / .de / …). Bitrix24 Self-Hosted: any internal domain, same URL shape. Create one under Developer resources → Other → Inbound webhook. The secret stays on your device. Leave empty if you plan to use OAuth instead (see the portal-host field below).\n\nRU: Полный URL входящего вебхука. Bitrix24 Cloud: https://<портал>.bitrix24.<tld>/rest/<user_id>/<secret>/ (любая зона — .ru / .com / .by / …). Self-Hosted: любой внутренний домен с такой же структурой. Создаётся в портале: «Разработчикам → Другое → Входящий вебхук». Секрет хранится у вас на устройстве. Оставьте пустым, если планируете использовать OAuth (см. поле «portal host» ниже).\n\nPT-BR: URL completa do webhook de entrada. Bitrix24 Cloud: https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/ (qualquer TLD — .com.br / .com / .es / …). Self-Hosted: qualquer domínio interno com a mesma estrutura. Crie em «Recursos para desenvolvedores → Outros → Webhook de entrada». O segredo fica no seu dispositivo. Deixe em branco se for usar OAuth (veja o campo «portal host» abaixo).",
       "sensitive": true,
-      "required": true
+      "required": false,
+      "default": ""
+    },
+    "bitrix24_portal_host": {
+      "type": "string",
+      "title": "Bitrix24 portal host (OAuth only) · Хост портала Bitrix24 (только OAuth) · Host do portal Bitrix24 (apenas OAuth)",
+      "description": "EN: Your portal hostname without the scheme — e.g. mycompany.bitrix24.com / mycompany.bitrix24.ru / mycompany.bitrix24.com.br, or any Self-Hosted domain. ONLY used when this bundle was built with OAuth credentials baked in (the upstream Bitrix24 Marketplace release of bx24-template-mcp, or a fork that registered its own Marketplace app). When set, the bundle starts an OOB OAuth flow on first launch: it prints a consent URL, you log in to your portal, paste the short code you see on Bitrix24's consent page into the `bx24mcp_oauth_paste_code` tool, and the bundle stores per-user tokens locally. Leave empty to stick with webhook mode.\n\nRU: Хостнейм вашего портала без схемы — например mycompany.bitrix24.ru / mycompany.bitrix24.com / mycompany.bitrix24.by или любой Self-Hosted домен. Используется ТОЛЬКО если бандл собран с OAuth-учётками (релиз bx24-template-mcp из Bitrix24 Marketplace или форк со своим Marketplace-приложением). Тогда при первом запуске бандл стартует OOB-OAuth: показывает consent-URL, вы логинитесь в портал, копируете короткий код с consent-страницы Bitrix24 в инструмент `bx24mcp_oauth_paste_code`, и токены сохраняются локально. Оставьте пустым, чтобы остаться на webhook-режиме.\n\nPT-BR: Hostname do seu portal sem o esquema — ex. minhaempresa.bitrix24.com.br / minhaempresa.bitrix24.com / minhaempresa.bitrix24.es ou qualquer domínio Self-Hosted. Usado APENAS quando o bundle foi compilado com credenciais OAuth (release do bx24-template-mcp no Bitrix24 Marketplace, ou fork com app próprio). Nesse caso, no primeiro start o bundle inicia o fluxo OAuth OOB: exibe a URL de consentimento, você faz login no portal, cola o código curto da página de consentimento do Bitrix24 na ferramenta `bx24mcp_oauth_paste_code`, e os tokens ficam armazenados localmente. Deixe em branco para continuar no modo webhook.",
+      "sensitive": false,
+      "required": false,
+      "default": ""
     },
     "github_feedback_token": {
       "type": "string",

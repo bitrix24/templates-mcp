@@ -29,15 +29,11 @@ interface RuntimeConfig {
   githubFeedbackToken: string
   githubFeedbackRepo: string
   logLevel: string
-  // OAuth multi-tenant is an HTTP-server-only feature (install/callback
-  // routes, Bearer middleware) — it never runs in the stdio/DXT bundle, where
-  // Claude Desktop provides transport-level trust. These 7 keys are declared
-  // anyway (issue #222) so the shim's shape matches `nuxt.config.ts`
-  // `runtimeConfig`: server utils that destructure `bitrix24Oauth*` (e.g.
-  // `token-store.ts`, `bitrix24-tenant.ts`) type-check against the shim and
-  // read the same falsy defaults they would on an OAuth-off HTTP deploy, so
-  // every OAuth branch is skipped. Keep this list in sync with
-  // `nuxt.config.ts` — a future key added there must be mirrored here.
+  // The HTTP-OAuth keys remain declared (issue #222) so server utils that
+  // destructure `bitrix24Oauth*` type-check against the shim. In stdio they
+  // are always the disabled-shape — DXT's OAuth path uses the dedicated
+  // `dxtOauth*` keys below, NOT this set, because the HTTP install/callback
+  // flow doesn't apply.
   bitrix24OauthEnabled: boolean
   bitrix24OauthClientId: string
   bitrix24OauthClientSecret: string
@@ -45,7 +41,27 @@ interface RuntimeConfig {
   bitrix24OauthScope: string
   bitrix24OauthDbDir: string
   bitrix24OauthAdminToken: string
+  // DXT-specific OAuth surface (#207, OOB code-paste). These are read by
+  // stdio-only modules (`mcp-stdio/oauth-*.ts`) and are never used by HTTP-
+  // server code. `dxtOauthClientId` / `_ClientSecret` are baked at build
+  // time via esbuild `define` — empty string here is the "OAuth disabled"
+  // signal (webhook-only build, or a fork that hasn't supplied secrets).
+  // `dxtPortalHost` is operator-supplied via `user_config` at install time.
+  // `dxtDataDir` overrides the OS user-data-dir for tests.
+  dxtOauthClientId: string
+  dxtOauthClientSecret: string
+  dxtPortalHost: string
+  dxtDataDir: string
 }
+
+// Build-time defines (see `mcp-stdio/build.mjs`). Forks that build a custom
+// `.dxt` with their own Marketplace credentials inject these via:
+//   BITRIX24_DXT_OAUTH_CLIENT_ID=… BITRIX24_DXT_OAUTH_CLIENT_SECRET=… pnpm build:dxt
+// The upstream CI workflow pulls them from repo secrets. If unset, the
+// strings are baked as `''` and the OAuth path stays disabled at runtime —
+// webhook mode is the only viable mode in that build.
+declare const __DXT_OAUTH_CLIENT_ID__: string | undefined
+declare const __DXT_OAUTH_CLIENT_SECRET__: string | undefined
 
 // Canonical env names are `NUXT_`-prefixed — identical to what the Nuxt HTTP
 // server consumes (Nuxt maps `NUXT_<KEY>` onto `runtimeConfig.<key>`). The DXT
@@ -65,10 +81,8 @@ const runtimeConfig: RuntimeConfig = {
     ?? process.env.GITHUB_FEEDBACK_REPO
     ?? 'bitrix24/templates-mcp',
   logLevel: process.env.NUXT_LOG_LEVEL ?? process.env.LOG_LEVEL ?? 'info',
-  // OAuth is always OFF in stdio (see the interface comment). Hard-code the
-  // disabled shape rather than reading env, so a stray NUXT_BITRIX24_OAUTH_*
-  // in the host environment can't half-activate an HTTP-only code path inside
-  // the bundle.
+  // HTTP-OAuth always OFF in stdio. The install/callback/Bearer surface
+  // doesn't exist in this transport.
   bitrix24OauthEnabled: false,
   bitrix24OauthClientId: '',
   bitrix24OauthClientSecret: '',
@@ -76,6 +90,15 @@ const runtimeConfig: RuntimeConfig = {
   bitrix24OauthScope: '',
   bitrix24OauthDbDir: '',
   bitrix24OauthAdminToken: '',
+  // DXT-OAuth surface. `__DXT_*__` is replaced literally by esbuild at build
+  // time. The `typeof` guard keeps the shim importable in `vitest`/`pnpm dev`
+  // (where esbuild's `define` hasn't run and the identifier is undefined) —
+  // tests get the disabled shape, which matches a webhook-only build.
+  dxtOauthClientId: typeof __DXT_OAUTH_CLIENT_ID__ === 'string' ? __DXT_OAUTH_CLIENT_ID__ : '',
+  dxtOauthClientSecret: typeof __DXT_OAUTH_CLIENT_SECRET__ === 'string' ? __DXT_OAUTH_CLIENT_SECRET__ : '',
+  dxtPortalHost:
+    process.env.NUXT_BITRIX24_DXT_PORTAL_HOST ?? process.env.BITRIX24_DXT_PORTAL_HOST ?? '',
+  dxtDataDir: process.env.NUXT_BITRIX24_DXT_DATA_DIR ?? process.env.BITRIX24_DXT_DATA_DIR ?? '',
 }
 
 ;(globalThis as unknown as { useRuntimeConfig: () => RuntimeConfig }).useRuntimeConfig = () =>

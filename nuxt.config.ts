@@ -46,6 +46,15 @@ export default defineNuxtConfig({
     // NEVER fall back to `bitrix24OauthEnabled` or `mcpAuthToken` here —
     // the privilege levels differ (agent token vs operator token).
     bitrix24OauthAdminToken: '',
+    // DXT-only OAuth surface (#207, OOB code-paste). Always empty on the
+    // HTTP server — the stdio shim populates them from build-time defines
+    // and `user_config`. Declared here so the `runtimeConfig` type
+    // contract matches the shim's `RuntimeConfig` interface and shared
+    // server utils that destructure these names type-check uniformly.
+    dxtOauthClientId: '',
+    dxtOauthClientSecret: '',
+    dxtPortalHost: '',
+    dxtDataDir: '',
   },
 
   nitro: {

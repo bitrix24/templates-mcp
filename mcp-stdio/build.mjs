@@ -79,6 +79,23 @@ await build({
       'import { createRequire as __cr } from "module";'
       + 'const require = __cr(import.meta.url);',
   },
+  // Build-time bake of the Bitrix24 Marketplace OAuth credentials (#207).
+  // Upstream CI provides them via repo secrets BITRIX24_DXT_OAUTH_CLIENT_ID
+  // / _SECRET; forks supply their own via the same env-vars before running
+  // `pnpm build:dxt`. Both default to empty strings — a bundle built
+  // without them runs webhook-only at install time (OAuth path stays off
+  // because the runtime check in `auth-mode.ts` sees empty client id).
+  //
+  // Security note: these end up as literal string constants in the bundled
+  // `server/index.mjs`. The DXT runs on the user's machine, so the
+  // `client_secret` is extractable by anyone with the file. This is the
+  // documented OOB trade-off — Bitrix24 doesn't publish a PKCE flow today
+  // and the secret protects the Marketplace app identity, not the user's
+  // tokens. Rotation = rebuild + republish.
+  define: {
+    __DXT_OAUTH_CLIENT_ID__: JSON.stringify(process.env.BITRIX24_DXT_OAUTH_CLIENT_ID ?? ''),
+    __DXT_OAUTH_CLIENT_SECRET__: JSON.stringify(process.env.BITRIX24_DXT_OAUTH_CLIENT_SECRET ?? ''),
+  },
   // The DXT manifest declares `node ${__dirname}/server/index.mjs`; nothing
   // is loaded out-of-band, so everything must be inlined.
   external: [],

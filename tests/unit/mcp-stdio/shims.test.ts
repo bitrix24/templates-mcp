@@ -29,6 +29,10 @@ interface ShimRuntimeConfig {
   bitrix24OauthScope: string
   bitrix24OauthDbDir: string
   bitrix24OauthAdminToken: string
+  dxtOauthClientId: string
+  dxtOauthClientSecret: string
+  dxtPortalHost: string
+  dxtDataDir: string
 }
 
 const ENV_VARS = [
@@ -37,11 +41,15 @@ const ENV_VARS = [
   'NUXT_GITHUB_FEEDBACK_TOKEN',
   'NUXT_GITHUB_FEEDBACK_REPO',
   'NUXT_LOG_LEVEL',
+  'NUXT_BITRIX24_DXT_PORTAL_HOST',
+  'NUXT_BITRIX24_DXT_DATA_DIR',
   'BITRIX24_WEBHOOK_URL',
   'MCP_AUTH_TOKEN',
   'GITHUB_FEEDBACK_TOKEN',
   'GITHUB_FEEDBACK_REPO',
   'LOG_LEVEL',
+  'BITRIX24_DXT_PORTAL_HOST',
+  'BITRIX24_DXT_DATA_DIR',
 ] as const
 
 describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
@@ -112,6 +120,14 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
       bitrix24OauthScope: '',
       bitrix24OauthDbDir: '',
       bitrix24OauthAdminToken: '',
+      // DXT-OAuth keys (#207). Defaults when no env vars are set and the
+      // bundle was built without `BITRIX24_DXT_OAUTH_CLIENT_ID` (so the
+      // esbuild `define` substitutes the empty-string fallback). Pinned so
+      // a drift in the four-field set is caught.
+      dxtOauthClientId: '',
+      dxtOauthClientSecret: '',
+      dxtPortalHost: '',
+      dxtDataDir: '',
     })
   })
 
@@ -135,6 +151,14 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
       bitrix24OauthScope: '',
       bitrix24OauthDbDir: '',
       bitrix24OauthAdminToken: '',
+      // DXT-OAuth keys (#207). Defaults when no env vars are set and the
+      // bundle was built without `BITRIX24_DXT_OAUTH_CLIENT_ID` (so the
+      // esbuild `define` substitutes the empty-string fallback). Pinned so
+      // a drift in the four-field set is caught.
+      dxtOauthClientId: '',
+      dxtOauthClientSecret: '',
+      dxtPortalHost: '',
+      dxtDataDir: '',
     })
   })
 

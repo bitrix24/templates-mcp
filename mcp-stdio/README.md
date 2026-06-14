@@ -28,13 +28,29 @@ Requires Node 22 and a system `zip` binary (`apt install zip` / preinstalled on 
 
 1. Open Claude Desktop → Settings → Extensions.
 2. Drag the `.dxt` file onto the window, or click *Install from file*.
-3. When prompted, paste your Bitrix24 webhook URL. The URL pattern is:
-   - **Cloud:** `https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/` — any TLD (`.com` / `.ru` / `.com.br` / `.es` / `.de` / …).
-   - **Self-Hosted (on-prem):** `https://<your-internal-host>/rest/<user_id>/<secret>/` — same shape, any domain.
+3. Choose ONE auth mode and fill in the corresponding `user_config` field:
+   - **Webhook (default — works on every build):** paste your Bitrix24 incoming-webhook URL. The pattern is `https://<portal>.bitrix24.<tld>/rest/<user_id>/<secret>/` for Cloud (any TLD — `.com` / `.ru` / `.com.br` / `.es` / `.de` / …) or `https://<your-internal-host>/rest/<user_id>/<secret>/` for Self-Hosted. The secret is stored in Claude Desktop's OS-backed encrypted user_config (macOS Keychain / Windows DPAPI / Linux libsecret).
+   - **OAuth (only if this bundle was built with Marketplace credentials — see the [OAuth section](#oauth-mode-oob-code-paste) below):** leave the webhook field empty and set the **Bitrix24 portal host** field to your portal hostname (e.g. `mycompany.bitrix24.com`). On first launch the extension log will show a consent URL; complete the [OOB code-paste flow](#oauth-mode-oob-code-paste).
 4. Optionally set the GitHub feedback PAT (enables `bx24mcp_submit_feedback`).
 5. Enable the extension. Ask the assistant: *"Show me my Bitrix24 current user."*
 
-The webhook secret is stored in Claude Desktop's OS-backed encrypted user_config (macOS Keychain / Windows DPAPI / Linux libsecret); it never leaves the device.
+## OAuth mode (OOB code-paste)
+
+The upstream Marketplace release of this DXT ships with `BITRIX24_DXT_OAUTH_CLIENT_ID` / `BITRIX24_DXT_OAUTH_CLIENT_SECRET` baked in at build time. Forks rebuild with their own Marketplace app id (`BITRIX24_DXT_OAUTH_CLIENT_ID=… BITRIX24_DXT_OAUTH_CLIENT_SECRET=… pnpm build:dxt`). A build without these secrets is webhook-only — the OAuth path stays gated off at runtime.
+
+When a bundle with baked OAuth credentials sees a `bitrix24_portal_host` user_config value AND no tokens on disk yet, the extension boots in **onboarding mode**:
+
+1. The extension log prints `https://<your-portal>/oauth/authorize/?client_id=...&state=...`. Open it in a browser.
+2. Sign in to your Bitrix24 portal and grant consent. Bitrix24 displays a short code on the consent page (TTL ~30 seconds).
+3. In Claude, ask the assistant to call `bx24mcp_oauth_paste_code` with the code (e.g. *"complete the Bitrix24 OAuth setup with code XXXXXX"*).
+4. The extension exchanges the code for a per-user access/refresh token pair, persists them to `<user-data>/bx24-template-mcp/oauth.json` (file mode 0o600), and switches to **active** mode. Every subsequent tool call acts under the consenting user's Bitrix24 identity and permissions; the SDK silently refreshes the access token on 401.
+5. If the refresh token is later revoked on the portal side (operator uninstalls the app), tools return a friendly *"re-onboarding required"* message and `bx24mcp_oauth_paste_code` can be re-run.
+
+Logs and audit are written to the same user-data directory: `audit.log` is JSONL with one entry per oauth.upsert.exchange / .refresh / .fail.* event — same taxonomy as the HTTP server's audit log.
+
+**`client_secret` is in the bundle.** Bitrix24 does not advertise PKCE today, so the `client_secret` for a public client ships inside the `.dxt`. This is the documented OOB trade-off — the secret protects the Marketplace **app identity**, not the user's tokens (those are per-user and live only on the device). Rotation = rebuild + republish; old installs need re-onboarding.
+
+**Self-Hosted with a private CA?** Set `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` in your shell **before launching Claude Desktop** so the spawned extension process inherits the variable.
 
 **Self-Hosted with a private CA?** Set `NODE_EXTRA_CA_CERTS=/path/to/ca.pem` in your shell **before launching Claude Desktop** so the spawned extension process inherits the variable.
 

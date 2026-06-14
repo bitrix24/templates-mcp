@@ -146,7 +146,16 @@ jobs:
           # (it flags setup-node's mere presence in a publish flow even with
           # caching off); ignored with the vector already removed above.
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build:dxt
+      - name: Build DXT bundle
+        # Pass through the OAuth credentials for the OOB code-paste flow
+        # (#207). Optional: if either secret is unset, esbuild bakes empty
+        # strings and the resulting `.dxt` boots in webhook-only mode at
+        # install time (the runtime check in `mcp-stdio/auth-mode.ts`
+        # gates OAuth on a non-empty client id).
+        env:
+          BITRIX24_DXT_OAUTH_CLIENT_ID: ${{ secrets.BITRIX24_DXT_OAUTH_CLIENT_ID }}
+          BITRIX24_DXT_OAUTH_CLIENT_SECRET: ${{ secrets.BITRIX24_DXT_OAUTH_CLIENT_SECRET }}
+        run: pnpm build:dxt
       - name: Upload DXT artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
