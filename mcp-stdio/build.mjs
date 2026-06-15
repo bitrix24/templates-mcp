@@ -88,12 +88,22 @@ await build({
   //   - OAuth: register a Bitrix24 Marketplace application (type "without
   //     redirect_uri"), paste CLIENT_ID + CLIENT_SECRET into the bundle's
   //     `user_config` fields. The secret stays in the OS keychain (macOS
-  //     Keychain / Windows DPAPI / Linux libsecret) via Claude Desktop's
+  //     Keychain / Windows DPAPI / Linux libsecret subject to availability
+  //     — on a headless Linux without GNOME Keyring / KWallet, Claude
+  //     Desktop may fall back to plaintext storage) via Claude Desktop's
   //     `sensitive: true` storage; rotation = paste new value, restart.
   //
   // No upstream repo secrets needed for `pnpm build:dxt`. Forks no longer
   // pre-bake their own OAuth credentials; they ship the same upstream
   // bundle and document how operators register their Marketplace app.
+  //
+  // BACK-COMPAT NOTE for fork developers: the old build-time env vars
+  // `BITRIX24_DXT_OAUTH_CLIENT_ID` / `_CLIENT_SECRET` no longer affect
+  // the bundle — `define` is gone here. They are retained as RUNTIME
+  // un-prefixed fallbacks in `nuxt-shims.ts` (so `export
+  // BITRIX24_DXT_OAUTH_CLIENT_ID=… node dist/dxt/server/index.mjs` still
+  // works for local smoke testing), but setting them before `pnpm
+  // build:dxt` has no effect on the resulting `.dxt`.
   //
   // The DXT manifest declares `node ${__dirname}/server/index.mjs`; nothing
   // is loaded out-of-band, so everything must be inlined.

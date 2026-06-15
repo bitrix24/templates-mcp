@@ -69,7 +69,7 @@ O mesmo `.dxt` oficial funciona tanto em modo webhook quanto em OAuth — o modo
    - **Deixe o campo «Bitrix24 webhook URL» vazio.**
    - Preencha **«Bitrix24 portal host (OAuth only)»**: apenas o hostname do portal, sem `https://` nem barras — ex. `minhaempresa.bitrix24.com.br` ou seu domínio Self-Hosted.
    - Preencha **«Bitrix24 OAuth Client ID»** — o `CLIENT_ID` do passo 3 acima.
-   - Preencha **«Bitrix24 OAuth Client Secret»** — o `CLIENT_SECRET` do passo 3 acima. O campo é `sensitive` e fica no keychain do SO (macOS Keychain / Windows DPAPI / Linux libsecret).
+   - Preencha **«Bitrix24 OAuth Client Secret»** — o `CLIENT_SECRET` do passo 3 acima. O campo é `sensitive` e fica no keychain do SO (macOS Keychain / Windows DPAPI / Linux libsecret). **Caveat Linux:** em sistema headless sem GNOME Keyring / KWallet o Claude Desktop pode cair para armazenamento em arquivo de configuração em plaintext — verifique com `secret-tool` ou equivalente antes do uso em produção.
 2. Ative a extensão. No log (Settings → Extensions → bx24-template-mcp → View logs) aparecerá uma linha do tipo: `Bitrix24 OAuth onboarding required. Open: https://minhaempresa.bitrix24.com.br/oauth/authorize/?client_id=...`
 3. Abra a URL no navegador, faça login no seu portal e clique em «Permitir». O Bitrix24 mostra um código curto na própria página de consentimento — ele tem **TTL ~30 segundos**, copie rápido.
 4. No Claude, peça ao assistente: *«conclua o setup do OAuth com o código XXXXXX»*. Ele chama a ferramenta `bx24mcp_oauth_paste_code`, e os tokens são gravados localmente em `<diretório-de-dados>/bx24-template-mcp/oauth.json` (modo 0o600).

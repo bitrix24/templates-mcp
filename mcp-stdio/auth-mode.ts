@@ -22,7 +22,13 @@ export interface DxtAuthConfig {
  * the right client. Decision tree (Q3 of #207 — "OAuth wins if usable;
  * else webhook"):
  *
- *   1. Are OAuth credentials baked AND portal host configured?
+ *   1. Are all THREE OAuth fields configured (`portalHost`, `oauthClientId`,
+ *      `oauthClientSecret`)? They flow from Claude Desktop's `user_config`
+ *      block at runtime — NOT baked into the bundle at build time (see
+ *      #247; the original #207 design baked CLIENT_ID/SECRET via esbuild
+ *      `define`, walked back because a `.dxt` is a zip and bake-time
+ *      gives zero security benefit). Partial fill (2 of 3) is treated
+ *      as not-set: the gate is `!!(clientId && clientSecret && portalHost)`.
  *        - No → no OAuth path possible. If webhook URL is set, mode =
  *          'webhook' (existing path). Otherwise this returns null and
  *          the caller fails fast: nothing to do.

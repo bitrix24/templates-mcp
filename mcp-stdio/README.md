@@ -5,7 +5,7 @@ This directory builds the **local stdio** distribution: a single `.dxt` file tha
 ## What's in the bundle
 
 - `server/index.mjs` — esbuild-bundled Node entry point, every dependency inlined (`@modelcontextprotocol/sdk`, `@nuxtjs/mcp-toolkit/server`, `@bitrix24/b24jssdk`, zod, …).
-- `manifest.json` — DXT manifest. Declares the Node entry point and a `user_config` form with one required field: the Bitrix24 webhook URL.
+- `manifest.json` — DXT manifest. Declares the Node entry point and a `user_config` form: webhook URL (webhook mode); portal host + Client ID + Client Secret (OAuth mode); optional GitHub feedback token, repo, and log level. None of the fields are `required: true` at the schema level — the bundle resolves the mode at boot from which fields are filled (`mcp-stdio/auth-mode.ts:resolveAuthMode`); if none, it exits with an instruction printed to stderr.
 - `LICENSE` — MIT, same as upstream.
 
 Tool code is the same as the HTTP server — same files in `server/mcp/tools/**`, same util layer. The only stdio-specific code is:
@@ -69,6 +69,8 @@ NUXT_BITRIX24_WEBHOOK_URL='https://your.bitrix24.com/rest/.../...' \
 ```
 
 The process reads JSON-RPC frames from stdin and writes frames to stdout. Use the [MCP inspector](https://github.com/modelcontextprotocol/inspector) for an interactive harness.
+
+> **Dev shell-history caveat.** When dry-running OAuth mode (`NUXT_BITRIX24_DXT_OAUTH_CLIENT_SECRET=… node …`), the secret lands in your shell history, `ps auxe`, and `/proc/<pid>/environ` (readable by any process of the same user). For one-off smoke tests it's acceptable, but for repeated dev work use a `.env` file loaded by `direnv` / `dotenv` instead, or set `HISTIGNORE="*OAUTH_CLIENT_SECRET=*"` for your shell. The production Claude Desktop install path doesn't have this exposure — the secret flows through the keychain, never appears on the command line.
 
 ## Adding a new tool
 

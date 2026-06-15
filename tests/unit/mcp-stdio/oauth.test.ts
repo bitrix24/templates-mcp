@@ -254,6 +254,45 @@ describe('mcp-stdio OAuth foundations (#207)', () => {
   })
 
   describe('resolveAuthMode', () => {
+    it('integration: env → nuxt-shims → DxtAuthConfig → resolveAuthMode (catches camelCase / key-name drift, #247)', async () => {
+      // Single test that walks the FULL wire path the production boot
+      // path takes: manifest user_config sets env vars → nuxt-shims
+      // projects them into runtimeConfig.dxt* → server.ts builds the
+      // DxtAuthConfig from those keys → resolveAuthMode picks the mode.
+      // The three unit pieces above test each segment in isolation but
+      // would all stay green if (e.g.) the shim wrote `dxtOauthClientID`
+      // (capital D) while DxtAuthConfig destructured `dxtOauthClientId`.
+      // This test would go red on that exact drift.
+      vi.resetModules()
+      process.env.NUXT_BITRIX24_DXT_OAUTH_CLIENT_ID = 'wire-test-cid'
+      process.env.NUXT_BITRIX24_DXT_OAUTH_CLIENT_SECRET = 'wire-test-secret'
+      process.env.NUXT_BITRIX24_DXT_PORTAL_HOST = 'wire-test.bitrix24.ru'
+      try {
+        await import('../../../mcp-stdio/nuxt-shims')
+        const cfg = (globalThis as { useRuntimeConfig?: () => Record<string, unknown> })
+          .useRuntimeConfig?.()
+        expect(cfg, 'shim must be installed').toBeDefined()
+        const { resolveAuthMode } = await import('../../../mcp-stdio/auth-mode')
+        const { _setStdioClientOverride } = await import('../../../server/utils/bitrix24-tenant')
+        _setStdioClientOverride(null)
+        const mode = resolveAuthMode({
+          webhookUrl: cfg!.bitrix24WebhookUrl as string,
+          oauthClientId: cfg!.dxtOauthClientId as string,
+          oauthClientSecret: cfg!.dxtOauthClientSecret as string,
+          portalHost: cfg!.dxtPortalHost as string,
+          dataDirOverride: tmp,
+        })
+        // No tokens on disk yet → onboarding mode (not 'webhook', not null,
+        // not 'oauth-active').
+        expect(mode).toBe('oauth-onboarding')
+      }
+      finally {
+        delete process.env.NUXT_BITRIX24_DXT_OAUTH_CLIENT_ID
+        delete process.env.NUXT_BITRIX24_DXT_OAUTH_CLIENT_SECRET
+        delete process.env.NUXT_BITRIX24_DXT_PORTAL_HOST
+      }
+    })
+
     it('returns null and registers no override when nothing is configured', async () => {
       const { resolveAuthMode } = await import('../../../mcp-stdio/auth-mode')
       const { _setStdioClientOverride, useBitrix24Tenant } = await import('../../../server/utils/bitrix24-tenant')

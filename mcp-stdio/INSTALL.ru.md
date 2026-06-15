@@ -59,7 +59,7 @@ export NODE_EXTRA_CA_CERTS=/path/to/your-internal-ca-bundle.pem
 **Что подготовить со стороны Bitrix24** (один раз на всю компанию или на каждого пользователя — на ваше усмотрение):
 
 1. Войдите в партнёрский кабинет Bitrix24 (или в админку портала): **Приложения → Marketplace → Создать приложение**.
-2. Выберите тип **«приложение без `redirect_uri`»** (OOB-сценарий — Bitrix24 покажет код согласия прямо на странице).
+2. Выберите тип **«приложение без `redirect_uri`»** (OOB-сценарий — Bitrix24 покажет код согласия прямо на странице). В русской UI Bitrix24 это может называться «без обратного адреса» — это та же опция.
 3. После создания вы получите **`CLIENT_ID`** и **`CLIENT_SECRET`**. Скопируйте оба значения, они сейчас понадобятся.
 
 **Как включить в Claude Desktop:**
@@ -68,7 +68,7 @@ export NODE_EXTRA_CA_CERTS=/path/to/your-internal-ca-bundle.pem
    - **Оставьте поле «Bitrix24 webhook URL» пустым.**
    - Заполните **«Bitrix24 portal host (OAuth only)»**: только хостнейм портала, без `https://` и слэшей — например `mycompany.bitrix24.ru` или ваш Self-Hosted домен.
    - Заполните **«Bitrix24 OAuth Client ID»** — `CLIENT_ID` из шага 3 выше.
-   - Заполните **«Bitrix24 OAuth Client Secret»** — `CLIENT_SECRET` из шага 3 выше. Поле помечено как `sensitive`, значение хранится в системном keychain (macOS Keychain / Windows DPAPI / Linux libsecret).
+   - Заполните **«Bitrix24 OAuth Client Secret»** — `CLIENT_SECRET` из шага 3 выше. Поле помечено как `sensitive`, значение хранится в системном keychain (macOS Keychain / Windows DPAPI / Linux libsecret). **Linux caveat:** на headless-системе без GNOME Keyring / KWallet Claude Desktop может откатиться к plaintext-файлу конфига — проверьте через `secret-tool` или эквивалент перед production-использованием.
 2. Включите расширение. В логе (Settings → Extensions → bx24-template-mcp → View logs) появится строка вида: `Bitrix24 OAuth onboarding required. Open: https://mycompany.bitrix24.ru/oauth/authorize/?client_id=...`
 3. Откройте URL в браузере, залогиньтесь в свой портал и нажмите «Разрешить». Bitrix24 покажет короткий код прямо на странице согласия — у него **TTL ~30 секунд**, скопируйте быстро.
 4. В Claude попросите ассистента: *«заверши настройку OAuth кодом XXXXXX»*. Он вызовет инструмент `bx24mcp_oauth_paste_code`, и токены сохранятся локально в `<директория-данных>/bx24-template-mcp/oauth.json` (права 0o600).

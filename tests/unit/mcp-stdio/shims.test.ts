@@ -1,4 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 /**
  * Unit tests for `mcp-stdio/nuxt-shims.ts` — the runtime-config projection
@@ -199,6 +205,25 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
     expect(cfg.githubFeedbackToken).toBe('ghp_canonical')
     expect(cfg.githubFeedbackRepo).toBe('acme/canonical')
     expect(cfg.logLevel).toBe('debug')
+  })
+
+  it('manifest pins the sensitive flag per OAuth field (CLIENT_SECRET → keychain, CLIENT_ID → public — #247)', async () => {
+    // Closes the silent-swap regression: if a future PR flipped
+    // `sensitive: true` on the wrong field (e.g. marking CLIENT_ID as
+    // sensitive while leaving CLIENT_SECRET as plain text), the bundle's
+    // build-time `validateManifest()` would pass — the MCPB schema only
+    // checks shape, not business semantics. Pin the per-field invariant
+    // here so the regression goes red instead of silently shipping a
+    // CLIENT_SECRET into a plain-text config file.
+    const manifest = JSON.parse(
+      readFileSync(join(__dirname, '../../../mcp-stdio/manifest.json'), 'utf8'),
+    ) as {
+      user_config: Record<string, { sensitive?: boolean }>
+    }
+    expect(manifest.user_config.bitrix24_oauth_client_id?.sensitive ?? false).toBe(false)
+    expect(manifest.user_config.bitrix24_oauth_client_secret?.sensitive).toBe(true)
+    expect(manifest.user_config.webhook_url?.sensitive).toBe(true)
+    expect(manifest.user_config.github_feedback_token?.sensitive).toBe(true)
   })
 
   it('projects DXT OAuth creds from env vars (manifest user_config → env path, #247)', async () => {

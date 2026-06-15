@@ -42,11 +42,8 @@ async function main() {
   if (!mode) {
     process.stderr.write(
       'No Bitrix24 credentials configured.\n'
-        + '  • For webhook mode: set NUXT_BITRIX24_WEBHOOK_URL (or use the Claude Desktop user_config field).\n'
-        + '  • For OAuth mode: this DXT bundle must be built with BITRIX24_DXT_OAUTH_CLIENT_ID + _SECRET '
-        + 'AND you must set the portal host (`bitrix24_portal_host` user_config field, or '
-        + 'NUXT_BITRIX24_DXT_PORTAL_HOST env). The upstream Bitrix24 release of this DXT ships the credentials baked in — '
-        + 'a fork rebuilds with its own Marketplace app ID.\n',
+        + '  • For webhook mode: fill the `Bitrix24 webhook URL` field in Claude Desktop (Settings → Extensions → bx24-template-mcp). For a local dry-run, export `NUXT_BITRIX24_WEBHOOK_URL`.\n'
+        + '  • For OAuth mode: fill ALL THREE Claude Desktop fields — `Bitrix24 portal host`, `Bitrix24 OAuth Client ID`, `Bitrix24 OAuth Client Secret`. The Client ID + Secret come from a Bitrix24 Marketplace application of type "without redirect_uri" (register in your partner cabinet). The bundle stores Secret in the OS keychain via Claude Desktop\'s `sensitive: true` flag. For a local dry-run, export the matching `NUXT_BITRIX24_DXT_*` env vars instead.\n',
     )
     process.exit(1)
   }
