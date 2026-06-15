@@ -50,27 +50,41 @@ export NODE_EXTRA_CA_CERTS=/path/to/your-internal-ca-bundle.pem
 - Логи (stderr) **редактируют URL** через `makeRedactingLogger`: даже если Claude Desktop пишет лог расширения, секрет внутри URL заменён на `<REDACTED>`.
 - Распакованный `.dxt` лежит в директории расширений Claude Desktop как обычные файлы — если параноите, шифруйте раздел диска целиком (FileVault / BitLocker / LUKS).
 
-## OAuth вместо вебхука (опционально, для подготовленных сборок)
+## OAuth вместо вебхука (опционально)
 
 Подойдёт, если ваша компания запрещает long-lived shared service-credentials (SOC2, аудиты) или вы хотите, чтобы каждый запрос исполнялся под реальной учёткой пользователя, а не сервисного аккаунта.
 
-Доступно только в сборках `.dxt`, собранных с OAuth-учётками Marketplace-приложения (релиз bx24-template-mcp из Bitrix24 Marketplace или ваш форк со своим `BITRIX24_DXT_OAUTH_CLIENT_ID` / `_SECRET`). В сборке без этих учёток поле «portal host» просто игнорируется, бандл остаётся на вебхуке.
+Один и тот же официальный `.dxt`-бандл умеет работать как в webhook-режиме, так и в OAuth: режим выбирается набором заполненных полей в Claude Desktop. Никаких пересборок не нужно.
 
-**Как включить:**
+**Что подготовить со стороны Bitrix24** (один раз на всю компанию или на каждого пользователя — на ваше усмотрение):
 
-1. В Claude Desktop **оставьте поле «Bitrix24 webhook URL» пустым** и заполните поле **«Bitrix24 portal host (OAuth only)»**: только хостнейм портала, без `https://` и слэшей — например `mycompany.bitrix24.ru` или ваш Self-Hosted домен.
+1. Войдите в партнёрский кабинет Bitrix24 (или в админку портала): **Приложения → Marketplace → Создать приложение**.
+2. Выберите тип **«приложение без `redirect_uri`»** (OOB-сценарий — Bitrix24 покажет код согласия прямо на странице).
+3. После создания вы получите **`CLIENT_ID`** и **`CLIENT_SECRET`**. Скопируйте оба значения, они сейчас понадобятся.
+
+**Как включить в Claude Desktop:**
+
+1. В **настройках расширения** (Settings → Extensions → bx24-template-mcp):
+   - **Оставьте поле «Bitrix24 webhook URL» пустым.**
+   - Заполните **«Bitrix24 portal host (OAuth only)»**: только хостнейм портала, без `https://` и слэшей — например `mycompany.bitrix24.ru` или ваш Self-Hosted домен.
+   - Заполните **«Bitrix24 OAuth Client ID»** — `CLIENT_ID` из шага 3 выше.
+   - Заполните **«Bitrix24 OAuth Client Secret»** — `CLIENT_SECRET` из шага 3 выше. Поле помечено как `sensitive`, значение хранится в системном keychain (macOS Keychain / Windows DPAPI / Linux libsecret).
 2. Включите расширение. В логе (Settings → Extensions → bx24-template-mcp → View logs) появится строка вида: `Bitrix24 OAuth onboarding required. Open: https://mycompany.bitrix24.ru/oauth/authorize/?client_id=...`
 3. Откройте URL в браузере, залогиньтесь в свой портал и нажмите «Разрешить». Bitrix24 покажет короткий код прямо на странице согласия — у него **TTL ~30 секунд**, скопируйте быстро.
 4. В Claude попросите ассистента: *«заверши настройку OAuth кодом XXXXXX»*. Он вызовет инструмент `bx24mcp_oauth_paste_code`, и токены сохранятся локально в `<директория-данных>/bx24-template-mcp/oauth.json` (права 0o600).
 5. Дальше любые инструменты Bitrix24 идут под вашей личной учёткой и правами доступа. Если refresh-токен будет отозван на стороне портала — инструменты вернут «re-onboarding required», повторите шаги 2-4.
 
-`client_secret` Marketplace-приложения зашит в бандл (Bitrix24 пока не предлагает PKCE). Это документированный trade-off OOB-потока: секрет защищает **идентичность приложения**, а не ваши токены (они персональные и живут только на устройстве).
+**Ротация секрета:** сгенерируйте новый `CLIENT_SECRET` в партнёрском кабинете Bitrix24, вставьте в поле в Claude Desktop, перезапустите расширение. Старые токены автоматически инвалидируются.
+
+**Возврат на webhook:** очистите три OAuth-поля (portal host, Client ID, Client Secret) и заполните webhook URL. Перезапустите расширение.
+
+**Trade-off:** `CLIENT_SECRET` хранится в системном keychain через Claude Desktop. Это не публичный PKCE-флоу (Bitrix24 его пока не предлагает), но и не build-time-bake — секрет НЕ зашит в `.dxt`. На уровне атак этот секрет защищает **идентичность Marketplace-приложения**, а не ваши OAuth-токены (они персональные и живут только на устройстве).
 
 ## Если что-то пошло не так
 
 - В Claude Desktop: **Настройки → Extensions → bx24-template-mcp → View logs** — там stderr процесса.
 - Самые частые ошибки:
-  - `No Bitrix24 credentials configured` — не заполнили ни вебхук, ни «portal host» (для OAuth-сборки).
+  - `No Bitrix24 credentials configured` — не заполнили ни вебхук, ни OAuth-поля (portal host + Client ID + Client Secret).
   - `Request failed with status code 401/403` — вебхук отозван или не имеет прав на нужный метод.
   - `OAuth onboarding has not been completed yet` — в OAuth-режиме ещё не выполнен паст-код (см. секцию выше).
   - `OAuth refresh token has been revoked` — кто-то удалил приложение из портала; запустите `bx24mcp_oauth_paste_code` заново.

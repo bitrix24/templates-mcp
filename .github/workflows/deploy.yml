@@ -147,14 +147,15 @@ jobs:
           # caching off); ignored with the vector already removed above.
       - run: pnpm install --frozen-lockfile
       - name: Build DXT bundle
-        # Pass through the OAuth credentials for the OOB code-paste flow
-        # (#207). Optional: if either secret is unset, esbuild bakes empty
-        # strings and the resulting `.dxt` boots in webhook-only mode at
-        # install time (the runtime check in `mcp-stdio/auth-mode.ts`
-        # gates OAuth on a non-empty client id).
-        env:
-          BITRIX24_DXT_OAUTH_CLIENT_ID: ${{ secrets.BITRIX24_DXT_OAUTH_CLIENT_ID }}
-          BITRIX24_DXT_OAUTH_CLIENT_SECRET: ${{ secrets.BITRIX24_DXT_OAUTH_CLIENT_SECRET }}
+        # No repo secrets needed (#247). OAuth credentials are NOT baked
+        # into the bundle at build time anymore — they flow at runtime
+        # from Claude Desktop's `user_config` block (the manifest maps
+        # `user_config.bitrix24_oauth_client_id` / `_client_secret` to
+        # env vars the bundle reads via `mcp-stdio/nuxt-shims.ts`). One
+        # upstream `.dxt` covers webhook-only AND OAuth use cases; the
+        # operator picks at install time by leaving the OAuth fields
+        # empty (webhook mode) or pasting their Bitrix24 Marketplace
+        # app's CLIENT_ID / CLIENT_SECRET (OAuth mode).
         run: pnpm build:dxt
       - name: Compute DXT sha256 (#201)
         # Pin the artifact content between `dxt-build` and `dxt-release`.

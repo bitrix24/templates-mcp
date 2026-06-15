@@ -79,23 +79,22 @@ await build({
       'import { createRequire as __cr } from "module";'
       + 'const require = __cr(import.meta.url);',
   },
-  // Build-time bake of the Bitrix24 Marketplace OAuth credentials (#207).
-  // Upstream CI provides them via repo secrets BITRIX24_DXT_OAUTH_CLIENT_ID
-  // / _SECRET; forks supply their own via the same env-vars before running
-  // `pnpm build:dxt`. Both default to empty strings — a bundle built
-  // without them runs webhook-only at install time (OAuth path stays off
-  // because the runtime check in `auth-mode.ts` sees empty client id).
+  // NOTE (#247): OAuth credentials are NOT baked into the bundle. They
+  // flow from Claude Desktop's `user_config` (`bitrix24_oauth_client_id` /
+  // `_client_secret`) into env vars at runtime via the manifest's
+  // `server.mcp_config.env` mapping. The bundle reads them in
+  // `mcp-stdio/nuxt-shims.ts`. One bundle works for all use cases:
+  //   - webhook-only: leave the OAuth fields empty in Claude Desktop UI.
+  //   - OAuth: register a Bitrix24 Marketplace application (type "without
+  //     redirect_uri"), paste CLIENT_ID + CLIENT_SECRET into the bundle's
+  //     `user_config` fields. The secret stays in the OS keychain (macOS
+  //     Keychain / Windows DPAPI / Linux libsecret) via Claude Desktop's
+  //     `sensitive: true` storage; rotation = paste new value, restart.
   //
-  // Security note: these end up as literal string constants in the bundled
-  // `server/index.mjs`. The DXT runs on the user's machine, so the
-  // `client_secret` is extractable by anyone with the file. This is the
-  // documented OOB trade-off — Bitrix24 doesn't publish a PKCE flow today
-  // and the secret protects the Marketplace app identity, not the user's
-  // tokens. Rotation = rebuild + republish.
-  define: {
-    __DXT_OAUTH_CLIENT_ID__: JSON.stringify(process.env.BITRIX24_DXT_OAUTH_CLIENT_ID ?? ''),
-    __DXT_OAUTH_CLIENT_SECRET__: JSON.stringify(process.env.BITRIX24_DXT_OAUTH_CLIENT_SECRET ?? ''),
-  },
+  // No upstream repo secrets needed for `pnpm build:dxt`. Forks no longer
+  // pre-bake their own OAuth credentials; they ship the same upstream
+  // bundle and document how operators register their Marketplace app.
+  //
   // The DXT manifest declares `node ${__dirname}/server/index.mjs`; nothing
   // is loaded out-of-band, so everything must be inlined.
   external: [],

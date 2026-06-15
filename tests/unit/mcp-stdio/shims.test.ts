@@ -44,6 +44,8 @@ const ENV_VARS = [
   'NUXT_GITHUB_FEEDBACK_REPO',
   'NUXT_LOG_LEVEL',
   'NUXT_BITRIX24_DXT_PORTAL_HOST',
+  'NUXT_BITRIX24_DXT_OAUTH_CLIENT_ID',
+  'NUXT_BITRIX24_DXT_OAUTH_CLIENT_SECRET',
   'NUXT_BITRIX24_DXT_DATA_DIR',
   'BITRIX24_WEBHOOK_URL',
   'MCP_AUTH_TOKEN',
@@ -51,6 +53,8 @@ const ENV_VARS = [
   'GITHUB_FEEDBACK_REPO',
   'LOG_LEVEL',
   'BITRIX24_DXT_PORTAL_HOST',
+  'BITRIX24_DXT_OAUTH_CLIENT_ID',
+  'BITRIX24_DXT_OAUTH_CLIENT_SECRET',
   'BITRIX24_DXT_DATA_DIR',
 ] as const
 
@@ -125,10 +129,14 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
       // Operator-UX brand styling (#233) — HTTP-only, always disabled in stdio.
       bitrix24OauthBrandStyles: false,
       bitrix24OauthAppDisplayName: '',
-      // DXT-OAuth keys (#207). Defaults when no env vars are set and the
-      // bundle was built without `BITRIX24_DXT_OAUTH_CLIENT_ID` (so the
-      // esbuild `define` substitutes the empty-string fallback). Pinned so
-      // a drift in the four-field set is caught.
+      // DXT-OAuth keys (#207, #247). Defaults when no env vars are set —
+      // empty client id is the "OAuth disabled" signal that `auth-mode.ts`
+      // resolves to webhook mode at boot. The values now flow from Claude
+      // Desktop's `user_config` block via the manifest's env mapping
+      // (no more build-time baking); the projection itself is the same
+      // `process.env.NUXT_BITRIX24_DXT_*` → `runtimeConfig.dxt*` shape
+      // tested by the dedicated case below. Pinned so a drift in the
+      // four-field set is caught.
       dxtOauthClientId: '',
       dxtOauthClientSecret: '',
       dxtPortalHost: '',
@@ -159,10 +167,14 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
       // Operator-UX brand styling (#233) — HTTP-only, always disabled in stdio.
       bitrix24OauthBrandStyles: false,
       bitrix24OauthAppDisplayName: '',
-      // DXT-OAuth keys (#207). Defaults when no env vars are set and the
-      // bundle was built without `BITRIX24_DXT_OAUTH_CLIENT_ID` (so the
-      // esbuild `define` substitutes the empty-string fallback). Pinned so
-      // a drift in the four-field set is caught.
+      // DXT-OAuth keys (#207, #247). Defaults when no env vars are set —
+      // empty client id is the "OAuth disabled" signal that `auth-mode.ts`
+      // resolves to webhook mode at boot. The values now flow from Claude
+      // Desktop's `user_config` block via the manifest's env mapping
+      // (no more build-time baking); the projection itself is the same
+      // `process.env.NUXT_BITRIX24_DXT_*` → `runtimeConfig.dxt*` shape
+      // tested by the dedicated case below. Pinned so a drift in the
+      // four-field set is caught.
       dxtOauthClientId: '',
       dxtOauthClientSecret: '',
       dxtPortalHost: '',
@@ -187,6 +199,52 @@ describe('mcp-stdio/nuxt-shims runtimeConfig projection', () => {
     expect(cfg.githubFeedbackToken).toBe('ghp_canonical')
     expect(cfg.githubFeedbackRepo).toBe('acme/canonical')
     expect(cfg.logLevel).toBe('debug')
+  })
+
+  it('projects DXT OAuth creds from env vars (manifest user_config → env path, #247)', async () => {
+    // Closes the "OAuth creds are now runtime, not baked" rewire. Claude
+    // Desktop maps `user_config.bitrix24_oauth_client_id` /
+    // `bitrix24_oauth_client_secret` to `NUXT_BITRIX24_DXT_OAUTH_CLIENT_ID`
+    // / `_CLIENT_SECRET` env vars (see `mcp-stdio/manifest.json` →
+    // `server.mcp_config.env`). This test pins that the shim reads those
+    // names and lands them on the matching `dxtOauth*` keys; the rest of
+    // the bundle (e.g. `auth-mode.ts`) keys off the empty/non-empty
+    // distinction to pick webhook vs OAuth mode.
+    process.env.BITRIX24_WEBHOOK_URL = 'https://example.bitrix24.ru/rest/1/abc/'
+    process.env.NUXT_BITRIX24_DXT_PORTAL_HOST = 'acme.bitrix24.com'
+    process.env.NUXT_BITRIX24_DXT_OAUTH_CLIENT_ID = 'app.cid.from-user-config'
+    process.env.NUXT_BITRIX24_DXT_OAUTH_CLIENT_SECRET = 'super-secret-from-keychain'
+    await import('../../../mcp-stdio/nuxt-shims')
+    const cfg = (globalThis as unknown as { useRuntimeConfig: () => ShimRuntimeConfig }).useRuntimeConfig()
+    expect(cfg.dxtPortalHost).toBe('acme.bitrix24.com')
+    expect(cfg.dxtOauthClientId).toBe('app.cid.from-user-config')
+    expect(cfg.dxtOauthClientSecret).toBe('super-secret-from-keychain')
+  })
+
+  it('DXT OAuth creds honour the un-prefixed back-compat fallback (forks running `pnpm build:dxt` locally with shell exports)', async () => {
+    // Same `?? `-chain pattern as every other DXT key (#207). A developer
+    // who exports `BITRIX24_DXT_OAUTH_CLIENT_ID=…` from their shell before
+    // `pnpm dev` or local smoke testing should see those values projected
+    // just like the canonical `NUXT_`-prefixed form.
+    process.env.BITRIX24_WEBHOOK_URL = 'https://example.bitrix24.ru/rest/1/abc/'
+    process.env.BITRIX24_DXT_OAUTH_CLIENT_ID = 'app.cid.from-shell'
+    process.env.BITRIX24_DXT_OAUTH_CLIENT_SECRET = 'secret-from-shell'
+    await import('../../../mcp-stdio/nuxt-shims')
+    const cfg = (globalThis as unknown as { useRuntimeConfig: () => ShimRuntimeConfig }).useRuntimeConfig()
+    expect(cfg.dxtOauthClientId).toBe('app.cid.from-shell')
+    expect(cfg.dxtOauthClientSecret).toBe('secret-from-shell')
+  })
+
+  it('NUXT_ prefix wins over the un-prefixed fallback for the DXT OAuth keys (precedence parity with the other paired fields)', async () => {
+    process.env.BITRIX24_WEBHOOK_URL = 'https://example.bitrix24.ru/rest/1/abc/'
+    process.env.NUXT_BITRIX24_DXT_OAUTH_CLIENT_ID = 'app.cid.canonical'
+    process.env.BITRIX24_DXT_OAUTH_CLIENT_ID = 'app.cid.legacy'
+    process.env.NUXT_BITRIX24_DXT_OAUTH_CLIENT_SECRET = 'secret.canonical'
+    process.env.BITRIX24_DXT_OAUTH_CLIENT_SECRET = 'secret.legacy'
+    await import('../../../mcp-stdio/nuxt-shims')
+    const cfg = (globalThis as unknown as { useRuntimeConfig: () => ShimRuntimeConfig }).useRuntimeConfig()
+    expect(cfg.dxtOauthClientId).toBe('app.cid.canonical')
+    expect(cfg.dxtOauthClientSecret).toBe('secret.canonical')
   })
 
   it('defaults `githubFeedbackRepo` to the upstream repo and `logLevel` to info', async () => {
