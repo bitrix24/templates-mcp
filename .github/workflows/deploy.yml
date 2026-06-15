@@ -156,11 +156,35 @@ jobs:
           BITRIX24_DXT_OAUTH_CLIENT_ID: ${{ secrets.BITRIX24_DXT_OAUTH_CLIENT_ID }}
           BITRIX24_DXT_OAUTH_CLIENT_SECRET: ${{ secrets.BITRIX24_DXT_OAUTH_CLIENT_SECRET }}
         run: pnpm build:dxt
+      - name: Compute DXT sha256 (#201)
+        # Pin the artifact content between `dxt-build` and `dxt-release`.
+        # GHA artifact storage is scoped to one workflow run — the trust
+        # boundary is reasonable, but non-zero: a future regression that
+        # widens the artifact scope, or a compromised `download-artifact`
+        # version, could land a swapped `.dxt` on the GitHub Release. The
+        # companion `.sha256` rides with the bundle in the artifact AND is
+        # re-checked in `dxt-release` BEFORE the attach step; mismatch
+        # fails the release loud rather than silently shipping a tampered
+        # bundle to operators.
+        #
+        # The hash is also surfaced in the GitHub Release (attached
+        # alongside the `.dxt`) so any downstream operator can confirm
+        # what they downloaded matches what CI built — useful for
+        # SOC2 / supply-chain attestation in regulated forks.
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum bx24-template-mcp.dxt > bx24-template-mcp.dxt.sha256
+          # Echo the hash so an operator scanning the run log sees it
+          # without expanding the artifact tab.
+          echo "sha256:$(awk '{print $1}' bx24-template-mcp.dxt.sha256)"
       - name: Upload DXT artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bx24-template-mcp-dxt
-          path: dist/bx24-template-mcp.dxt
+          path: |
+            dist/bx24-template-mcp.dxt
+            dist/bx24-template-mcp.dxt.sha256
           if-no-files-found: error
 
   dxt-release:
@@ -179,7 +203,22 @@ jobs:
         with:
           name: bx24-template-mcp-dxt
           path: dist
-      - name: Attach DXT to release
+      - name: Verify DXT sha256 matches the value computed in dxt-build (#201)
+        # Re-hash the downloaded `.dxt` and compare against the companion
+        # `.sha256` written by `dxt-build`. `sha256sum --check` fails
+        # non-zero on mismatch, which stops the workflow BEFORE the
+        # `softprops/action-gh-release` step attaches anything — a tamper
+        # window in GHA artifact storage can't silently ship a swapped
+        # bundle to operators. The companion file then also rides onto
+        # the GitHub Release so downstream operators verify what they
+        # downloaded matches what CI built.
+        run: |
+          set -euo pipefail
+          cd dist
+          ls -la bx24-template-mcp.dxt bx24-template-mcp.dxt.sha256
+          sha256sum --check bx24-template-mcp.dxt.sha256
+          echo "verified:$(awk '{print $1}' bx24-template-mcp.dxt.sha256)"
+      - name: Attach DXT (+ sha256) to release
         # zizmor: ignore[superfluous-actions]
         # Info-level: zizmor suggests `gh release upload` in a script step
         # instead of this action. We keep the SHA-pinned action deliberately —
@@ -189,7 +228,14 @@ jobs:
         # supply-chain surface is bounded.
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
-          files: dist/bx24-template-mcp.dxt
+          # Attach the bundle AND its sha256 so operators downloading the
+          # DXT from the Release page can verify integrity offline
+          # (`sha256sum -c bx24-template-mcp.dxt.sha256`). Matches the
+          # standard practice for signed release artefacts (postgres,
+          # nginx, etc.).
+          files: |
+            dist/bx24-template-mcp.dxt
+            dist/bx24-template-mcp.dxt.sha256
           fail_on_unmatched_files: true
 
 # NOTE: This workflow ends at publishing to GHCR — it does NOT SSH into

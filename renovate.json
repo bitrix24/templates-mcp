@@ -38,7 +38,12 @@
       "reviewers": ["IgorShevchik"]
     },
     {
-      "matchPackageNames": ["@nuxtjs/mcp-toolkit", "@modelcontextprotocol/sdk"],
+      "description": "Runtime-critical, behaviour-sensitive packages (#202). MCP toolkit owns request/response shapes every tool depends on; MCP SDK owns the wire protocol with Claude/Cursor; zod owns every tool's input-validation contract — a patch bump that tightens parsing rules can reject inputs an existing eval previously accepted (silent semantic break). Patch / pin / digest bumps for any of these must NOT silently auto-merge — a human reads the changelog and the diff before shipping. (`@fastify/static` was considered but is only a transitive through `evalite` — Renovate never bumps it directly, so a carve-out is unnecessary.)",
+      "matchPackageNames": [
+        "@nuxtjs/mcp-toolkit",
+        "@modelcontextprotocol/sdk",
+        "zod"
+      ],
       "groupName": "mcp stack",
       "automerge": false,
       "reviewers": ["IgorShevchik"]

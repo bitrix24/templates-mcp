@@ -4,6 +4,11 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+### Security
+
+- **DXT artifact integrity — sha256 pinning across the release boundary (#201).** The release pipeline now computes a SHA-256 of `dist/bx24-template-mcp.dxt` immediately after `pnpm build:dxt` in the `dxt-build` job and uploads the companion `.sha256` alongside the bundle. The `dxt-release` job re-runs `sha256sum --check` BEFORE attaching anything to the GitHub Release — a tamper window in GHA artifact storage (narrow today, broader if a future `actions/upload-artifact`/`download-artifact` regression widens scope) can no longer silently ship a swapped bundle. Both files now land on the Release page so downstream operators verify integrity offline (`sha256sum -c bx24-template-mcp.dxt.sha256`), matching the standard practice for signed release artefacts.
+- **Renovate carve-out for runtime-critical MCP-stack packages (#202).** `@nuxtjs/mcp-toolkit` and `@modelcontextprotocol/sdk` were already protected; `zod` joins the `mcp stack` group so its patch / pin / digest bumps no longer silently auto-merge. A zod patch that tightens parsing rules can reject inputs an existing eval previously accepted — a silent semantic break the auto-merge would have shipped without review. `@fastify/static` was considered but is only a transitive through `evalite` (Renovate never bumps it directly), so a carve-out would be inert.
+
 ### Added
 
 - **`WWW-Authenticate: Bearer` challenge on webhook-mode 401s (RFC 6750 §3, #196).** The `/mcp` auth middleware now sets a `WWW-Authenticate` response header on its two webhook-mode 401 paths. A request with **no** `Authorization` header gets the realm-only challenge `Bearer realm="bx24-template-mcp"` (the RFC says not to include an `error` code when no credentials were supplied); a request with a **wrong** token gets `Bearer realm="bx24-template-mcp", error="invalid_token", error_description="Invalid bearer token"` so a spec-following MCP client stops retrying the same value. The OAuth-on branch already carried its own `WWW-Authenticate` header with the §11 errorCode taxonomy — this closes the gap on the webhook path. No behavioural change for clients that ignore the header.
