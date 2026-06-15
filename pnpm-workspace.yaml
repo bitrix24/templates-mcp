@@ -28,3 +28,24 @@ overrides:
   # Direct devDep is also bumped to ^0.28.1 in package.json — override pins every
   # transitive copy at the same fix level.
   esbuild: '^0.28.1'
+  # GHSA-hmw2-7cc7-3qxx — CRLF injection in `form-data` (<4.0.6). Reachable in
+  # PRODUCTION via `axios > form-data` from `@bitrix24/b24jssdk` (every outbound
+  # REST call to Bitrix24 uses it). HIGH severity. Pin to the patched minor;
+  # remove once axios upstream pulls the fix on its own.
+  form-data: '^4.0.6'
+  # GHSA-vmf3-w455-68vh — file-smuggling tar parser interpretation differential
+  # (`tar` <=7.5.15) via `nuxt > @nuxt/nitro-server > nitropack > @vercel/nft >
+  # @mapbox/node-pre-gyp > tar`. Build-only path; bumped defensively to keep
+  # `pnpm audit` clean. Remove once the @vercel/nft chain ships >=7.5.16.
+  tar: '^7.5.16'
+  # GHSA-v6wh-96g9-6wx3 — NTLMv2 hash disclosure via UNC path in `launch-editor`
+  # (<=2.14.0). Reached via `vite` (>=7.0.0 <=7.3.4) and via `@nuxt/devtools`.
+  # Windows-only attack surface, dev-mode editor-open path; pinned so `pnpm audit`
+  # stays green on CI. Remove once Nuxt/Vite cut a fix on their own.
+  vite: '^7.3.5'
+  launch-editor: '^2.14.1'
+  # GHSA-h67p-54hq-rp68 — quadratic-complexity DoS in `js-yaml` merge-key handling
+  # (<=4.1.1) via `@commitlint/cli > cosmiconfig > js-yaml` and `@nuxt/eslint >
+  # eslint-typegen > … > js-yaml`. Dev-only paths, but the audit gate is dev-aware
+  # so pin to the patched minor.
+  js-yaml: '^4.1.2'
