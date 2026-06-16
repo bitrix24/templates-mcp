@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-16
+
 ### Changed
 
 - **DXT OAuth — credentials live in Claude Desktop `user_config`, not in the bundle (#207, #247).** Combined entry for the DXT-OAuth surface that shipped in this release. **#207** added OOB OAuth: the `.dxt` bundle now supports per-user Bitrix24 identity via Bitrix24's [official OOB code-paste protocol](https://apidocs.bitrix24.ru/api-reference/oauth/index.html) (apps without `redirect_uri`). **#247** then walked back the original credential-storage decision: the initial design baked `CLIENT_ID` / `CLIENT_SECRET` into the bundle at build time via `esbuild define`, but a `.dxt` is a zip — `strings dist/.../*.mjs | grep -i client_secret` extracts the value in seconds — so bake-time gave zero security benefit, forced every fork to run its own CI with repo secrets, and made rotation a re-build + re-publish. The redesigned model puts the credentials into three new Claude Desktop `user_config` fields (`bitrix24_portal_host`, `bitrix24_oauth_client_id`, `bitrix24_oauth_client_secret`) that flow at runtime through `NUXT_BITRIX24_DXT_OAUTH_*` env vars into `mcp-stdio/nuxt-shims.ts`. Result: one upstream `.dxt` covers both webhook-only and OAuth use cases (mode picked at install time by which fields are filled), the secret rides in the OS keychain via `sensitive: true` (subject to platform availability — on a headless Linux without libsecret, Claude Desktop may fall back to a plaintext config file; verify with `secret-tool` before production), and rotation is "paste new value, restart extension". The `mcp-stdio/build.mjs` `esbuild define` block is gone; `.github/workflows/deploy.yml` no longer needs `BITRIX24_DXT_OAUTH_*` repo secrets to build the bundle. Tests +5 cases (env-projection, un-prefixed fallback, NUXT-prefix precedence, manifest `sensitive` flag pinning, end-to-end env→shim→`resolveAuthMode` wire). Localised INSTALL guides (`mcp-stdio/INSTALL.{ru,pt-BR}.md`) carry the operator's "register a Marketplace app, paste three fields, paste the OOB code" walkthrough. **Migration cost: zero** — the upstream `.dxt` was never shipped with baked credentials before v0.3.0, so no installed bundle is carrying baked secrets to retire. Forks building locally with the old env-vars: keep using the same names; the shim now reads them at **runtime** instead of bake-time, behaviour identical for the dev loop. See `docs/OAUTH-DESIGN.md` §2 for the design entry and `mcp-stdio/README.md` for the operator-facing flow.
@@ -189,7 +191,8 @@ The first tagged release. Cuts a baseline anchor that ships every tool, every co
 
 - Pre-1.0 — the public contract (tool names, input schemas, response shapes) may still shift between minor versions (e.g. `0.1` → `0.2` here ships breaking tool renames + a tool-error-protocol change; see the relevant **BREAKING** bullets above). A `1.0` cut will only happen once the contract has stabilised across a pilot cycle.
 
-[Unreleased]: https://github.com/bitrix24/templates-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/bitrix24/templates-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/bitrix24/templates-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/bitrix24/templates-mcp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/bitrix24/templates-mcp/releases/tag/v0.1.1
 [0.1.0]: https://github.com/bitrix24/templates-mcp/releases/tag/v0.1.0
