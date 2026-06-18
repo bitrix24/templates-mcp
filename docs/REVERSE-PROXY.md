@@ -1,6 +1,6 @@
 # Reverse-proxy variants for production
 
-`Last reviewed: 2026-06-14`
+`Last reviewed: 2026-06-16`
 
 The shipped `docker-compose.yml` assumes the [`nginx-proxy`](https://github.com/nginx-proxy/nginx-proxy) + [`acme-companion`](https://github.com/nginx-proxy/acme-companion) duo. That works, but it's a **specific shop's taste** — not the default in most regions:
 
@@ -120,3 +120,78 @@ This is independent of the TLS terminator above — your reverse proxy still get
 It pairs cleanly with the existing GitHub Actions deploy flow: `nginx-proxy` and `acme-companion` are already running on the production host as separate containers on `proxy-net`, so a new service "just appears" once it sets `VIRTUAL_HOST` / `LETSENCRYPT_HOST` env vars. Zero proxy reconfiguration per deploy. For a single-product host that's overkill; for a host with five products, it pays off.
 
 If you have a single product, use one of the three options above instead.
+
+---
+
+## Hardening: deny `/api/oauth/` on webhook-only deploys
+
+If `NUXT_BITRIX24_OAUTH_ENABLED=false` (the default — most operators run webhook-only) **and you know you will never flip the flag on this host**, block `/api/oauth/*` at the reverse-proxy layer. The application already returns `503 FLAG-OFF` for every OAuth route before any DB op (Nitro plugin + h3 middleware + `useTokenStore` all gate on the flag — see [`docs/SECURITY.md`](./SECURITY.md) → "OAuth surface inertness"). This is **defence-in-depth**: a hostile probe never reaches the Node.js process at all, log noise drops, and a future regression that exposes a route by accident is masked at the proxy.
+
+**Remove the block before flipping `NUXT_BITRIX24_OAUTH_ENABLED=true`** — otherwise `/api/oauth/install` returns 403 instead of rendering the consent flow.
+
+The repo ships a ready snippet at [`nginx/vhost.d/oauth-deny.conf.example`](../nginx/vhost.d/oauth-deny.conf.example):
+
+```nginx
+location /api/oauth/ {
+  return 403;
+  access_log off;
+}
+```
+
+Pick the recipe matching your reverse-proxy stack:
+
+### Plain nginx (Section 2 above)
+
+Paste the `location /api/oauth/ { … }` block inside the existing `server { … }` that listens on 443, alongside the other `location /` block. Then:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### `nginx-proxy` + acme-companion (the shipped `docker-compose.server.yml` default)
+
+Per-vhost snippets live in the **`vhost` named volume** under `/etc/nginx/vhost.d/<your-host>_location`. Copy the example file into the running container and reload — no compose change needed:
+
+```bash
+# Adapt <your-host> to your actual VIRTUAL_HOST (e.g. `prod.example.com`).
+HOST=prod.example.com
+
+# Copy the snippet into the nginx-proxy named volume's per-vhost location dir.
+docker cp nginx/vhost.d/oauth-deny.conf.example \
+  nginx-proxy:/etc/nginx/vhost.d/${HOST}_location
+
+# Reload — no restart, no downtime.
+docker exec nginx-proxy nginx -s reload
+```
+
+Verify:
+
+```bash
+curl -sI https://${HOST}/api/oauth/install | head -1
+# → HTTP/2 403   ← the proxy returned 403; the request never touched Node.
+```
+
+To remove: `docker exec nginx-proxy rm /etc/nginx/vhost.d/${HOST}_location && docker exec nginx-proxy nginx -s reload`.
+
+### Caddy (Section 1 above)
+
+Add inside the existing `prod.example.com { … }` block, BEFORE the `reverse_proxy` line:
+
+```caddy
+prod.example.com {
+  encode zstd gzip
+
+  # Deny OAuth surface on webhook-only deploys (defence-in-depth).
+  # Remove before flipping NUXT_BITRIX24_OAUTH_ENABLED=true.
+  @oauth path /api/oauth/*
+  respond @oauth 403
+
+  reverse_proxy localhost:3000
+}
+```
+
+Then `caddy reload` (or `systemctl reload caddy`).
+
+### Traefik (Section 3 above)
+
+Easiest path is a dedicated higher-priority router with a redirect-to-self middleware that returns 403, or use the [`denyrouter` plugin](https://plugins.traefik.io/). Plain Caddy / nginx are simpler here — pick one of those if you only need this one rule.

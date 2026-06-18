@@ -1,0 +1,25 @@
+# nginx location block — denies every request to /api/oauth/* at the
+# reverse-proxy layer.
+#
+# Use case: webhook-only deployments where NUXT_BITRIX24_OAUTH_ENABLED=false
+# and the OAuth surface (/api/oauth/install, /api/oauth/callback,
+# /api/oauth/_health) MUST NEVER be reachable, ever. The application layer
+# already triple-gates these routes (Nitro plugin + h3 middleware +
+# token-store) and returns 503 FLAG-OFF before any DB op — this is
+# defence-in-depth, not a substitute. With the deny in place a hostile
+# probe never reaches the Node.js process at all.
+#
+# When NOT to install this: any deploy that runs OAuth (
+# NUXT_BITRIX24_OAUTH_ENABLED=true), or that may flip the flag on in the
+# future without changing reverse-proxy config. Remove this file then
+# reload nginx (`docker exec nginx-proxy nginx -s reload`) before flipping
+# the flag.
+#
+# Installation recipes (per reverse-proxy stack) live in
+# docs/REVERSE-PROXY.md → "Hardening: deny /api/oauth/ on webhook-only
+# deploys".
+
+location /api/oauth/ {
+  return 403;
+  access_log off;
+}
