@@ -49,3 +49,13 @@ overrides:
   # eslint-typegen > … > js-yaml`. Dev-only paths, but the audit gate is dev-aware
   # so pin to the patched minor.
   js-yaml: '^4.1.2'
+  # GHSA-wwfh-h76j-fc44 / -j6c9-x7qj-28xf / -rv63-4mwf-qqc2 / -wgpf-jwqj-8h8p —
+  # four hono advisories (<4.12.25): CORS reflects any Origin (HIGH); path
+  # traversal in serve-static on Windows; AWS Lambda Set-Cookie merging; AWS
+  # Lambda Body Limit bypass via Content-Length understatement; Lambda@Edge
+  # header de-duplication. We reach `hono` ONLY transitively through
+  # `@modelcontextprotocol/sdk > @hono/node-server > hono` (4 paths); we don't
+  # use `serve-static`, we don't run on Lambda / Lambda@Edge, and we don't enable
+  # the CORS middleware in any handler — but the audit gate doesn't care about
+  # reachability and the patched version is a no-cost minor. Pin to clear it.
+  hono: '^4.12.25'
