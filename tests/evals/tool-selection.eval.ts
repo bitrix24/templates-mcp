@@ -306,6 +306,21 @@ const CASES: Case[] = [
     notes: 'Short comment.',
   },
   {
+    input: 'Покажи комментарии задачи 123.',
+    expected: 'b24_task_comment_list',
+    notes: 'Read the comment thread — must NOT route to add_task_comment.',
+  },
+  {
+    input: 'Меня где-нибудь тэгнули в комментариях задачи 77?',
+    expected: 'b24_task_comment_list',
+    notes: 'Mention check — first tool call is still the list; the LLM matches [USER=id] in the returned text itself.',
+  },
+  {
+    input: 'What did people write in the discussion on task 200?',
+    expected: 'b24_task_comment_list',
+    notes: 'EN variant — must NOT route to list_tasks or get_task.',
+  },
+  {
     input: 'Отправь фидбэк разработчикам MCP: описание тула b24_user_me непонятное, агент не понял что оно возвращает.',
     expected: 'bx24mcp_submit_feedback',
     notes: 'Meta-feedback about the MCP server itself — should NOT go to add_task_comment.',

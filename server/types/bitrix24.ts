@@ -72,6 +72,31 @@ export interface BitrixChecklistItemRaw {
 }
 
 /**
+ * Task-comment wire shape — v2 `task.commentitem.{add,getlist}`. Bitrix24
+ * ships UPPER_SNAKE on the wire; we tolerate camelCase in case the SDK
+ * transforms responses for a future release. `AUTHOR_NAME` is a display
+ * convenience Bitrix24 adds on read (not accepted on `.add`), so it's
+ * optional here. Mention markup inside `POST_MESSAGE` uses Bitrix24's
+ * `[USER=<id>]Name[/USER]` BBCode tag — callers looking for "was I
+ * tagged?" match on that pattern, not on a dedicated field (Bitrix24
+ * doesn't expose one).
+ */
+export interface BitrixTaskCommentRaw {
+  id?: number | string
+  ID?: number | string
+  taskId?: number | string
+  TASK_ID?: number | string
+  authorId?: number | string
+  AUTHOR_ID?: number | string
+  authorName?: string
+  AUTHOR_NAME?: string
+  postMessage?: string
+  POST_MESSAGE?: string
+  postDate?: string | null
+  POST_DATE?: string | null
+}
+
+/**
  * Task-result wire shape — v3 `tasks.task.result.*`. A "result" is a piece
  * of free-form text the operator records as the answer / outcome of a task,
  * separately from the task body and comments. The full Bitrix24 response
