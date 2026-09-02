@@ -78,11 +78,15 @@ import findUser from '~/server/mcp/tools/users/find-user'
 // eslint-disable-next-line import/first
 import createTask from '~/server/mcp/tools/tasks/create-task'
 // eslint-disable-next-line import/first
+import getTask from '~/server/mcp/tools/tasks/get-task'
+// eslint-disable-next-line import/first
 import listTasks from '~/server/mcp/tools/tasks/list-tasks'
 // eslint-disable-next-line import/first
 import updateTask from '~/server/mcp/tools/tasks/update-task'
 // eslint-disable-next-line import/first
 import addTaskComment from '~/server/mcp/tools/tasks/add-task-comment'
+// eslint-disable-next-line import/first
+import listTaskComments from '~/server/mcp/tools/tasks/list-task-comments'
 // eslint-disable-next-line import/first
 import startTask from '~/server/mcp/tools/tasks/start-task'
 // eslint-disable-next-line import/first
@@ -130,6 +134,10 @@ import addTaskDependency from '~/server/mcp/tools/tasks/add-task-dependency'
 // eslint-disable-next-line import/first
 import removeTaskDependency from '~/server/mcp/tools/tasks/remove-task-dependency'
 // eslint-disable-next-line import/first
+import imListDialogs from '~/server/mcp/tools/im/list-dialogs'
+// eslint-disable-next-line import/first
+import imListMessages from '~/server/mcp/tools/im/list-messages'
+// eslint-disable-next-line import/first
 import submitFeedback from '~/server/mcp/tools/meta/submit-feedback'
 
 interface McpToolDef {
@@ -142,9 +150,11 @@ const ALL_TOOLS: McpToolDef[] = [
   currentUser as unknown as McpToolDef,
   findUser as unknown as McpToolDef,
   createTask as unknown as McpToolDef,
+  getTask as unknown as McpToolDef,
   listTasks as unknown as McpToolDef,
   updateTask as unknown as McpToolDef,
   addTaskComment as unknown as McpToolDef,
+  listTaskComments as unknown as McpToolDef,
   startTask as unknown as McpToolDef,
   pauseTask as unknown as McpToolDef,
   completeTask as unknown as McpToolDef,
@@ -168,6 +178,8 @@ const ALL_TOOLS: McpToolDef[] = [
   deleteElapsedTime as unknown as McpToolDef,
   addTaskDependency as unknown as McpToolDef,
   removeTaskDependency as unknown as McpToolDef,
+  imListDialogs as unknown as McpToolDef,
+  imListMessages as unknown as McpToolDef,
   submitFeedback as unknown as McpToolDef,
 ]
 
@@ -319,6 +331,45 @@ const CASES: Case[] = [
     input: 'What did people write in the discussion on task 200?',
     expected: 'b24_task_comment_list',
     notes: 'EN variant — must NOT route to list_tasks or get_task.',
+  },
+
+  // ── get_task vs list_tasks (single task by id vs a filtered set) ───────
+  {
+    input: 'Открой задачу 3703 — что там по статусу и дедлайну?',
+    expected: 'b24_task_get',
+    notes: 'Single explicit taskId — must NOT route to list_tasks.',
+  },
+  {
+    input: 'What chat is linked to task 3703? I want to read the discussion.',
+    expected: 'b24_task_get',
+    notes: 'Operator wants chatId to feed into b24_im_message_list — first call is still get_task.',
+  },
+
+  // ── im_dialog_list / im_message_list (Messenger — personal DMs, chats) ─
+  {
+    input: 'Мне кто-нибудь писал в личку за последний час?',
+    expected: 'b24_im_dialog_list',
+    notes: 'Personal-message check with no dialog id given — start from the recent-dialogs list.',
+  },
+  {
+    input: 'Есть новые сообщения в мессенджере?',
+    expected: 'b24_im_dialog_list',
+    notes: 'Generic "new messages" check — recent dialogs + unread, not a specific thread.',
+  },
+  {
+    input: 'Покажи переписку с диалогом chat5869.',
+    expected: 'b24_im_message_list',
+    notes: 'Explicit dialogId given — go straight to message list, not dialog list.',
+  },
+  {
+    input: 'Меня тэгнули в чате задачи 3703?',
+    expected: 'b24_task_get',
+    notes: 'Task-chat mention check needs chatId first — must NOT jump straight to im_message_list without a dialogId.',
+  },
+  {
+    input: 'Did user 33 message me recently? Check our direct chat.',
+    expected: 'b24_im_message_list',
+    notes: 'EN, dialogId derivable directly from the named user id (personal dialog id == user id).',
   },
   {
     input: 'Отправь фидбэк разработчикам MCP: описание тула b24_user_me непонятное, агент не понял что оно возвращает.',

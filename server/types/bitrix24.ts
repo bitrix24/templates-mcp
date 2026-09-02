@@ -163,3 +163,65 @@ export interface BitrixElapsedTimeRaw {
   dateStop?: string | null
   DATE_STOP?: string | null
 }
+
+/**
+ * Bitrix24 IM (messenger) wire shapes — `im.recent.get` / `im.dialog.messages.get`.
+ * Unlike `tasks.*` / `task.*`, the `im` module ships a SINGLE consistent
+ * `snake_case` casing on the wire (no UPPER_SNAKE, no camelCase variants) —
+ * these types intentionally do NOT use the `pick(lower, upper)` dual-casing
+ * helper from `wire-coerce.ts`; access fields directly.
+ */
+
+/** One row of `im.recent.get` — a dialog (personal, group chat, or task chat). */
+export interface BitrixImRecentRaw {
+  /** Dialog id to pass as `DIALOG_ID` to `im.dialog.messages.get` — numeric
+   *  user id for a personal dialog, `"chat<id>"` for a group / task chat. */
+  id?: number | string
+  chat_id?: number
+  /** `"user"` = personal dialog; `"chat"` = group chat, task chat, or workgroup. */
+  type?: string
+  title?: string
+  message?: {
+    id?: number
+    text?: string
+    author_id?: number
+    date?: string
+  }
+  unread?: boolean
+  counter?: number
+  date_update?: string
+}
+
+/** A Bitrix24 user summary embedded in `im.dialog.messages.get`'s `users` array. */
+export interface BitrixImUserRaw {
+  id?: number | string
+  name?: string
+  first_name?: string
+  last_name?: string
+}
+
+/** One message row from `im.dialog.messages.get`'s `messages` array. */
+export interface BitrixImMessageRaw {
+  id?: number
+  chat_id?: number
+  author_id?: number
+  date?: string
+  text?: string
+}
+
+/** Envelope for `im.dialog.messages.get`. */
+export interface ImDialogMessagesEnvelope {
+  chat_id?: number
+  messages?: BitrixImMessageRaw[]
+  users?: BitrixImUserRaw[]
+}
+
+/**
+ * Envelope for `im.recent.list`. Unlike the older `im.recent.get` (bare
+ * array, `LIMIT` silently ignored on a live-portal check), this one
+ * genuinely paginates — `items` + `hasMore` confirmed against a live portal.
+ */
+export interface ImRecentListEnvelope {
+  items?: BitrixImRecentRaw[]
+  hasMore?: boolean
+}

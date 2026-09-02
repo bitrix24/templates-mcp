@@ -29,7 +29,7 @@ const CAMEL_TO_WIRE: Record<(typeof SORT_FIELDS)[number], string> = {
 export default defineMcpTool({
   name: 'b24_task_comment_list',
   description:
-    'List the comments on a Bitrix24 task, newest first by default. Use this to catch up on a task\'s discussion or to check whether the operator was @-mentioned — Bitrix24 renders a mention inside `text` as `[USER=<id>]Name[/USER]` BBCode, so match on that pattern (or the operator\'s name) rather than expecting a dedicated "mentioned" field. Each comment carries `authorId` / `authorName` and `postDate` for a timeline read.',
+    'List the comments on a Bitrix24 task, newest first by default. Use this to catch up on a task\'s discussion or to check whether the operator was @-mentioned — Bitrix24 renders a mention inside `text` as `[USER=<id>]Name[/USER]` BBCode, so match on that pattern (or the operator\'s name) rather than expecting a dedicated "mentioned" field. Each comment carries `authorId` / `authorName` and `postDate` for a timeline read. **On portals that migrated to the chat-based Task Card, this returns an empty list even when the task has an active discussion** — comments moved into a linked chat. If `returned: 0` looks surprising, call `b24_task_get` for the task\'s `chatId` and read the discussion via `b24_im_message_list` instead.',
   inputSchema: {
     taskId: z.number().int().positive().describe('Task id to read comments of.'),
     order: z
