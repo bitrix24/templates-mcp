@@ -31,6 +31,15 @@ export const Bitrix24ErrorCode = {
   NO_CHANGES: 'NO_CHANGES',
   /** Schema-passing but semantically invalid input (self-loop, out-of-range id, …). */
   INVALID_INPUT: 'INVALID_INPUT',
+  /**
+   * A checklist item id does not belong to the task it was passed with.
+   * Bitrix24's `task.checklistitem.{complete,renew,delete}` acknowledge such
+   * a call with `true` and — worse — act on the item under ITS OWN task, so
+   * the `taskId` argument is decorative on the wire. Verified live: completing
+   * task A's checklist with an item id belonging to task B returned
+   * `completed: true` and flipped the item on task B. We pre-flight instead.
+   */
+  ITEM_NOT_ON_TASK: 'ITEM_NOT_ON_TASK',
 } as const
 
 export type Bitrix24ErrorCode = typeof Bitrix24ErrorCode[keyof typeof Bitrix24ErrorCode]

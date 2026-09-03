@@ -19,10 +19,36 @@ const tool = (await import('../../../../server/mcp/tools/tasks/renew-checklist-i
   handler: (input: { taskId: number; itemId: number | number[]; force?: boolean }) => Promise<ToolContent>
 }
 
+/**
+ * Every checklist action now pre-flights `task.checklistitem.getlist` to make
+ * sure the ids really belong to the task — Bitrix24 resolves items by id
+ * alone and would happily act on another task's item (see
+ * `assertItemsOnTask`). This fixture covers every id the tests below use.
+ */
+const CHECKLIST = Array.from({ length: 60 }, (_, i) => ({
+  ID: String(i + 1),
+  TASK_ID: '13',
+  PARENT_ID: '9',
+  TITLE: `item ${i + 1}`,
+})).concat([
+  { ID: '21', TASK_ID: '13', PARENT_ID: '9', TITLE: 'item 21' },
+  { ID: '22', TASK_ID: '13', PARENT_ID: '9', TITLE: 'item 22' },
+  { ID: '23', TASK_ID: '13', PARENT_ID: '9', TITLE: 'item 23' },
+])
+
+/** Answer the pre-flight read; leave every other method to the test's own mock. */
+function preflight(items: unknown[] = CHECKLIST) {
+  return async (options: { method: string }) => {
+    if (options.method === 'task.checklistitem.getlist') return fakeOk(items)
+    return fakeOk(true)
+  }
+}
+
 describe('b24_task_checklist_item_renew', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
     fake.v2Batch.mockReset()
+    fake.v2Call.mockImplementation(preflight())
   })
 
   it('calls task.checklistitem.renew with positional [taskId, itemId]', async () => {

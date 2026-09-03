@@ -185,13 +185,18 @@ async function runOne(
 
   if (spec.method === 'task.checklistitem.delete') {
     // Universal gate (Rule #9) first — refuses every delete that wasn't
-    // operator-agreed, regardless of heading status. Then cascade gate
-    // (Rule #10) — pre-flight catches heading targets if confirmDeleteHeading
-    // wasn't set.
+    // operator-agreed, regardless of heading status. Cheapest possible
+    // refusal: no wire call before the operator has agreed.
     assertConfirmedDelete('b24_task_checklist_item_delete', describeChecklistTarget(taskId, itemId), confirmDelete)
-    if (!confirmDeleteHeading) {
-      await assertNotHeading(b24, taskId, itemId)
-    }
+  }
+
+  // One pre-flight read serves both checks below (membership for every verb,
+  // heading detection for an unconfirmed delete) — see `assertItemsOnTask`
+  // for why the membership check is not optional.
+  const items = await fetchChecklist(b24, taskId, `Failed to pre-flight ${spec.verb} on Bitrix24 task ${taskId}`)
+  assertItemsOnTask(spec.name, items, taskId, [itemId])
+  if (spec.method === 'task.checklistitem.delete' && !confirmDeleteHeading) {
+    assertNoHeadings(items, taskId, [itemId])
   }
 
   await callV2<unknown>(
@@ -225,12 +230,19 @@ async function runBatch(
   const b24 = useBitrix24Tenant()
 
   if (spec.method === 'task.checklistitem.delete') {
-    // Universal gate first (Rule #9). Then cascade gate (Rule #10) — one
-    // pre-flight getlist covers the whole batch.
+    // Universal gate first (Rule #9) — before any wire call.
     assertConfirmedDelete('b24_task_checklist_item_delete', describeChecklistTarget(taskId, itemIds), confirmDelete)
-    if (!confirmDeleteHeading) {
-      await assertBatchNoHeadings(b24, taskId, itemIds)
-    }
+  }
+
+  // ONE pre-flight read for the whole batch, feeding both checks.
+  const items = await fetchChecklist(
+    b24,
+    taskId,
+    `Failed to pre-flight batch ${spec.verb} for Bitrix24 task ${taskId}`,
+  )
+  assertItemsOnTask(spec.name, items, taskId, itemIds)
+  if (spec.method === 'task.checklistitem.delete' && !confirmDeleteHeading) {
+    assertNoHeadings(items, taskId, itemIds)
   }
 
   const rows = await batchV2<unknown>(
@@ -266,50 +278,78 @@ function describeChecklistTarget(taskId: number, itemId: number | number[]): str
 }
 
 /**
- * Refuse to delete a checklist heading unless the agent confirmed it. Reads
- * the checklist once and matches on `parentId === 0`. If Bitrix24 returns no
- * matching item we let the delete call proceed — its own NOT_FOUND error is
- * a cleaner signal than fabricating one here.
+ * Read the task's checklist once. Returns `null` when Bitrix24 answered with
+ * something that isn't a list — the pre-flight then stands down rather than
+ * inventing a refusal, and the real call's own error is the cleaner signal.
  */
-async function assertNotHeading(b24: Parameters<typeof callV2>[0], taskId: number, itemId: number): Promise<void> {
-  const items = await callV2<BitrixChecklistItemRaw[]>(
-    b24,
-    'task.checklistitem.getlist',
-    { TASKID: taskId },
-    `Failed to pre-flight delete for Bitrix24 checklist item ${itemId} on task ${taskId}`,
-  )
-  if (!Array.isArray(items)) return
-  const target = items.find((it) => toNumber(it.id ?? it.ID) === itemId)
-  if (!target) return
-  if ((toNumber(target.parentId ?? target.PARENT_ID) ?? 0) === 0) {
-    throw new Bitrix24ToolError(
-      `Item ${itemId} is a checklist HEADING on task ${taskId}; deleting it wipes the whole checklist (heading + all children) with no undo. Re-call \`b24_task_checklist_item_delete\` with BOTH \`confirmDelete: true\` (Rule #9) AND \`confirmDeleteHeading: true\` (Rule #10) after the operator has agreed.`,
-      Bitrix24ErrorCode.HEADING_DELETE_NEEDS_CONFIRM,
-    )
-  }
-}
-
-async function assertBatchNoHeadings(
+async function fetchChecklist(
   b24: Parameters<typeof callV2>[0],
   taskId: number,
+  errorContext: string,
+): Promise<BitrixChecklistItemRaw[] | null> {
+  const items = await callV2<BitrixChecklistItemRaw[]>(b24, 'task.checklistitem.getlist', { TASKID: taskId }, errorContext)
+  return Array.isArray(items) ? items : null
+}
+
+/**
+ * Refuse to act on a checklist item that does not belong to `taskId`.
+ *
+ * This is not defensive paranoia — it is the only thing standing between an
+ * agent's id mix-up and a silent write to somebody else's task. Bitrix24's
+ * `task.checklistitem.{complete,renew,delete}` take positional
+ * `[taskId, itemId]` but resolve the item by id ALONE: pass task A with an
+ * item id from task B and the API returns `true` while flipping the item on
+ * task B. Verified live (2026-09-03): completing task 4193's checklist with
+ * item 1341 (which lives on task 4191) answered `completed: true`, and a
+ * listing of task 4191 then showed that item ticked. A nonexistent id is
+ * acknowledged the same cheerful way — `completed: true` for id 999999.
+ *
+ * So the tool cannot pass the operator's ids through and trust the response:
+ * it costs one extra `getlist` per call to keep "completed: true" honest.
+ */
+function assertItemsOnTask(
+  toolName: string,
+  items: BitrixChecklistItemRaw[] | null,
+  taskId: number,
   itemIds: number[],
-): Promise<void> {
-  const items = await callV2<BitrixChecklistItemRaw[]>(
-    b24,
-    'task.checklistitem.getlist',
-    { TASKID: taskId },
-    `Failed to pre-flight batch delete for Bitrix24 task ${taskId}`,
+): void {
+  if (items === null) return
+  const present = new Set(
+    items.map((it) => toNumber(it.id ?? it.ID)).filter((id): id is number => id !== null),
   )
-  if (!Array.isArray(items)) return
+  const strays = itemIds.filter((id) => !present.has(id))
+  if (strays.length === 0) return
+  throw new Bitrix24ToolError(
+    `${strays.length === 1 ? `Checklist item ${strays[0]} is not` : `Checklist items ${strays.join(', ')} are not`} on task ${taskId}. `
+    + `Bitrix24 would answer this call with success anyway — and act on whichever task those ids really belong to — so \`${toolName}\` refuses it. `
+    + `List the task's checklist with \`b24_task_checklist_item_list\` and use ids from that response.`,
+    Bitrix24ErrorCode.ITEM_NOT_ON_TASK,
+  )
+}
+
+/**
+ * Refuse to delete a checklist heading unless the agent confirmed it —
+ * matches on `parentId === 0` in the already-fetched checklist. Membership is
+ * verified separately (see `assertItemsOnTask`), so anything reaching here is
+ * known to be on this task.
+ */
+function assertNoHeadings(items: BitrixChecklistItemRaw[] | null, taskId: number, itemIds: number[]): void {
+  if (items === null) return
   const headingIds = items
     .filter((it) => (toNumber(it.parentId ?? it.PARENT_ID) ?? 0) === 0)
     .map((it) => toNumber(it.id ?? it.ID))
     .filter((id): id is number => id !== null)
   const headingHits = itemIds.filter((id) => headingIds.includes(id))
-  if (headingHits.length > 0) {
+  if (headingHits.length === 0) return
+
+  if (headingHits.length === 1 && itemIds.length === 1) {
     throw new Bitrix24ToolError(
-      `Batch refused: ${headingHits.join(', ')} ${headingHits.length === 1 ? 'is a checklist heading' : 'are checklist headings'} on task ${taskId}. Deleting a heading wipes the whole checklist with no undo. Re-call with BOTH \`confirmDelete: true\` (Rule #9) AND \`confirmDeleteHeading: true\` (Rule #10) after the operator has agreed, or split the batch.`,
+      `Item ${headingHits[0]} is a checklist HEADING on task ${taskId}; deleting it wipes the whole checklist (heading + all children) with no undo. Re-call \`b24_task_checklist_item_delete\` with BOTH \`confirmDelete: true\` (Rule #9) AND \`confirmDeleteHeading: true\` (Rule #10) after the operator has agreed.`,
       Bitrix24ErrorCode.HEADING_DELETE_NEEDS_CONFIRM,
     )
   }
+  throw new Bitrix24ToolError(
+    `Batch refused: ${headingHits.join(', ')} ${headingHits.length === 1 ? 'is a checklist heading' : 'are checklist headings'} on task ${taskId}. Deleting a heading wipes the whole checklist with no undo. Re-call with BOTH \`confirmDelete: true\` (Rule #9) AND \`confirmDeleteHeading: true\` (Rule #10) after the operator has agreed, or split the batch.`,
+    Bitrix24ErrorCode.HEADING_DELETE_NEEDS_CONFIRM,
+  )
 }

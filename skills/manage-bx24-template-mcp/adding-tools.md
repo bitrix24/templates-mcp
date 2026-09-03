@@ -203,6 +203,8 @@ Every delete tool needs the universal `confirmDelete` flag (Rule #9). Some addit
 | `tasks.task.delete` *(future)* | every comment / checklist item / time entry / result / dependency on the task | the task id itself | `tasks.task.get` (cheap) | `confirmDeleteTask` | not implemented; consider deferring — Bitrix24 UI hides hard-delete behind a per-portal toggle |
 | `disk.folder.deletetree` *(future)* | every file / sub-folder under the disk folder | folder type vs file type | `disk.folder.get { id }` | `confirmDeleteFolder` | not implemented |
 
+**Membership pre-flight (`ITEM_NOT_ON_TASK`).** Separate from the confirm gates, and worth copying wherever a REST method takes a parent id it does not actually enforce: `task.checklistitem.{complete,renew,delete}` resolve the item by id ALONE. Passing task A with an item id from task B returns success and acts on task B (verified live), and a nonexistent id is acknowledged just as cheerfully. `server/utils/checklist.ts` therefore reads the task's checklist once per call and refuses ids that aren't on it — the same read then feeds the heading check, so an unconfirmed delete still costs one round-trip, and complete / renew now cost one too. If you add a tool whose REST method takes a parent id, check whether the API enforces it before trusting the response.
+
 If your tool isn't in this table and you find yourself adding a `confirm<Cascade>` flag for a NEW cascade pattern, add a row to keep the registry useful. NB: every delete tool needs `confirmDelete: true` per Ground Rule #9 — the table above is specifically for CASCADE flags that stack on top of that universal gate.
 
 ## When you need a batch
@@ -226,6 +228,7 @@ const rows = await batchV2<{ task: TaskItem }>(
 // rows is Array<AjaxResult<{ task: TaskItem }>> aligned with taskIds[].
 // `isHaltOnError: false` + `returnAjaxResult: true` are applied by batchV2
 // for you — per-call failures land in rows[i] with isSuccess === false.
+
 const results = rows.map((row, index) => {
   const taskId = taskIds[index]
   if (taskId === undefined) {

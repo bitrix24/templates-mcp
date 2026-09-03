@@ -40,10 +40,36 @@ function fakeChecklistList() {
   ])
 }
 
+/**
+ * Every checklist action now pre-flights `task.checklistitem.getlist` to make
+ * sure the ids really belong to the task — Bitrix24 resolves items by id
+ * alone and would happily act on another task's item (see
+ * `assertItemsOnTask`). This fixture covers every id the tests below use.
+ */
+const CHECKLIST = Array.from({ length: 60 }, (_, i) => ({
+  ID: String(i + 1),
+  TASK_ID: '13',
+  PARENT_ID: '9',
+  TITLE: `item ${i + 1}`,
+})).concat([
+  { ID: '21', TASK_ID: '13', PARENT_ID: '9', TITLE: 'item 21' },
+  { ID: '22', TASK_ID: '13', PARENT_ID: '9', TITLE: 'item 22' },
+  { ID: '23', TASK_ID: '13', PARENT_ID: '9', TITLE: 'item 23' },
+])
+
+/** Answer the pre-flight read; leave every other method to the test's own mock. */
+function preflight(items: unknown[] = CHECKLIST) {
+  return async (options: { method: string }) => {
+    if (options.method === 'task.checklistitem.getlist') return fakeOk(items)
+    return fakeOk(true)
+  }
+}
+
 describe('b24_task_checklist_item_delete', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
     fake.v2Batch.mockReset()
+    fake.v2Call.mockImplementation(preflight())
   })
 
   it('deletes a regular (non-heading) item with confirmDelete: true, single call', async () => {
@@ -120,8 +146,11 @@ describe('b24_task_checklist_item_delete', () => {
     })
   })
 
-  it('proceeds with heading deletion when BOTH confirmDelete and confirmDeleteHeading are true (skips pre-flight)', async () => {
-    fake.v2Call.mockResolvedValue(fakeOk(true))
+  it('proceeds with heading deletion when BOTH confirms are set — heading check skipped, membership still verified', async () => {
+    // `confirmDeleteHeading: true` waives the cascade check, not the
+    // membership one: Bitrix24 resolves items by id alone, so deleting with a
+    // foreign id would hit another task. The pre-flight read stays.
+    fake.v2Call.mockResolvedValueOnce(fakeChecklistList()).mockResolvedValueOnce(fakeOk(true))
 
     const result = await tool.handler({
       taskId: 13,
@@ -130,12 +159,30 @@ describe('b24_task_checklist_item_delete', () => {
       confirmDeleteHeading: true,
     })
 
-    expect(fake.v2Call).toHaveBeenCalledTimes(1)
-    expect(fake.v2Call).toHaveBeenCalledWith({
+    expect(fake.v2Call).toHaveBeenCalledTimes(2)
+    expect(fake.v2Call).toHaveBeenNthCalledWith(1, {
+      method: 'task.checklistitem.getlist',
+      params: { TASKID: 13 },
+    })
+    expect(fake.v2Call).toHaveBeenNthCalledWith(2, {
       method: 'task.checklistitem.delete',
       params: [13, 431],
     })
     expect(JSON.parse(result.content[0]!.text)).toEqual({ deleted: true, taskId: 13, itemId: 431 })
+  })
+
+  it('refuses an item id that belongs to a different task instead of letting Bitrix24 act on it', async () => {
+    // Live behaviour this guards: `complete { taskId: A, itemId: <B's item> }`
+    // returned success and ticked the item on task B.
+    fake.v2Call.mockResolvedValue(fakeChecklistList())
+
+    await expect(tool.handler({ taskId: 13, itemId: 9999, confirmDelete: true })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: Bitrix24ErrorCode.ITEM_NOT_ON_TASK,
+    })
+    // Only the pre-flight ran — the destructive call never went out.
+    expect(fake.v2Call).toHaveBeenCalledTimes(1)
+    expect(fake.v2Batch).not.toHaveBeenCalled()
   })
 
   it('wraps SDK errors with task and item ids in the fallback', async () => {
@@ -172,7 +219,7 @@ describe('b24_task_checklist_item_delete', () => {
       getErrorMessages: () => [],
     })
 
-    const result = await tool.handler({ taskId: 13, itemId: [475, 476], confirmDelete: true })
+    const result = await tool.handler({ taskId: 13, itemId: [433, 475], confirmDelete: true })
 
     const payload = JSON.parse(result.content[0]!.text) as {
       batch: boolean

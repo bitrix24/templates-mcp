@@ -20,10 +20,36 @@ const tool = (await import('../../../../server/mcp/tools/tasks/complete-checklis
   handler: (input: { taskId: number; itemId: number | number[]; force?: boolean }) => Promise<ToolContent>
 }
 
+/**
+ * Every checklist action now pre-flights `task.checklistitem.getlist` to make
+ * sure the ids really belong to the task — Bitrix24 resolves items by id
+ * alone and would happily act on another task's item (see
+ * `assertItemsOnTask`). This fixture covers every id the tests below use.
+ */
+const CHECKLIST = Array.from({ length: 60 }, (_, i) => ({
+  ID: String(i + 1),
+  TASK_ID: '13',
+  PARENT_ID: '9',
+  TITLE: `item ${i + 1}`,
+})).concat([
+  { ID: '21', TASK_ID: '13', PARENT_ID: '9', TITLE: 'item 21' },
+  { ID: '22', TASK_ID: '13', PARENT_ID: '9', TITLE: 'item 22' },
+  { ID: '23', TASK_ID: '13', PARENT_ID: '9', TITLE: 'item 23' },
+])
+
+/** Answer the pre-flight read; leave every other method to the test's own mock. */
+function preflight(items: unknown[] = CHECKLIST) {
+  return async (options: { method: string }) => {
+    if (options.method === 'task.checklistitem.getlist') return fakeOk(items)
+    return fakeOk(true)
+  }
+}
+
 describe('b24_task_checklist_item_complete', () => {
   beforeEach(() => {
     fake.v2Call.mockReset()
     fake.v2Batch.mockReset()
+    fake.v2Call.mockImplementation(preflight())
   })
 
   it('calls actions.v2.call.make with task.checklistitem.complete + positional [taskId, itemId]', async () => {
@@ -56,7 +82,10 @@ describe('b24_task_checklist_item_complete', () => {
     const result = await tool.handler({ taskId: 13, itemId: [21] })
 
     expect(fake.v2Batch).toHaveBeenCalledTimes(1)
-    expect(fake.v2Call).not.toHaveBeenCalled()
+    // The only direct call is the membership pre-flight; the action itself
+    // goes through the batch endpoint.
+    expect(fake.v2Call).toHaveBeenCalledTimes(1)
+    expect(fake.v2Call).toHaveBeenCalledWith({ method: 'task.checklistitem.getlist', params: { TASKID: 13 } })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload).toMatchObject({ batch: true, verb: 'completed', taskId: 13, total: 1, ok: 1, failed: 0 })
     expect(payload.results).toEqual([{ itemId: 21, ok: true }])
@@ -132,5 +161,24 @@ describe('b24_task_checklist_item_complete', () => {
     const result = await tool.handler({ taskId: 1, itemId: ids, force: true })
     const payload = JSON.parse(result.content[0]!.text)
     expect(payload).toMatchObject({ batch: true, total: 51, ok: 51, failed: 0 })
+  })
+
+  it('refuses ids that are not on the task (Bitrix24 would report success and act on another task)', async () => {
+    await expect(tool.handler({ taskId: 13, itemId: 9999 })).rejects.toMatchObject({
+      name: 'Bitrix24ToolError',
+      code: Bitrix24ErrorCode.ITEM_NOT_ON_TASK,
+    })
+    await expect(tool.handler({ taskId: 13, itemId: [21, 9999] })).rejects.toMatchObject({
+      code: Bitrix24ErrorCode.ITEM_NOT_ON_TASK,
+    })
+    expect(fake.v2Batch).not.toHaveBeenCalled()
+  })
+
+  it('stands down when the pre-flight read does not return a list', async () => {
+    // Bitrix24 answered with something unexpected — better to let the real
+    // call speak than to fabricate a refusal.
+    fake.v2Call.mockResolvedValue(fakeOk(true))
+    const result = await tool.handler({ taskId: 13, itemId: 21 })
+    expect(JSON.parse(result.content[0]!.text)).toEqual({ completed: true, taskId: 13, itemId: 21 })
   })
 })
