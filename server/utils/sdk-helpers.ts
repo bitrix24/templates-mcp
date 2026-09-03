@@ -150,6 +150,38 @@ export type BatchCall = [method: string, params: TypeCallParams | unknown[]]
 //   - tests/unit/utils/define-action-tool.test.ts (mapBatchRows core)
 
 /**
+ * Decide what a batch response means when the SDK reports `!isSuccess`.
+ *
+ * The SDK's `returnAjaxResult: true` path (`AbstractBatch._createBatchArrayResult`)
+ * builds the row array AND copies every per-row error onto the envelope via
+ * `_addBatchErrorsIfAny`. `Result.isSuccess` is just `errors.size === 0`, so a
+ * single failed row out of fifty flips the envelope to failed even though the
+ * other forty-nine ran and their rows are sitting right there in `getData()`.
+ *
+ * Throwing on the envelope therefore discarded exactly the information the
+ * batch tools promise their callers — which ids went through and which didn't.
+ * Verified live: `b24_task_pause { taskId: [good, good, missing] }` returned a
+ * bare "Действие над задачей не разрешено" while both good tasks HAD been
+ * paused, leaving the operator to guess.
+ *
+ * So: rows present → hand them back and let the per-row `isSuccess` /
+ * `getErrorMessages()` handling (`mapBatchRows`) report the partial failure.
+ * No rows → nothing survived (transport error, rejected envelope, malformed
+ * response), and that is a real throw.
+ */
+function unwrapBatchRows<T>(
+  response: CallBatchResult<T>,
+  errorContext: string,
+): Array<AjaxResult<T>> {
+  const rows = response.getData() as Array<AjaxResult<T>> | null | undefined
+  if (Array.isArray(rows) && rows.length > 0) return rows
+  if (!response.isSuccess) {
+    throw new Bitrix24ToolError(response.getErrorMessages().join('; ') || errorContext)
+  }
+  return Array.isArray(rows) ? rows : []
+}
+
+/**
  * Run multiple v3 calls in a single HTTP batch. Returns an array of
  * `AjaxResult<T>` rows aligned with the input order, so callers can map
  * 1:1 against their original ids.
@@ -158,9 +190,11 @@ export type BatchCall = [method: string, params: TypeCallParams | unknown[]]
  * failures don't abort the batch — each row carries its own `isSuccess` /
  * `getErrorMessages()`.
  *
- * @throws {Bitrix24ToolError} on transport failure or top-level
- *   `!isSuccess` (i.e. the whole batch envelope was rejected). Per-row
- *   failures do NOT throw — they land in the returned array.
+ * @throws {Bitrix24ToolError} when nothing came back at all — transport
+ *   failure, or a rejected envelope with no rows. Per-row failures do NOT
+ *   throw: they land in the returned array, because the SDK marks the
+ *   envelope failed for them while still filling the rows (see
+ *   `unwrapBatchRows`).
  */
 export async function batchV3<T>(
   b24: TypeB24,
@@ -176,10 +210,7 @@ export async function batchV3<T>(
   } catch (err) {
     throw toToolError(err, errorContext)
   }
-  if (!response.isSuccess) {
-    throw new Bitrix24ToolError(response.getErrorMessages().join('; ') || errorContext)
-  }
-  return response.getData() as Array<AjaxResult<T>>
+  return unwrapBatchRows(response, errorContext)
 }
 
 /**
@@ -204,8 +235,5 @@ export async function batchV2<T>(
   } catch (err) {
     throw toToolError(err, errorContext)
   }
-  if (!response.isSuccess) {
-    throw new Bitrix24ToolError(response.getErrorMessages().join('; ') || errorContext)
-  }
-  return response.getData() as Array<AjaxResult<T>>
+  return unwrapBatchRows(response, errorContext)
 }

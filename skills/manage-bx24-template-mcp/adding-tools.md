@@ -226,6 +226,13 @@ const rows = await batchV2<{ task: TaskItem }>(
 // rows is Array<AjaxResult<{ task: TaskItem }>> aligned with taskIds[].
 // `isHaltOnError: false` + `returnAjaxResult: true` are applied by batchV2
 // for you — per-call failures land in rows[i] with isSuccess === false.
+//
+// Do NOT re-check the envelope's own `isSuccess` in a tool: the SDK copies
+// every per-row error onto the envelope (`AbstractBatch._addBatchErrorsIfAny`),
+// so one bad id out of fifty makes the envelope look failed while the rows are
+// fully populated. `batchV2` / `batchV3` already handle that — they throw only
+// when NO rows came back. Treating the envelope as authoritative is what used
+// to turn "48 of 50 done" into a single opaque error message.
 const results = rows.map((row, index) => {
   const taskId = taskIds[index]
   if (taskId === undefined) {

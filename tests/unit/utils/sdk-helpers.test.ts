@@ -92,6 +92,20 @@ describe('batchV3', () => {
     expect(result[1]?.isSuccess).toBe(false)
   })
 
+  it('keeps the rows when the SDK marks the envelope failed for a per-row error', async () => {
+    // This is the shape the real SDK produces: `returnAjaxResult: true` fills
+    // the rows AND copies each row error onto the envelope, so `isSuccess` is
+    // false whenever any single call failed. Throwing here used to discard the
+    // rows — and with them the answer to "which ids actually went through".
+    const { b24, v3Batch } = makeFakeBitrix24()
+    const rows = [fakeOk(1), { isSuccess: false, getData: () => ({ result: null }), getErrorMessages: () => ['ROW_ERR'] }]
+    v3Batch.mockResolvedValue({ isSuccess: false, getData: () => rows, getErrorMessages: () => ['ROW_ERR'] })
+    const result = await batchV3(b24 as never, [], 'ctx')
+    expect(result).toHaveLength(2)
+    expect(result[0]?.isSuccess).toBe(true)
+    expect(result[1]?.isSuccess).toBe(false)
+  })
+
   it('wraps transport throws as Bitrix24ToolError', async () => {
     const { b24, v3Batch } = makeFakeBitrix24()
     v3Batch.mockRejectedValue(new Error('transport error'))
@@ -109,10 +123,36 @@ describe('batchV2', () => {
     expect(result).toStrictEqual(rows)
   })
 
-  it('throws Bitrix24ToolError when top-level isSuccess is false', async () => {
+  it('throws Bitrix24ToolError when the envelope failed AND no rows came back', async () => {
     const { b24, v2Batch } = makeFakeBitrix24()
     v2Batch.mockResolvedValue({ isSuccess: false, getData: () => [], getErrorMessages: () => ['V2_FAILED'] })
     await expect(batchV2(b24 as never, [], 'ctx')).rejects.toThrow('V2_FAILED')
+  })
+
+  it('throws when the envelope failed and getData returned nothing at all', async () => {
+    const { b24, v2Batch } = makeFakeBitrix24()
+    v2Batch.mockResolvedValue({ isSuccess: false, getData: () => null as never, getErrorMessages: () => [] })
+    await expect(batchV2(b24 as never, [], 'my ctx')).rejects.toThrow('my ctx')
+  })
+
+  it('keeps the rows when the SDK marks the envelope failed for a per-row error', async () => {
+    // Real-SDK shape — see the batchV3 counterpart. Live repro was
+    // `b24_task_pause { taskId: [good, good, missing] }`: both good tasks were
+    // paused, but the tool answered with a single bare error.
+    const { b24, v2Batch } = makeFakeBitrix24()
+    const rows = [
+      fakeOk(true),
+      { isSuccess: false, getData: () => ({ result: null }), getErrorMessages: () => ['Действие над задачей не разрешено'] },
+    ]
+    v2Batch.mockResolvedValue({
+      isSuccess: false,
+      getData: () => rows,
+      getErrorMessages: () => ['Действие над задачей не разрешено'],
+    })
+    const result = await batchV2(b24 as never, [], 'ctx')
+    expect(result).toHaveLength(2)
+    expect(result[0]?.isSuccess).toBe(true)
+    expect(result[1]?.getErrorMessages()).toContain('Действие над задачей не разрешено')
   })
 
   it('wraps transport throws as Bitrix24ToolError', async () => {
