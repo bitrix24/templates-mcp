@@ -40,6 +40,16 @@ export default defineMcpTool({
       .describe(
         'What the time was spent on. Optional but recommended — without it, the operator and the LLM see only "45 минут on task 7" with no context. Max 4000 chars. BBCode is rendered the same as in task descriptions.',
       ),
+    // `b24_task_elapsed_time_list` reads this field back as `commentText`
+    // (Bitrix24's COMMENT_TEXT), so an agent that lists entries and then adds
+    // one naturally reuses that name. Zod ignores unknown keys, so the note
+    // used to vanish silently and the entry landed with an empty comment.
+    // Accepting the read-side name as an alias closes that trap.
+    commentText: z
+      .string()
+      .max(4000)
+      .optional()
+      .describe('Alias of `comment`, matching the field name `b24_task_elapsed_time_list` returns. Use either.'),
     userId: z
       .number()
       .int()
@@ -49,7 +59,8 @@ export default defineMcpTool({
         'Log the entry on behalf of another user. Default: the user owning the webhook (i.e. "you"). Use this when a team lead is recording time worked by a direct report. Requires Bitrix24 MANAGER or PORTAL-ADMIN rights for the acting webhook user — plain task-edit permission is NOT enough. If the agent has only standard rights and supplies `userId`, Bitrix24 responds with ACCESS_DENIED.',
       ),
   },
-  handler: async ({ taskId, seconds, comment, userId }) => {
+  handler: async ({ taskId, seconds, comment, commentText, userId }) => {
+    const note = comment ?? commentText
     const b24 = useBitrix24Tenant()
     // task.elapseditem.add returns the new id as a bare integer in `result`.
     // No envelope, no body — Bitrix24 v2 contract for write-only methods.
@@ -62,7 +73,7 @@ export default defineMcpTool({
           SECONDS: seconds,
           // Bitrix24 accepts empty string for "no comment"; the optional
           // schema field arrives as undefined, normalise to '' for the wire.
-          COMMENT_TEXT: comment ?? '',
+          COMMENT_TEXT: note ?? '',
           ...(userId !== undefined ? { USER_ID: userId } : {}),
         },
       },
@@ -98,7 +109,7 @@ export default defineMcpTool({
             // included only when overridden — omitting it for the default
             // case mirrors the wire (Bitrix24 doesn't echo USER_ID when
             // it falls back to the webhook user).
-            comment: comment ?? '',
+            comment: note ?? '',
             ...(userId !== undefined ? { userId } : {}),
           }),
         },

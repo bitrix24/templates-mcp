@@ -127,4 +127,19 @@ describe('b24_task_elapsed_time_add', () => {
     expect(tool.inputSchema.comment.safeParse('a'.repeat(4_000)).success).toBe(true)
     expect(tool.inputSchema.comment.safeParse('a'.repeat(4_001)).success).toBe(false)
   })
+
+  it('accepts `commentText` as an alias of `comment` (the name the list tool returns)', async () => {
+    fake.v2Call.mockResolvedValue(fakeOk(7485))
+    const result = await tool.handler({ taskId: 4193, seconds: 900, commentText: 'из списка' } as never)
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { ARFIELDS: Record<string, unknown> } }
+    expect(args.params.ARFIELDS.COMMENT_TEXT).toBe('из списка')
+    expect(JSON.parse(result.content[0]!.text).comment).toBe('из списка')
+  })
+
+  it('prefers `comment` when both names are supplied', async () => {
+    fake.v2Call.mockResolvedValue(fakeOk(1))
+    await tool.handler({ taskId: 1, seconds: 60, comment: 'основное', commentText: 'алиас' } as never)
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { ARFIELDS: Record<string, unknown> } }
+    expect(args.params.ARFIELDS.COMMENT_TEXT).toBe('основное')
+  })
 })

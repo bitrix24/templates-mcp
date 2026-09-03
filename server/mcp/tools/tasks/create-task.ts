@@ -24,7 +24,7 @@ import { extractTasks } from '~/server/utils/tasks'
 export default defineMcpTool({
   name: 'b24_task_create',
   description:
-    'Create a new Bitrix24 task. Requires a title and a responsibleId (Bitrix24 user id — call b24_user_me first if you only have your own). Optional: description, deadline (ISO 8601 with timezone), groupId, priority. Returns the new task id and a short summary. Note: the task creator is not set here, so Bitrix24 records the webhook user as creator — this may differ from the person actually requesting the task.',
+    'Create a new Bitrix24 task. Requires a title and a responsibleId (Bitrix24 user id — call b24_user_me first if you only have your own). Optional: description, deadline (ISO 8601 with timezone), groupId, priority (0 low / 1 normal / 2 important — number or string). Returns the new task id and a short summary. Note: the task creator is not set here, so Bitrix24 records the webhook user as creator — this may differ from the person actually requesting the task.',
   inputSchema: {
     title: z.string().min(1).max(255).describe('Task title — max 255 chars.'),
     responsibleId: z
@@ -42,9 +42,13 @@ export default defineMcpTool({
       .describe('Deadline as ISO 8601 with timezone, e.g. "2026-05-20T18:00:00+03:00". Omit for no deadline.'),
     groupId: z.number().int().nonnegative().optional().describe('Workgroup id. 0 / omitted = personal task.'),
     priority: z
-      .enum(['0', '1', '2'])
+      // Bitrix24 wants a string on the wire, but an LLM filling a numeric
+      // priority naturally writes `2`, and a string-only enum rejected that
+      // with a validation error instead of doing the obvious thing. Accept
+      // both shapes and normalise in the handler.
+      .union([z.enum(['0', '1', '2']), z.literal(0), z.literal(1), z.literal(2)])
       .optional()
-      .describe('"0" = low, "1" = normal (default if omitted), "2" = important.'),
+      .describe('Priority: 0 = low, 1 = normal (default if omitted), 2 = important. Number or string, both accepted.'),
     accomplices: z
       .array(z.number().int().positive())
       .optional()
@@ -62,7 +66,8 @@ export default defineMcpTool({
     if (description !== undefined) fields.DESCRIPTION = description
     if (deadline !== undefined) fields.DEADLINE = deadline
     if (groupId !== undefined) fields.GROUP_ID = groupId
-    if (priority !== undefined) fields.PRIORITY = priority
+    // Normalise to the string form Bitrix24 expects on the wire.
+    if (priority !== undefined) fields.PRIORITY = String(priority)
     if (accomplices?.length) fields.ACCOMPLICES = accomplices
     if (auditors?.length) fields.AUDITORS = auditors
 

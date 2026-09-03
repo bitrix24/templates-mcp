@@ -99,4 +99,18 @@ describe('b24_task_create', () => {
       code: 'QUERY_LIMIT_EXCEEDED',
     })
   })
+
+  it('accepts a numeric priority and normalises it to the string Bitrix24 wants', async () => {
+    fake.v2Call.mockResolvedValue(fakeOk({ task: { id: '7', title: 'demo' } }))
+    await tool.handler({ title: 'demo', responsibleId: 5, priority: 2 } as never)
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { fields: Record<string, unknown> } }
+    expect(args.params.fields.PRIORITY).toBe('2')
+  })
+
+  it('still accepts the string form', async () => {
+    fake.v2Call.mockResolvedValue(fakeOk({ task: { id: '7', title: 'demo' } }))
+    await tool.handler({ title: 'demo', responsibleId: 5, priority: '0' } as never)
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { fields: Record<string, unknown> } }
+    expect(args.params.fields.PRIORITY).toBe('0')
+  })
 })

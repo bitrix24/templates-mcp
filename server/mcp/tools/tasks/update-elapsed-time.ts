@@ -44,6 +44,14 @@ export default defineMcpTool({
       .describe(
         'New comment text. Pass an empty string to wipe the comment; omit to leave unchanged. Max 4000 chars. The schema distinguishes "" (explicit clear) from `undefined` (no-op) at the handler layer.',
       ),
+    // Alias of `comment`, matching what `b24_task_elapsed_time_list` returns
+    // (Bitrix24's COMMENT_TEXT). Without it an agent reusing the read-side
+    // name hit the "no changes" refusal below even though it had passed one.
+    commentText: z
+      .string()
+      .max(4000)
+      .optional()
+      .describe('Alias of `comment`, matching the field name `b24_task_elapsed_time_list` returns. Use either.'),
     userId: z
       .number()
       .int()
@@ -53,8 +61,9 @@ export default defineMcpTool({
         'Re-attribute the entry to another user — this REWRITES the recorded authorship of the entry, not just the assignee. Default: leave unchanged. Requires Bitrix24 MANAGER or PORTAL-ADMIN rights — plain task-edit permission is NOT enough. Use only when the operator explicitly requests re-attribution (e.g. "log this under Игорь, не под мной"). If the agent has only standard rights and supplies `userId`, Bitrix24 responds with ACCESS_DENIED.',
       ),
   },
-  handler: async ({ taskId, itemId, seconds, comment, userId }) => {
-    if (seconds === undefined && comment === undefined && userId === undefined) {
+  handler: async ({ taskId, itemId, seconds, comment, commentText, userId }) => {
+    const note = comment ?? commentText
+    if (seconds === undefined && note === undefined && userId === undefined) {
       // At least one field must change — Bitrix24 doesn't error on an
       // empty ARFIELDS, but the operator clearly intended _something_, so
       // surface the schema-level confusion early instead of a silent no-op.
@@ -66,9 +75,9 @@ export default defineMcpTool({
 
     const arFields: Record<string, unknown> = {}
     if (seconds !== undefined) arFields.SECONDS = seconds
-    // `comment === ''` is a deliberate clear; `comment === undefined` means
-    // leave it alone. Don't collapse the two.
-    if (comment !== undefined) arFields.COMMENT_TEXT = comment
+    // `note === ''` is a deliberate clear; `note === undefined` means leave
+    // it alone. Don't collapse the two.
+    if (note !== undefined) arFields.COMMENT_TEXT = note
     if (userId !== undefined) arFields.USER_ID = userId
 
     const b24 = useBitrix24Tenant()

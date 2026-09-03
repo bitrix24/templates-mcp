@@ -129,4 +129,11 @@ describe('b24_task_elapsed_time_update', () => {
     expect(tool.inputSchema.userId.safeParse(1.5).success).toBe(false)
     expect(tool.inputSchema.userId.safeParse(47).success).toBe(true)
   })
+
+  it('accepts `commentText` as an alias and no longer refuses as "no changes"', async () => {
+    fake.v2Call.mockResolvedValue(fakeOk(null))
+    await tool.handler({ taskId: 4193, itemId: 7485, commentText: 'через алиас' } as never)
+    const args = fake.v2Call.mock.calls[0]![0] as unknown as { params: { ARFIELDS: Record<string, unknown> } }
+    expect(args.params.ARFIELDS.COMMENT_TEXT).toBe('через алиас')
+  })
 })
