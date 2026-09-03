@@ -25,6 +25,7 @@ import tasks_createTask from '~/server/mcp/tools/tasks/create-task'
 import tasks_listTasks from '~/server/mcp/tools/tasks/list-tasks'
 import tasks_updateTask from '~/server/mcp/tools/tasks/update-task'
 import tasks_addTaskComment from '~/server/mcp/tools/tasks/add-task-comment'
+import tasks_listTaskComments from '~/server/mcp/tools/tasks/list-task-comments'
 import tasks_startTask from '~/server/mcp/tools/tasks/start-task'
 import tasks_pauseTask from '~/server/mcp/tools/tasks/pause-task'
 import tasks_completeTask from '~/server/mcp/tools/tasks/complete-task'
@@ -59,6 +60,7 @@ export const tools = [
   tasks_listTasks,
   tasks_updateTask,
   tasks_addTaskComment,
+  tasks_listTaskComments,
   tasks_startTask,
   tasks_pauseTask,
   tasks_completeTask,

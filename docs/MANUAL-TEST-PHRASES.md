@@ -27,6 +27,7 @@ Bitrix24 has two parallel REST API generations:
 | `b24_task_list` | `tasks.task.list` | v2 (classic; rest-v3 returns "restApi:v3 not support method tasks.task.list") |
 | `b24_task_update` | `tasks.task.update` | v2 (classic) |
 | `b24_task_comment_add` | `task.commentitem.add` | v2 (deprecated — v3 replacement `tasks.task.chat.message.send` queued, no issue filed yet) |
+| `b24_task_comment_list` | `task.commentitem.getlist` | v2 — `tasks.task.chat.message.list` returns an empty body on webhook auth, so the classic method stays. Accepts `TASKID` only: `ORDER` / `FILTER` fail the whole call with `ERROR_CORE`, so sort / author filter / paging run locally |
 | `b24_task_start` | `tasks.task.start` | v2 (classic) |
 | `b24_task_pause` | `tasks.task.pause` | v2 (classic) |
 | `b24_task_complete` | `tasks.task.complete` | v2 (classic) |
@@ -162,18 +163,37 @@ The phrases in section 2 are written with this rule in mind. The LLM's response 
 
 ---
 
-## 6. Reading comments ⏳ — NEEDS NEW TOOL
+## 6. Reading comments ✅
 
-**Status:** no tool today. Bitrix24 REST: `tasks.task.chat.message.list` (new, preferred) or `task.commentitem.getlist` (deprecated but works on classic task card).
+**Status:** shipped — `b24_task_comment_list`.
+
+**Where a task's comments actually live — read this before touching the tool.** Bitrix24 has two stores and the task's age decides which one holds its thread:
+
+| Task | Marker | Store | Read method |
+|---|---|---|---|
+| created before the portal moved to the chat-based task card | `forumTopicId` set | forum | `task.commentitem.getlist` (v2) |
+| created after | `chatId` set, `forumTopicId: null` | task chat | `im.dialog.messages.get` (v2, `DIALOG_ID: "chat<chatId>"`) |
+
+`task.commentitem.getlist` returns `[]` for a chat-era task — no error, no hint — which is exactly the trap the issue description warned about with "не работает в новой карточке задач". Verified live (2026-09-03): a task created that day reported `forumTopicId: null` / `chatId: 6479`; two comments posted through `b24_task_comment_add` were invisible to `commentitem.getlist` and sitting in the chat. A 2025 task's own chat, meanwhile, held exactly two system notices — "Это новый чат задачи…" and one telling the reader that earlier comments stay in the forum. **So a task straddling the migration keeps comments in BOTH stores, and the tool reads both and merges them**, tagging each comment with `source: "forum" | "chat"`.
+
+`tasks.task.chat.message.list` is not the answer: it returns an empty body on webhook auth. `im.dialog.messages.get` works and needs only the `im` scope (already in the standard webhook scope set).
+
+**System messages CAN be told apart — in the chat.** A chat message with `author_id: 0` is Bitrix24's own note ("… приостановил выполнение задачи", the new-chat boilerplate). That is the `includeSystem` filter this section used to ask for, and it now exists: default `false`, hidden entries counted in `systemHidden`. The forum store has no equivalent marker, so a `source: "forum"` row always reports `isSystem: false` — "unknown", not "definitely human". Judge those by the text.
+
+Other wire facts:
+
+- `task.commentitem.getlist` accepts `TASKID` and nothing else. `ORDER` or `FILTER` fail the whole call with `ERROR_CORE` / `TASKS_ERROR_EXCEPTION_#8 … ACTION_FAILED_TO_BE_PROCESSED`.
+- `im.dialog.messages.get` returns newest-first, pages backwards via `LAST_ID`, caps at 200 per call, and ships a `users` array so author names cost nothing extra. The tool walks up to 5 pages and sets `chatTruncated: true` if the thread is longer.
+- Ordering, the author filter, the system filter and paging are therefore all local. Comment bodies are never truncated — `limit` / `offset` drop whole comments.
 
 | # | Phrase | What we want to see |
 |---|---|---|
-| 6.1 | Покажи последние 10 комментариев к задаче 123. | ⏳ `list_task_comments { taskId: 123, limit: 10, order: "desc" }` |
-| 6.2 | Read the latest comments on task 123, skip the service messages about renames and time changes. | ⏳ Same + filter out `messageType: "SERVICE"` / `AUTHOR_ID: 0` (system author) |
-| 6.3 | Что писали в задаче 123 на этой неделе? | ⏳ `list_task_comments { taskId: 123, ">=postDate": <monday> }` |
-| 6.4 | Кто последним прокомментировал задачу 123? | ⏳ `list_task_comments { taskId: 123, limit: 1, order: "desc" }` → read `authorId` |
-
-**Filtering service messages** is essential — Bitrix24 tracks every field change as a system comment ("user X changed title from … to …", "user Y added Z hours"). A read-comments tool that doesn't filter these is noise. The new tool should expose a `includeSystem: boolean` (default `false`).
+| 6.1 | Покажи последние 10 комментариев к задаче 123. | `b24_task_comment_list { taskId: 123, limit: 10, order: "desc" }` |
+| 6.2 | Кто что писал в задаче 123? | `b24_task_comment_list { taskId: 123 }` — oldest-first; agent reads `authorName` per comment plus the `authors` roll-up |
+| 6.3 | Что писали в задаче 123 на этой неделе? | `b24_task_comment_list { taskId: 123 }` — no server-side date filter on either endpoint; the agent filters on `postDate` |
+| 6.4 | Кто последним прокомментировал задачу 123? | `b24_task_comment_list { taskId: 123, limit: 1, order: "desc" }` → read `authorId` / `authorName` |
+| 6.5 | Что писал сотрудник 11 в задаче 87? | `b24_task_comment_list { taskId: 87, authorId: 11 }` — `total` stays the thread size, `matched` reports the filtered count |
+| 6.6 | Покажи всю историю задачи 123, включая служебные записи. | `b24_task_comment_list { taskId: 123, includeSystem: true }` — system entries come back flagged `isSystem: true` |
 
 ---
 

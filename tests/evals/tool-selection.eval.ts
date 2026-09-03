@@ -84,6 +84,8 @@ import updateTask from '~/server/mcp/tools/tasks/update-task'
 // eslint-disable-next-line import/first
 import addTaskComment from '~/server/mcp/tools/tasks/add-task-comment'
 // eslint-disable-next-line import/first
+import listTaskComments from '~/server/mcp/tools/tasks/list-task-comments'
+// eslint-disable-next-line import/first
 import startTask from '~/server/mcp/tools/tasks/start-task'
 // eslint-disable-next-line import/first
 import pauseTask from '~/server/mcp/tools/tasks/pause-task'
@@ -145,6 +147,7 @@ const ALL_TOOLS: McpToolDef[] = [
   listTasks as unknown as McpToolDef,
   updateTask as unknown as McpToolDef,
   addTaskComment as unknown as McpToolDef,
+  listTaskComments as unknown as McpToolDef,
   startTask as unknown as McpToolDef,
   pauseTask as unknown as McpToolDef,
   completeTask as unknown as McpToolDef,
@@ -304,6 +307,21 @@ const CASES: Case[] = [
     input: 'Добавь комментарий "WIP" к задаче 99.',
     expected: 'b24_task_comment_add',
     notes: 'Short comment.',
+  },
+  {
+    input: 'Покажи комментарии к задаче 123 — кто что писал.',
+    expected: 'b24_task_comment_list',
+    notes: 'RU read the comment thread — must NOT route to comment_add.',
+  },
+  {
+    input: 'Что писал сотрудник с id 11 в комментариях задачи 87?',
+    expected: 'b24_task_comment_list',
+    notes: 'Author-scoped read with the id already given — goes straight to the comment tool, no b24_user_find hop.',
+  },
+  {
+    input: 'Прочитай последние 5 комментариев в задаче 4153.',
+    expected: 'b24_task_comment_list',
+    notes: 'Read with paging — must NOT route to b24_task_result_list (results are a different entity).',
   },
   {
     input: 'Отправь фидбэк разработчикам MCP: описание тула b24_user_me непонятное, агент не понял что оно возвращает.',

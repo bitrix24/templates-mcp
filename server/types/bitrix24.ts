@@ -138,3 +138,84 @@ export interface BitrixElapsedTimeRaw {
   dateStop?: string | null
   DATE_STOP?: string | null
 }
+
+/**
+ * Task-comment wire shape — v2 `task.commentitem.{get,getlist}`. Bitrix24
+ * ships UPPER_SNAKE on the wire; camelCase keys are tolerated in case the
+ * SDK starts transforming responses.
+ *
+ * Notable wire facts, verified against a live portal (2026-09-02):
+ *   - `POST_MESSAGE` carries the BBCode body; `POST_MESSAGE_HTML` is `null`
+ *     for every comment written through the UI (Bitrix24 only fills it for
+ *     comments posted with an explicit HTML payload), so the projection
+ *     treats `POST_MESSAGE` as the canonical text.
+ *   - `AUTHOR_NAME` is shipped alongside `AUTHOR_ID`, so reading "who said
+ *     what" needs no extra `user.get` round-trip.
+ *   - `AUTHOR_EMAIL` is often an empty string.
+ *   - The item does NOT echo the task id — the caller owns it.
+ *   - Bitrix24's own lifecycle notes ("Задача завершена.", "Крайний срок
+ *     изменен на: …") arrive as ordinary comments authored by the user who
+ *     triggered them; the REST layer exposes no flag to tell them apart.
+ */
+export interface BitrixTaskCommentRaw {
+  id?: number | string
+  ID?: number | string
+  authorId?: number | string | null
+  AUTHOR_ID?: number | string | null
+  authorName?: string | null
+  AUTHOR_NAME?: string | null
+  authorEmail?: string | null
+  AUTHOR_EMAIL?: string | null
+  postDate?: string | null
+  POST_DATE?: string | null
+  postMessage?: string | null
+  POST_MESSAGE?: string | null
+  postMessageHtml?: string | null
+  POST_MESSAGE_HTML?: string | null
+}
+
+/**
+ * Task-chat message wire shape — v2 `im.dialog.messages.get` with
+ * `DIALOG_ID: "chat<chatId>"`. Bitrix24 keeps task comments in two different
+ * places depending on when the task was created:
+ *
+ *   - legacy tasks carry a `forumTopicId` and their comments live in the
+ *     forum, readable via `task.commentitem.getlist`;
+ *   - tasks created after the portal moved to the chat-based task card carry
+ *     a `chatId` and their comments are chat messages — `commentitem.getlist`
+ *     returns an empty array for them, with no error.
+ *
+ * Verified on a live portal (2026-09-03): a task created that day had
+ * `forumTopicId: null` / `chatId: 6479`, and two comments posted through
+ * `task.commentitem.add` came back only from the chat. The legacy task's own
+ * chat carried exactly two system notices telling the reader that older
+ * comments stay in the forum — so both sources have to be read and merged.
+ *
+ * Field names are snake_case here (the `im.*` family differs from the rest of
+ * the REST API, which is UPPER_SNAKE on the wire and camelCase on v3).
+ * `author_id: 0` marks a system message — the one reliable system/human
+ * signal in either storage.
+ */
+export interface BitrixChatMessageRaw {
+  id?: number | string
+  chat_id?: number | string
+  author_id?: number | string
+  date?: string | null
+  text?: string | null
+  params?: Record<string, unknown>
+}
+
+/** A user entry from the `users` array of an `im.dialog.messages.get` response. */
+export interface BitrixChatUserRaw {
+  id?: number | string
+  name?: string | null
+  first_name?: string | null
+  last_name?: string | null
+}
+
+/** Envelope for `im.dialog.messages.get`. */
+export interface ChatMessagesEnvelope {
+  chat_id?: number | string
+  messages?: BitrixChatMessageRaw[]
+  users?: BitrixChatUserRaw[]
+}
