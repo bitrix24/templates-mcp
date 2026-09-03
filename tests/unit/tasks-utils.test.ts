@@ -43,6 +43,109 @@ describe('toTaskShort', () => {
     ).toMatchObject({ id: '7', title: 'demo', status: '2', responsibleId: '5' })
   })
 
+  it('projects the select-only scalars when Bitrix24 ships them (issue #203)', () => {
+    // Bitrix24 omits these unless they are in the select, so presence on the
+    // wire is the opt-in. A default listing carries none of them.
+    expect(toTaskShort({ ID: '1', TITLE: 'demo' })).toEqual({
+      id: '1',
+      title: 'demo',
+      status: undefined,
+      deadline: undefined,
+      responsibleId: undefined,
+      createdDate: undefined,
+      priority: undefined,
+    })
+
+    expect(
+      toTaskShort({
+        id: '4153',
+        title: 'demo',
+        groupId: '111',
+        createdBy: '35',
+        parentId: '0',
+        changedDate: '2026-09-03T17:32:26+05:00',
+        closedDate: null,
+      }),
+    ).toMatchObject({
+      groupId: '111',
+      createdBy: '35',
+      parentId: '0',
+      changedDate: '2026-09-03T17:32:26+05:00',
+    })
+  })
+
+  it('drops the nested group / creator objects Bitrix24 adds unbidden', () => {
+    const short = toTaskShort({
+      ID: '1',
+      TITLE: 'demo',
+      GROUP_ID: '111',
+      group: { id: '111', name: 'Проект «Баги»', membersCount: 1 },
+      creator: { id: '35', name: 'Иван Петров', icon: 'https://portal/avatar.png' },
+    })
+    expect(short).toMatchObject({ groupId: '111' })
+    expect(short).not.toHaveProperty('group')
+    expect(short).not.toHaveProperty('creator')
+  })
+
+  it('drops the task body unless the caller opts in (issue #203)', () => {
+    const raw = {
+      ID: '4153',
+      TITLE: 'demo',
+      DESCRIPTION: '[b]Причина[/b] длинное тело задачи',
+      DESCRIPTION_IN_BBCODE: 'Y',
+    }
+    // Default: body absent, so a mutation response never pays for it.
+    const withoutBody = toTaskShort(raw)
+    expect(withoutBody).not.toHaveProperty('description')
+    expect(withoutBody).not.toHaveProperty('descriptionInBbcode')
+
+    // Opted in: body verbatim + the markup flag coerced from "Y"/"N".
+    expect(toTaskShort(raw, { withDescription: true })).toMatchObject({
+      description: '[b]Причина[/b] длинное тело задачи',
+      descriptionInBbcode: true,
+    })
+  })
+
+  it('reads the body from camelCase too, and treats "N" as HTML', () => {
+    expect(
+      toTaskShort(
+        { id: 1, title: 'demo', description: '<p>html body</p>', descriptionInBbcode: 'N' },
+        { withDescription: true },
+      ),
+    ).toMatchObject({ description: '<p>html body</p>', descriptionInBbcode: false })
+  })
+
+  it('keeps an empty body as an empty string and never truncates a long one', () => {
+    expect(
+      toTaskShort({ id: 1, title: 'demo', DESCRIPTION: '' }, { withDescription: true }),
+    ).toMatchObject({ description: '' })
+
+    const long = 'а'.repeat(5000)
+    expect(
+      toTaskShort({ id: 1, title: 'demo', DESCRIPTION: long }, { withDescription: true })?.description,
+    ).toBe(long)
+  })
+
+  it('omits the body when opted in but Bitrix24 did not ship one', () => {
+    expect(toTaskShort({ id: 1, title: 'demo' }, { withDescription: true })).not.toHaveProperty(
+      'description',
+    )
+  })
+
+  it('extractTasks threads the option through to every row', () => {
+    const envelope = {
+      tasks: [
+        { ID: '1', TITLE: 'a', DESCRIPTION: 'body a' },
+        { ID: '2', TITLE: 'b', DESCRIPTION: 'body b' },
+      ],
+    }
+    expect(extractTasks(envelope).map((t) => t.description)).toEqual([undefined, undefined])
+    expect(extractTasks(envelope, { withDescription: true }).map((t) => t.description)).toEqual([
+      'body a',
+      'body b',
+    ])
+  })
+
   it('returns null when id or title is missing', () => {
     expect(toTaskShort({ TITLE: 'no id' })).toBeNull()
     expect(toTaskShort({ ID: 1 })).toBeNull()

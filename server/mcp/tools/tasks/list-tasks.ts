@@ -35,7 +35,7 @@ const DEFAULT_SELECT_WIRE = normalizeBitrix24Select(DEFAULT_SELECT_CAMEL)
 export default defineMcpTool({
   name: 'b24_task_list',
   description:
-    'List Bitrix24 tasks. Filter / order / select keys are camelCase task fields (`responsibleId`, `status`, `deadline`, `groupId`, …) — same convention as every other task tool. Legacy UPPERCASE keys (`RESPONSIBLE_ID`, `STATUS`, …) are also accepted. Page size is fixed at 50 by Bitrix24; use `start` for pagination ((page-1)*50). Returns a trimmed list — id/title/status/deadline/responsibleId/createdDate.',
+    'List Bitrix24 tasks. Filter / order / select keys are camelCase task fields (`responsibleId`, `status`, `deadline`, `groupId`, …) — same convention as every other task tool. Legacy UPPERCASE keys (`RESPONSIBLE_ID`, `STATUS`, …) are also accepted. Page size is fixed at 50 by Bitrix24; use `start` for pagination ((page-1)*50). Returns a trimmed list by default — id/title/status/deadline/responsibleId/createdDate/priority. To read a task BODY, add `description` to `select`: it then comes back in full (never truncated) together with `descriptionInBbcode` — true means the body is BBCode, false means HTML. Bodies run to thousands of characters, so ask for `description` when you actually need to read the task, not for a routine listing; narrow the `filter` first. `groupId`, `createdBy`, `parentId`, `changedDate` and `closedDate` also come back when you put them in `select` (use `parentId` to walk subtasks).',
   inputSchema: {
     filter: z
       .record(z.string(), z.unknown())
@@ -53,7 +53,7 @@ export default defineMcpTool({
       .array(z.string())
       .optional()
       .describe(
-        `Fields to return as camelCase names. Defaults to ${DEFAULT_SELECT_CAMEL.join(', ')}. UPPERCASE forms accepted. Always set this explicitly when you need a predictable shape.`,
+        `Fields to return as camelCase names. Defaults to ${DEFAULT_SELECT_CAMEL.join(', ')} — note the default does NOT include the task body. Add \`description\` to get it (plus the \`descriptionInBbcode\` markup flag Bitrix24 ships with it). UPPERCASE forms accepted. Always set this explicitly when you need a predictable shape.`,
       ),
     start: z
       .number()
@@ -75,8 +75,19 @@ export default defineMcpTool({
       },
       'Failed to list Bitrix24 tasks',
     )
+    // The projection drops the task body unless it was asked for — see
+    // `ToTaskShortOptions.withDescription`. `select` is the operator's
+    // request, so match on it rather than on what Bitrix24 happened to
+    // return: DESCRIPTION_IN_BBCODE rides along automatically and must not
+    // be enough on its own to switch the body on. Accept either casing,
+    // matching `normalizeBitrix24Select`'s tolerance.
+    const wantsDescription = (select ?? []).some((field) => {
+      const normalized = field.trim().toLowerCase()
+      return normalized === 'description' || normalized === 'descriptioninbbcode'
+    })
+
     const tasks: TaskShort[] = (data?.tasks ?? [])
-      .map(toTaskShort)
+      .map((task) => toTaskShort(task, { withDescription: wantsDescription }))
       .filter((t): t is TaskShort => t !== null)
 
     return {

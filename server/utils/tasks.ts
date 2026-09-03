@@ -8,12 +8,15 @@
  * map them to the UPPERCASE keys that the REST methods actually require.
  */
 
-import { pick } from '~/server/utils/wire-coerce'
+import { pick, toBool } from '~/server/utils/wire-coerce'
 
 /** Subset of task fields we surface back to the agent. The full Bitrix24
  *  response carries 50+ fields; trimming to the agent-useful ones keeps the
  *  context window cheap. Agents that need more should use list-tasks with an
- *  explicit `select`. */
+ *  explicit `select`.
+ *
+ *  `description` is the one field that is **opt-in per call** rather than
+ *  always-on — see {@link ToTaskShortOptions}. */
 export interface TaskShort {
   id: number | string
   title: string
@@ -22,15 +25,50 @@ export interface TaskShort {
   responsibleId?: string
   createdDate?: string
   priority?: string
+  /** Scalar fields Bitrix24 ships **only when they are in the `select`**, so
+   *  projecting them when present is the same thing as honouring the select.
+   *  They stay absent from a default listing. Issue #203 reported them
+   *  dropped alongside `description`. */
+  groupId?: string
+  createdBy?: string
+  parentId?: string
+  changedDate?: string | null
+  closedDate?: string | null
+  /** The task body. Only present when the caller opted in AND Bitrix24
+   *  actually shipped it (i.e. `description` was in the `select`). */
+  description?: string
+  /** Bitrix24's `DESCRIPTION_IN_BBCODE` flag ("Y"/"N" on the wire), coerced
+   *  to a boolean: `true` → `description` holds BBCode, `false` → HTML. Ships
+   *  alongside `description` and tells the agent how to read the markup. */
+  descriptionInBbcode?: boolean
 }
 
-export function toTaskShort(raw: unknown): TaskShort | null {
+export interface ToTaskShortOptions {
+  /**
+   * Project `description` / `descriptionInBbcode` when the wire carries them.
+   *
+   * Off by default, and deliberately so: a task body runs to hundreds or
+   * thousands of characters, and `toTaskShort` is shared by every task tool
+   * — create / update / rate / the seven lifecycle verbs all project their
+   * response through it. Bitrix24 echoes the full task on those endpoints, so
+   * an always-on `description` would bill the agent for a body it just wrote
+   * on every single mutation. Only the read path (`b24_task_list`, when the
+   * operator puts `description` in the `select`) asks for it.
+   *
+   * Issue #203: before this option existed the field was dropped
+   * unconditionally, so `select: ['id', 'title', 'description']` silently
+   * returned no body — the `select` looked honoured but the projection ate it.
+   */
+  withDescription?: boolean
+}
+
+export function toTaskShort(raw: unknown, options: ToTaskShortOptions = {}): TaskShort | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
   const id = pick<number | string>(r, 'id', 'ID')
   const title = pick<string>(r, 'title', 'TITLE')
   if (id === null || title === null) return null
-  return {
+  const short: TaskShort = {
     id,
     title,
     status: pick<string>(r, 'status', 'STATUS') ?? undefined,
@@ -39,6 +77,34 @@ export function toTaskShort(raw: unknown): TaskShort | null {
     createdDate: pick<string>(r, 'createdDate', 'CREATED_DATE') ?? undefined,
     priority: pick<string>(r, 'priority', 'PRIORITY') ?? undefined,
   }
+  // Bitrix24 omits these unless selected, so "present on the wire" already
+  // means "the operator asked for it" — no flag needed. Deliberately NOT
+  // projected: the nested `group` / `creator` objects Bitrix24 adds unbidden
+  // next to `groupId` / `createdBy` (they carry member counts, avatar URLs
+  // and work positions — a lot of tokens nobody asked for).
+  const scalars: [keyof TaskShort, string, string][] = [
+    ['groupId', 'groupId', 'GROUP_ID'],
+    ['createdBy', 'createdBy', 'CREATED_BY'],
+    ['parentId', 'parentId', 'PARENT_ID'],
+    ['changedDate', 'changedDate', 'CHANGED_DATE'],
+    ['closedDate', 'closedDate', 'CLOSED_DATE'],
+  ]
+  for (const [key, lower, upper] of scalars) {
+    const value = pick<string>(r, lower, upper)
+    if (value !== null) Object.assign(short, { [key]: value })
+  }
+
+  if (options.withDescription) {
+    // An empty description is a real state (a task with no body), so `''`
+    // is surfaced as-is; only an absent field stays absent.
+    const description = pick<string>(r, 'description', 'DESCRIPTION')
+    if (description !== null) short.description = description
+    // The flag only means something next to a description, and Bitrix24
+    // ships it automatically whenever DESCRIPTION is selected.
+    const inBbcode = pick<string | boolean>(r, 'descriptionInBbcode', 'DESCRIPTION_IN_BBCODE')
+    if (inBbcode !== null) short.descriptionInBbcode = typeof inBbcode === 'boolean' ? inBbcode : toBool(inBbcode)
+  }
+  return short
 }
 
 /**
@@ -46,15 +112,15 @@ export function toTaskShort(raw: unknown): TaskShort | null {
  * Some other endpoints (e.g. `tasks.task.add`) wrap in `{result: {task: {...}}}`.
  * This function tolerates both shapes and a few null variants.
  */
-export function extractTasks(rawResult: unknown): TaskShort[] {
+export function extractTasks(rawResult: unknown, options: ToTaskShortOptions = {}): TaskShort[] {
   if (!rawResult || typeof rawResult !== 'object') return []
   const r = rawResult as Record<string, unknown>
   const tasks = r.tasks ?? r.task
   if (Array.isArray(tasks)) {
-    return tasks.map(toTaskShort).filter((t): t is TaskShort => t !== null)
+    return tasks.map((t) => toTaskShort(t, options)).filter((t): t is TaskShort => t !== null)
   }
   if (tasks && typeof tasks === 'object') {
-    const single = toTaskShort(tasks)
+    const single = toTaskShort(tasks, options)
     return single ? [single] : []
   }
   return []

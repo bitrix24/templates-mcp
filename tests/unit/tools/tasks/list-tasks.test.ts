@@ -31,6 +31,50 @@ describe('b24_task_list', () => {
     fake.v2Call.mockReset()
   })
 
+  it('returns the task body only when `description` is in the select (issue #203)', async () => {
+    const wire = {
+      tasks: [
+        {
+          id: '4153',
+          title: 'demo',
+          description: '[b]Причина[/b] тело задачи',
+          descriptionInBbcode: 'Y',
+        },
+      ],
+      total: 1,
+    }
+
+    // Default select: Bitrix24 wouldn't ship a body, and even if it does the
+    // projection must not smuggle it in.
+    fake.v2Call.mockResolvedValue(fakeOk(wire))
+    const withoutBody = JSON.parse((await tool.handler({})).content[0]!.text)
+    expect(withoutBody.tasks[0]).not.toHaveProperty('description')
+
+    // Asked for explicitly: body verbatim + the markup flag.
+    fake.v2Call.mockResolvedValue(fakeOk(wire))
+    const withBody = JSON.parse(
+      (await tool.handler({ select: ['id', 'title', 'description'] })).content[0]!.text,
+    )
+    expect(withBody.tasks[0]).toMatchObject({
+      description: '[b]Причина[/b] тело задачи',
+      descriptionInBbcode: true,
+    })
+
+    // The select still reaches Bitrix24 in its UPPER_SNAKE form.
+    const args = fake.v2Call.mock.calls[1]![0] as unknown as { params: { select: string[] } }
+    expect(args.params.select).toEqual(['ID', 'TITLE', 'DESCRIPTION'])
+  })
+
+  it('accepts UPPERCASE DESCRIPTION in the select as the same opt-in', async () => {
+    fake.v2Call.mockResolvedValue(
+      fakeOk({ tasks: [{ ID: '1', TITLE: 'demo', DESCRIPTION: 'тело' }], total: 1 }),
+    )
+    const payload = JSON.parse(
+      (await tool.handler({ select: ['ID', 'TITLE', 'DESCRIPTION'] })).content[0]!.text,
+    )
+    expect(payload.tasks[0].description).toBe('тело')
+  })
+
   it('passes UPPERCASE filter/order/select/start through unchanged (back-compat) and shapes the response', async () => {
     fake.v2Call.mockResolvedValue(
       fakeOk({

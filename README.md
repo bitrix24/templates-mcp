@@ -92,7 +92,7 @@ Open Nuxt DevTools in the browser to reach the MCP Inspector for interactive too
 | `b24_user_me` | Returns the Bitrix24 user that owns the configured webhook. Useful as a connectivity check. |
 | `b24_user_find` | Find users by name / surname / position / department, or free-text. **Call this before any tool that takes a userId** — operators speak in names, not numeric ids. |
 | `b24_task_create` | Create a task — title, responsibleId required; description / deadline / groupId / priority / accomplices / auditors optional. |
-| `b24_task_list` | List tasks with filter (`{ RESPONSIBLE_ID, STATUS, "!STATUS", ">=DEADLINE", … }`), order, select, and pagination (page size fixed at 50). |
+| `b24_task_list` | List tasks with filter (`{ RESPONSIBLE_ID, STATUS, "!STATUS", ">=DEADLINE", … }`), order, select, and pagination (page size fixed at 50). Add `description` to `select` to read task bodies (with the `descriptionInBbcode` markup flag); `groupId` / `createdBy` / `parentId` / `changedDate` / `closedDate` likewise come back when selected. |
 | `b24_task_update` | Update an existing task by id with a partial UPPERCASE-keyed `fields` object. |
 | `b24_task_comment_add` | Append a comment to a task (BBCode-friendly). |
 | `b24_task_start` | Move a task to In progress (3). |
